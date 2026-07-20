@@ -5,11 +5,13 @@ import { Card } from '../../../shared/components/Card'
 import { ExerciseArt } from '../../../shared/components/ExerciseArt'
 import { PageHeader } from '../../../shared/components/PageHeader'
 import { deleteWorkoutSession, updateMainSet } from '../../workout/services'
-import { useProgressOverview } from '../hooks'
+import { useProgressExerciseOptions, useProgressOverview } from '../hooks'
 import type { RecentSessionSummary } from '../repository'
 
 export function ProgressPage() {
-  const overview = useProgressOverview()
+  const [selectedExercise, setSelectedExercise] = useState<string | null>(null)
+  const overview = useProgressOverview(selectedExercise)
+  const exerciseOptions = useProgressExerciseOptions() ?? []
   const chartData = overview?.chartData ?? []
   const recentSessions = overview?.recentSessions ?? []
   const latestScore = chartData.at(-1)?.score ?? 0
@@ -32,7 +34,7 @@ export function ProgressPage() {
 
   return (
     <div className="space-y-4">
-      <PageHeader eyebrow="Timeline global cronologico" title="Rendimiento">
+      <PageHeader eyebrow={selectedExercise ? 'Timeline por ejercicio' : 'Timeline global cronologico'} title="Rendimiento">
         <button className="grid size-10 place-items-center rounded-[10px] text-arsen-muted">
           <SlidersHorizontal aria-hidden="true" className="size-5" />
           <span className="sr-only">Filtrar progreso</span>
@@ -81,12 +83,34 @@ export function ProgressPage() {
         </div>
       ) : null}
 
+      <Card className="grid grid-cols-[52px_1fr] items-center gap-3 p-3">
+        <ExerciseArt alt={overview?.exerciseName ?? 'Ejercicio'} kind="press" />
+        <div className="min-w-0">
+          <strong className="block truncate">{selectedExercise ? overview?.exerciseName ?? 'Cargando' : 'Global'}</strong>
+          <label className="mt-2 block">
+            <span className="sr-only">Filtrar ejercicio</span>
+            <select
+              className="min-h-10 w-full rounded-[10px] border border-white/10 bg-arsen-bg px-3 text-sm font-extrabold text-arsen-ink"
+              onChange={(event) => setSelectedExercise(event.target.value || null)}
+              value={selectedExercise ?? ''}
+            >
+              <option value="">Todos los ejercicios</option>
+              {exerciseOptions.map((option) => (
+                <option key={option.canonicalName} value={option.canonicalName}>
+                  {option.name} ({option.sessions})
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+      </Card>
+
       <Card className="flex items-center justify-between gap-3 p-3">
         <div className="flex items-center gap-3">
           <ExerciseArt alt={overview?.exerciseName ?? 'Ejercicio'} kind="press" />
           <div>
             <strong>{overview?.exerciseName ?? 'Cargando'}</strong>
-            <p className="text-sm text-arsen-muted">Progreso unificado</p>
+            <p className="text-sm text-arsen-muted">{selectedExercise ? 'Progreso por ejercicio' : 'Progreso unificado'}</p>
           </div>
         </div>
         <ChevronDown aria-hidden="true" className="size-5 text-arsen-muted" />

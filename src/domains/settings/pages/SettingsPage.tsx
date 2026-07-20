@@ -20,7 +20,10 @@ import {
   exportFullBackup,
   exportProgressCsv,
   exportProgressJson,
+  deleteActiveRoutineWorkoutLogs,
+  deleteAllWorkoutLogs,
   getAppSettings,
+  getDeloadOverview,
   getStorageOverview,
   importFullBackup,
   requestPersistentStorage,
@@ -37,6 +40,7 @@ export function SettingsPage() {
   const [busyAction, setBusyAction] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const appSettings = useLiveQuery(() => getAppSettings(), [], undefined)
+  const deload = useLiveQuery(() => getDeloadOverview(), [], undefined)
   const storage = useLiveQuery(() => getStorageOverview(), [], undefined)
   const storagePercent = storage?.usage && storage.quota ? Math.min(100, Math.round((storage.usage / storage.quota) * 100)) : 0
 
@@ -150,9 +154,11 @@ export function SettingsPage() {
           </div>
           <div>
             <strong>Deload</strong>
-            <span className="mt-1 block text-xs text-arsen-muted">Avisar semanas 5 a 7</span>
+            <span className="mt-1 block text-xs text-arsen-muted">
+              {deload?.firstLogDate ? `${deload.weeks} semanas desde primer registro` : 'Sin registros aun'}
+            </span>
           </div>
-          <span className="text-sm font-extrabold text-arsen-acid">on</span>
+          <span className="text-sm font-extrabold text-arsen-acid">{deload?.shouldNotify ? 'avisar' : 'on'}</span>
         </Card>
       </SettingsSection>
 
@@ -195,16 +201,28 @@ export function SettingsPage() {
       </SettingsSection>
 
       <SettingsSection danger title="Zona de limpieza">
-        <Card className="grid grid-cols-[42px_1fr_auto] items-center gap-3 p-3">
-          <div className="grid size-10 place-items-center text-red-300">
-            <Trash2 aria-hidden="true" className="size-6" />
-          </div>
-          <div>
-            <strong className="text-red-300">Borrar registros</strong>
-            <span className="mt-1 block text-xs text-arsen-muted">Por rango o rutina activa</span>
-          </div>
-          <ChevronRight aria-hidden="true" className="size-5 text-arsen-muted" />
-        </Card>
+        <ActionRow
+          busy={busyAction === 'delete-active'}
+          icon={Trash2}
+          label="Borrar logs de rutina activa"
+          meta="No borra rutina ni catalogo"
+          onClick={() => {
+            if (!window.confirm('Borrar registros de la rutina activa?')) return
+            void runAction('delete-active', deleteActiveRoutineWorkoutLogs, 'Registros de rutina activa borrados')
+          }}
+          tone="danger"
+        />
+        <ActionRow
+          busy={busyAction === 'delete-all'}
+          icon={Trash2}
+          label="Borrar todos los logs"
+          meta="Mantiene rutinas guardadas"
+          onClick={() => {
+            if (!window.confirm('Borrar todos los registros de entrenamiento?')) return
+            void runAction('delete-all', deleteAllWorkoutLogs, 'Todos los registros borrados')
+          }}
+          tone="danger"
+        />
       </SettingsSection>
     </div>
   )
@@ -232,9 +250,10 @@ type ActionRowProps = {
   label: string
   meta: string
   onClick?: () => void
+  tone?: 'default' | 'danger'
 }
 
-function ActionRow({ busy = false, icon: Icon, label, meta, onClick }: ActionRowProps) {
+function ActionRow({ busy = false, icon: Icon, label, meta, onClick, tone = 'default' }: ActionRowProps) {
   return (
     <button
       className="content-auto grid w-full grid-cols-[42px_1fr_auto] items-center gap-3 rounded-xl border border-white/10 bg-arsen-surface p-3 text-left shadow-[inset_0_1px_0_rgb(255_255_255_/_0.04)] disabled:opacity-60"
@@ -242,11 +261,11 @@ function ActionRow({ busy = false, icon: Icon, label, meta, onClick }: ActionRow
       onClick={onClick}
       type="button"
     >
-      <div className="grid size-10 place-items-center text-arsen-purple2">
+      <div className={['grid size-10 place-items-center', tone === 'danger' ? 'text-red-300' : 'text-arsen-purple2'].join(' ')}>
         <Icon aria-hidden="true" className="size-6" />
       </div>
       <div>
-        <strong>{label}</strong>
+        <strong className={tone === 'danger' ? 'text-red-300' : undefined}>{label}</strong>
         <span className="mt-1 block text-xs text-arsen-muted">{busy ? 'Procesando...' : meta}</span>
       </div>
       <ChevronRight aria-hidden="true" className="size-5 text-arsen-muted" />

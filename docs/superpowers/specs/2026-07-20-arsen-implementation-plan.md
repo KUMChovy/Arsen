@@ -20,7 +20,7 @@ Entregables:
 
 Criterios:
 
-- `npm run dev` levanta app.
+- `pnpm dev` levanta app.
 - Rutas `/`, `/rutina`, `/progreso`, `/settings` existen.
 - Navegación móvil fija funciona.
 - UI inicial respeta tema oscuro, morado y verde.
@@ -193,8 +193,8 @@ Entregables:
 
 Criterios:
 
-- `npm test` pasa.
-- `npm run build` pasa.
+- `pnpm test` pasa.
+- `pnpm build` pasa.
 - App usable sin red después de primera carga local.
 
 ## Orden De Trabajo Recomendado
@@ -217,4 +217,3 @@ Criterios:
 - Export/import necesita versionado para no romper datos futuros.
 - Gráficas y assets pueden inflar bundle; deben cargar lazy.
 - Capacitor posterior exige evitar APIs web no soportadas sin fallback.
-

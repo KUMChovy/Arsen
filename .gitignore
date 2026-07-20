@@ -1,5 +1,6 @@
 .superpowers/
 .run/
+.pnpm-store/
 node_modules/
 dist/
 .env

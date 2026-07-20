@@ -181,6 +181,14 @@ export async function deleteActiveRoutineWorkoutLogs() {
   await Promise.all(sessions.map((session) => deleteWorkoutSession(session.id)))
 }
 
+export async function deleteWorkoutLogsByDateRange(startDate: string, endDate: string) {
+  if (!startDate || !endDate) throw new Error('Selecciona fecha inicial y final')
+  if (startDate > endDate) throw new Error('La fecha inicial no puede ser mayor a la final')
+
+  const sessions = await db.workoutSessions.where('date').between(startDate, endDate, true, true).toArray()
+  await Promise.all(sessions.map((session) => deleteWorkoutSession(session.id)))
+}
+
 async function buildProgressExport() {
   const [routines, days, exercises, sessions, exerciseLogs, setLogs, dropSetLogs] = await Promise.all([
     db.routines.toArray(),

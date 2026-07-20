@@ -24,6 +24,7 @@ import {
   exportProgressJson,
   deleteActiveRoutineWorkoutLogs,
   deleteAllWorkoutLogs,
+  deleteWorkoutLogsByDateRange,
   getAppSettings,
   getStorageOverview,
   importFullBackup,
@@ -31,6 +32,7 @@ import {
   updatePreferredUnit,
 } from '../services'
 import { getDeloadOverview, requestDeloadNotifications } from '../notifications'
+import { localDateKey } from '../../../shared/utils/date'
 
 const routineActions = [
   { icon: Folder, label: 'Rutinas guardadas', meta: 'Cambiar, duplicar o eliminar' },
@@ -41,7 +43,10 @@ export function SettingsPage() {
   const importInputRef = useRef<HTMLInputElement>(null)
   const routineImportInputRef = useRef<HTMLInputElement>(null)
   const navigate = useNavigate()
+  const today = localDateKey(new Date())
   const [busyAction, setBusyAction] = useState<string | null>(null)
+  const [cleanupEndDate, setCleanupEndDate] = useState(today)
+  const [cleanupStartDate, setCleanupStartDate] = useState(today)
   const [message, setMessage] = useState<string | null>(null)
   const appSettings = useLiveQuery(() => getAppSettings(), [], undefined)
   const deload = useLiveQuery(() => getDeloadOverview(), [], undefined)
@@ -241,6 +246,43 @@ export function SettingsPage() {
       </SettingsSection>
 
       <SettingsSection danger title="Zona de limpieza">
+        <Card className="p-3">
+          <div className="grid grid-cols-2 gap-2">
+            <label className="block">
+              <span className="mb-1 block text-xs font-bold text-arsen-muted">Desde</span>
+              <input
+                className="min-h-10 w-full rounded-[10px] border border-white/10 bg-arsen-bg px-2 text-sm font-extrabold text-arsen-ink"
+                onChange={(event) => setCleanupStartDate(event.target.value)}
+                type="date"
+                value={cleanupStartDate}
+              />
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-xs font-bold text-arsen-muted">Hasta</span>
+              <input
+                className="min-h-10 w-full rounded-[10px] border border-white/10 bg-arsen-bg px-2 text-sm font-extrabold text-arsen-ink"
+                onChange={(event) => setCleanupEndDate(event.target.value)}
+                type="date"
+                value={cleanupEndDate}
+              />
+            </label>
+          </div>
+          <button
+            className="mt-3 w-full rounded-[10px] border border-red-300/35 px-3 py-2 text-sm font-extrabold text-red-300 disabled:opacity-50"
+            disabled={busyAction === 'delete-range'}
+            onClick={() => {
+              if (!window.confirm('Borrar registros dentro del rango seleccionado?')) return
+              void runAction(
+                'delete-range',
+                () => deleteWorkoutLogsByDateRange(cleanupStartDate, cleanupEndDate),
+                'Registros del rango borrados',
+              )
+            }}
+            type="button"
+          >
+            Borrar rango de fechas
+          </button>
+        </Card>
         <ActionRow
           busy={busyAction === 'delete-active'}
           icon={Trash2}

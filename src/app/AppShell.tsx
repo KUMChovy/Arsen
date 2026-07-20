@@ -1,11 +1,24 @@
 import { NavLink, Outlet } from 'react-router-dom'
 import { navItems } from './navigation'
+import { useAppProviders } from './providers'
 
 export function AppShell() {
+  const { databaseError, databaseStatus } = useAppProviders()
+
   return (
     <div className="min-h-dvh bg-arsen-bg text-arsen-ink">
       <div className="mx-auto flex min-h-dvh w-full max-w-[430px] flex-col overflow-hidden bg-arsen-bg2 shadow-[0_0_0_1px_rgb(255_255_255_/_0.05)]">
         <main className="flex-1 overflow-y-auto px-4 pb-28 pt-[max(18px,env(safe-area-inset-top))]">
+          {databaseStatus === 'loading' ? (
+            <div className="mb-3 rounded-[10px] border border-white/10 bg-white/5 px-3 py-2 text-xs text-arsen-muted">
+              Preparando datos offline...
+            </div>
+          ) : null}
+          {databaseStatus === 'error' ? (
+            <div className="mb-3 rounded-[10px] border border-red-400/40 bg-red-500/10 px-3 py-2 text-xs text-red-200">
+              IndexedDB no inició: {databaseError}
+            </div>
+          ) : null}
           <Outlet />
         </main>
         <nav className="fixed inset-x-0 bottom-0 z-40 mx-auto grid h-[84px] max-w-[430px] grid-cols-4 border-t border-white/10 bg-arsen-bg2/95 px-3 pb-[max(10px,env(safe-area-inset-bottom))] pt-2 backdrop-blur">

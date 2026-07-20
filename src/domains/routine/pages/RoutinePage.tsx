@@ -12,25 +12,10 @@ import {
 } from 'lucide-react'
 import { ActionButton } from '../../../shared/components/ActionButton'
 import { Card } from '../../../shared/components/Card'
-import { ExerciseArt } from '../../../shared/components/ExerciseArt'
+import { ExerciseArt, type ExerciseArtKind } from '../../../shared/components/ExerciseArt'
 import { PageHeader } from '../../../shared/components/PageHeader'
+import { useActiveRoutineBundle } from '../hooks'
 
-const days = [
-  {
-    art: 'press' as const,
-    count: '6 ejercicios',
-    description: 'Upper + cardio medio 15 min',
-    exercises: ['Press inclinado', 'Remo T', 'Press militar', '+ 3 más'],
-    name: 'Dia 1',
-  },
-  {
-    art: 'hackSquat' as const,
-    count: '5 ejercicios',
-    description: 'Pierna completa',
-    exercises: ['Hack squat', 'Peso muerto rumano', 'Prensa', '+ 2 más'],
-    name: 'Dia 3',
-  },
-]
 
 const quickActions = [
   { icon: CalendarPlus, label: 'Crear día', active: true },
@@ -40,6 +25,9 @@ const quickActions = [
 ]
 
 export function RoutinePage() {
+  const bundle = useActiveRoutineBundle()
+  const days = bundle?.days ?? []
+
   return (
     <div className="space-y-4">
       <PageHeader eyebrow="Gestión de rutinas y catálogo" title="Rutina">
@@ -86,8 +74,8 @@ export function RoutinePage() {
             <CalendarPlus aria-hidden="true" className="size-5" />
           </div>
           <div>
-            <strong>Mi rutina actual</strong>
-            <p className="text-sm font-bold text-arsen-purple2">4 días</p>
+            <strong>{bundle?.routine.name ?? 'Cargando rutina'}</strong>
+            <p className="text-sm font-bold text-arsen-purple2">{days.length} días</p>
           </div>
         </div>
         <ChevronDown aria-hidden="true" className="size-5 text-arsen-muted" />
@@ -107,23 +95,29 @@ export function RoutinePage() {
       <section>
         <div className="mb-2 text-xs font-extrabold text-arsen-muted">Días de entrenamiento</div>
         <div className="space-y-3">
-          {days.map((day) => (
+          {days.map((day) => {
+            const dayExercises = bundle?.exercisesByDay.get(day.id) ?? []
+            const previewExercises = dayExercises.slice(0, 3).map((exercise) => exercise.name)
+            const remainingCount = Math.max(dayExercises.length - previewExercises.length, 0)
+
+            return (
             <Card className="content-auto grid grid-cols-[1fr_74px] gap-3 p-4" key={day.name}>
               <div className="min-w-0">
                 <div className="flex items-center justify-between gap-2">
                   <h2 className="text-2xl font-black">{day.name}</h2>
-                  <span className="text-xs font-extrabold text-arsen-acid">{day.count}</span>
+                  <span className="text-xs font-extrabold text-arsen-acid">{dayExercises.length} ejercicios</span>
                 </div>
                 <p className="font-extrabold text-arsen-purple2">{day.description}</p>
                 <ul className="mt-2 space-y-1 text-xs text-arsen-muted">
-                  {day.exercises.map((exercise) => (
+                  {previewExercises.map((exercise) => (
                     <li key={exercise}>{exercise}</li>
                   ))}
+                  {remainingCount > 0 ? <li>+ {remainingCount} más</li> : null}
                 </ul>
               </div>
-              <ExerciseArt alt={day.name} className="h-[106px] w-[74px]" kind={day.art} />
+              <ExerciseArt alt={day.name} className="h-[106px] w-[74px]" kind={artForDay(day.name)} />
             </Card>
-          ))}
+          )})}
         </div>
       </section>
 
@@ -139,4 +133,12 @@ export function RoutinePage() {
       </div>
     </div>
   )
+}
+
+function artForDay(dayName: string): ExerciseArtKind {
+  if (dayName.includes('3')) return 'hackSquat'
+  if (dayName.includes('5')) return 'row'
+  if (dayName.includes('6')) return 'shoulderPress'
+
+  return 'press'
 }

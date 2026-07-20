@@ -11,34 +11,33 @@ import { ActionButton } from '../../../shared/components/ActionButton'
 import { Card } from '../../../shared/components/Card'
 import { ExerciseArt, type ExerciseArtKind } from '../../../shared/components/ExerciseArt'
 import { PageHeader } from '../../../shared/components/PageHeader'
-
-const statusSummary = [
-  { label: 'Pendientes', value: 2 },
-  { label: 'En progreso', value: 1, tone: 'text-arsen-purple2' },
-  { label: 'Hechos', value: 3, tone: 'text-arsen-acid' },
-  { label: 'Saltados', value: 0, tone: 'text-arsen-dim' },
-]
+import { useWorkoutDay } from '../../routine/hooks'
+import type { RoutineExercise } from '../../routine/types'
 
 const warmups = [
   { weight: '40 kg', reps: '10 reps', rir: 'RIR 4' },
   { weight: '50 kg', reps: '6 reps', rir: 'RIR 3' },
 ]
 
-const exercises: Array<{
-  art: ExerciseArtKind
-  name: string
-  meta: string
-  state: string
-}> = [
-  { art: 'press', name: 'Press inclinado', meta: 'Pecho · 3x6-8 · RIR 1-2', state: 'En progreso' },
-  { art: 'pecDeck', name: 'Pec deck', meta: 'Pecho · 2x8-10 · RIR 0-1', state: 'Pendiente' },
-  { art: 'row', name: 'Remo T', meta: 'Espalda · 3x6-8 · RIR 1-2', state: 'Hecho' },
-]
-
 export function WorkoutPage() {
+  const workoutDay = useWorkoutDay(new Date())
+  const dayExercises = workoutDay?.dayExercises ?? []
+  const currentExercise = dayExercises[0]
+  const completedCount = Math.min(3, dayExercises.length)
+  const totalCount = dayExercises.length
+  const statusSummary = [
+    { label: 'Pendientes', value: Math.max(totalCount - completedCount - 1, 0) },
+    { label: 'En progreso', value: currentExercise ? 1 : 0, tone: 'text-arsen-purple2' },
+    { label: 'Hechos', value: completedCount, tone: 'text-arsen-acid' },
+    { label: 'Saltados', value: 0, tone: 'text-arsen-dim' },
+  ]
+
   return (
     <div className="space-y-4">
-      <PageHeader eyebrow="Lunes · Dia 1 · sesión activa" title="Entreno de hoy">
+      <PageHeader
+        eyebrow={`${weekdayLabel(new Date())} · ${workoutDay?.day.name ?? 'Cargando'} · sesión activa`}
+        title="Entreno de hoy"
+      >
         <button className="grid size-10 place-items-center rounded-[10px] text-arsen-muted">
           <CalendarDays aria-hidden="true" className="size-5" />
           <span className="sr-only">Cambiar fecha</span>
@@ -69,15 +68,20 @@ export function WorkoutPage() {
 
       <Card className="p-4">
         <div className="flex items-center justify-between gap-3">
-          <strong>Mi rutina actual - Dia 1</strong>
-          <span className="text-sm text-arsen-ink">50%</span>
+          <strong>{workoutDay ? `${workoutDay.routine.name} - ${workoutDay.day.name}` : 'Cargando rutina'}</strong>
+          <span className="text-sm text-arsen-ink">{totalCount ? Math.round((completedCount / totalCount) * 100) : 0}%</span>
         </div>
         <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/15">
-          <div className="h-full w-1/2 rounded-full bg-gradient-to-r from-arsen-acid to-arsen-acid2" />
+          <div
+            className="h-full rounded-full bg-gradient-to-r from-arsen-acid to-arsen-acid2"
+            style={{ width: `${totalCount ? (completedCount / totalCount) * 100 : 0}%` }}
+          />
         </div>
         <div className="mt-2 flex items-center justify-between text-sm text-arsen-muted">
-          <span>3 / 6 ejercicios</span>
-          <span>Upper</span>
+          <span>
+            {completedCount} / {totalCount} ejercicios
+          </span>
+          <span>{workoutDay?.day.description ?? 'Sin rutina activa'}</span>
         </div>
       </Card>
 
@@ -94,11 +98,11 @@ export function WorkoutPage() {
         <div className="mb-2 text-xs font-extrabold text-arsen-purple2">Ejercicio actual</div>
         <Card className="p-3">
           <div className="grid grid-cols-[66px_1fr_28px] items-center gap-3 border-b border-white/10 pb-3">
-            <ExerciseArt alt="Press inclinado" kind="press" />
+            <ExerciseArt alt={currentExercise?.name ?? 'Ejercicio'} kind={artForExercise(currentExercise)} />
             <div className="min-w-0">
-              <h2 className="truncate text-[22px] font-black leading-tight">Press inclinado</h2>
+              <h2 className="truncate text-[22px] font-black leading-tight">{currentExercise?.name ?? 'Sin ejercicio'}</h2>
               <span className="mt-1 inline-flex rounded-full bg-arsen-purple/30 px-2 py-1 text-xs font-bold text-arsen-purple2">
-                Pecho
+                {currentExercise?.mainMuscle ?? 'Descanso'}
               </span>
             </div>
             <Info aria-hidden="true" className="size-5 text-arsen-muted" />
@@ -106,10 +110,10 @@ export function WorkoutPage() {
 
           <div className="grid grid-cols-4 gap-0 py-3 text-center">
             {[
-              ['Peso anterior', '60 kg', 'text-arsen-acid'],
-              ['Series', '4', 'text-arsen-ink'],
-              ['RIR', '2', 'text-arsen-ink'],
-              ['Descanso', '120 s', 'text-arsen-acid'],
+              ['Peso anterior', `${currentExercise?.currentWeightKg ?? 0} kg`, 'text-arsen-acid'],
+              ['Series', String(currentExercise?.targetSets ?? 0), 'text-arsen-ink'],
+              ['RIR', currentExercise?.recommendedRir ?? '-', 'text-arsen-ink'],
+              ['Descanso', `${currentExercise?.restSeconds ?? 0} s`, 'text-arsen-acid'],
             ].map(([label, value, tone]) => (
               <div className="border-r border-white/10 px-1 last:border-r-0" key={label}>
                 <span className="block text-[10px] text-arsen-muted">{label}</span>
@@ -150,15 +154,17 @@ export function WorkoutPage() {
           <span className="text-arsen-purple2">Estado</span>
         </div>
         <div className="space-y-2">
-          {exercises.map((exercise) => (
+          {dayExercises.slice(0, 6).map((exercise, index) => (
             <Card className="content-auto grid grid-cols-[52px_1fr_auto] items-center gap-3 p-2" key={exercise.name}>
-              <ExerciseArt alt={exercise.name} className="size-[52px]" kind={exercise.art} />
+              <ExerciseArt alt={exercise.name} className="size-[52px]" kind={artForExercise(exercise)} />
               <div className="min-w-0">
                 <h3 className="truncate text-sm font-extrabold">{exercise.name}</h3>
-                <span className="mt-1 block truncate text-xs text-arsen-muted">{exercise.meta}</span>
+                <span className="mt-1 block truncate text-xs text-arsen-muted">
+                  {exercise.mainMuscle} · {exercise.targetSets}x{exercise.repRange} · RIR {exercise.recommendedRir}
+                </span>
               </div>
               <span className="rounded-full bg-arsen-purple/25 px-2 py-1 text-[10px] font-bold text-arsen-purple2">
-                {exercise.state}
+                {index < completedCount ? 'Hecho' : index === completedCount ? 'En progreso' : 'Pendiente'}
               </span>
             </Card>
           ))}
@@ -166,4 +172,19 @@ export function WorkoutPage() {
       </section>
     </div>
   )
+}
+
+function artForExercise(exercise: RoutineExercise | undefined): ExerciseArtKind {
+  const value = exercise?.canonicalName ?? ''
+  if (value.includes('pec-deck')) return 'pecDeck'
+  if (value.includes('remo')) return 'row'
+  if (value.includes('hack') || value.includes('prensa')) return 'hackSquat'
+  if (value.includes('jalon') || value.includes('pullover')) return 'latPulldown'
+  if (value.includes('militar') || value.includes('hombro')) return 'shoulderPress'
+
+  return 'press'
+}
+
+function weekdayLabel(date: Date) {
+  return new Intl.DateTimeFormat('es-MX', { weekday: 'long' }).format(date)
 }

@@ -12,8 +12,19 @@ export type ProgressOverview = {
   exerciseName: string
   lastSessionDate: string | null
   maxWeightKg: number
+  recentSessions: RecentSessionSummary[]
   sessionCount: number
   totalSets: number
+  volumeKg: number
+}
+
+export type RecentSessionSummary = {
+  bestSetId: string | null
+  bestSetLabel: string
+  date: string
+  exerciseCount: number
+  id: string
+  setCount: number
   volumeKg: number
 }
 
@@ -33,7 +44,21 @@ export async function getProgressOverview(): Promise<ProgressOverview> {
   const volumeKg = totalVolume(mainSets, dropSetLogs)
   const sessionById = new Map(sessions.map((session) => [session.id, session]))
   const logById = new Map(exerciseLogs.map((log) => [log.id, log]))
+  const logsBySessionId = new Map<string, typeof exerciseLogs>()
+  const setsByExerciseLogId = new Map<string, typeof setLogs>()
   const bestScoreByDate = new Map<string, number>()
+
+  for (const log of exerciseLogs) {
+    const current = logsBySessionId.get(log.sessionId)
+    if (current) current.push(log)
+    else logsBySessionId.set(log.sessionId, [log])
+  }
+
+  for (const set of mainSets) {
+    const current = setsByExerciseLogId.get(set.exerciseLogId)
+    if (current) current.push(set)
+    else setsByExerciseLogId.set(set.exerciseLogId, [set])
+  }
 
   for (const set of mainSets) {
     const log = logById.get(set.exerciseLogId)
@@ -54,6 +79,24 @@ export async function getProgressOverview(): Promise<ProgressOverview> {
       date: formatShortDate(date),
       score,
     }))
+  const recentSessions = sessions
+    .map((session): RecentSessionSummary => {
+      const logs = logsBySessionId.get(session.id) ?? []
+      const sessionSets = logs.flatMap((log) => setsByExerciseLogId.get(log.id) ?? [])
+      const bestSessionSet = bestSet(sessionSets)
+
+      return {
+        bestSetId: bestSessionSet?.id ?? null,
+        bestSetLabel: bestSessionSet ? `${bestSessionSet.weightKg} kg x ${bestSessionSet.reps}` : 'Sin series',
+        date: session.date,
+        exerciseCount: logs.length,
+        id: session.id,
+        setCount: sessionSets.length,
+        volumeKg: totalVolume(sessionSets, dropSetLogs),
+      }
+    })
+    .sort((a, b) => b.date.localeCompare(a.date))
+    .slice(0, 8)
 
   return {
     bestSetLabel,
@@ -61,6 +104,7 @@ export async function getProgressOverview(): Promise<ProgressOverview> {
     exerciseName,
     lastSessionDate: sessions.at(-1)?.date ?? null,
     maxWeightKg,
+    recentSessions,
     sessionCount: sessions.length,
     totalSets: mainSets.length,
     volumeKg,

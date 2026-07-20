@@ -1,20 +1,34 @@
-import { ChartLine, ChevronDown, Download, NotebookTabs, SlidersHorizontal, Trophy } from 'lucide-react'
+import { useState, useTransition } from 'react'
+import { ChartLine, ChevronDown, Download, NotebookTabs, Pencil, SlidersHorizontal, Trash2, Trophy } from 'lucide-react'
 import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { Card } from '../../../shared/components/Card'
 import { ExerciseArt } from '../../../shared/components/ExerciseArt'
 import { PageHeader } from '../../../shared/components/PageHeader'
+import { deleteWorkoutSession, updateMainSet } from '../../workout/services'
 import { useProgressOverview } from '../hooks'
+import type { RecentSessionSummary } from '../repository'
 
 export function ProgressPage() {
   const overview = useProgressOverview()
   const chartData = overview?.chartData ?? []
+  const recentSessions = overview?.recentSessions ?? []
   const latestScore = chartData.at(-1)?.score ?? 0
+  const [isPending, startTransition] = useTransition()
+  const [message, setMessage] = useState<string | null>(null)
   const metrics = [
     { label: 'Volumen', value: `${Math.round((overview?.volumeKg ?? 0) / 100) / 10}t` },
     { label: 'Peso max.', value: String(overview?.maxWeightKg ?? 0) },
     { label: 'Sesiones', value: String(overview?.sessionCount ?? 0) },
     { label: 'Series', value: String(overview?.totalSets ?? 0) },
   ]
+
+  function runHistoryAction(action: () => Promise<void>, success: string) {
+    startTransition(() => {
+      action()
+        .then(() => setMessage(success))
+        .catch((error: unknown) => setMessage(error instanceof Error ? error.message : 'Accion no completada'))
+    })
+  }
 
   return (
     <div className="space-y-4">
@@ -60,6 +74,12 @@ export function ProgressPage() {
           </button>
         ))}
       </section>
+
+      {message ? (
+        <div className="rounded-[10px] border border-arsen-purple/40 bg-arsen-purple/15 px-3 py-2 text-xs text-arsen-purple2">
+          {message}
+        </div>
+      ) : null}
 
       <Card className="flex items-center justify-between gap-3 p-3">
         <div className="flex items-center gap-3">
@@ -143,6 +163,100 @@ export function ProgressPage() {
           ))}
         </div>
       </section>
+
+      <section>
+        <div className="mb-2 text-xs font-extrabold text-arsen-muted">Sesiones recientes</div>
+        <div className="space-y-2">
+          {recentSessions.length > 0 ? (
+            recentSessions.map((session) => (
+              <SessionRow
+                disabled={isPending}
+                key={session.id}
+                onDelete={() => {
+                  if (!window.confirm('Eliminar esta sesion y sus series?')) return
+                  runHistoryAction(() => deleteWorkoutSession(session.id), 'Sesion eliminada')
+                }}
+                onEdit={() => {
+                  if (!session.bestSetId) return
+                  const value = window.prompt('Editar mejor serie: peso kg, reps, RIR', session.bestSetLabel.replace(' kg x ', ',') + ',1')
+                  if (!value) return
+                  const values = value.split(',').map((item) => Number(item.trim()))
+                  const weightKg = values[0]
+                  const reps = values[1]
+                  const rir = values[2]
+                  if (
+                    weightKg === undefined ||
+                    reps === undefined ||
+                    rir === undefined ||
+                    ![weightKg, reps, rir].every(Number.isFinite)
+                  ) {
+                    setMessage('Formato invalido. Usa: 80,8,1')
+                    return
+                  }
+                  runHistoryAction(() => updateMainSet(session.bestSetId!, { reps, rir, weightKg }), 'Serie editada')
+                }}
+                session={session}
+              />
+            ))
+          ) : (
+            <Card className="p-4 text-sm text-arsen-muted">Sin sesiones todavia.</Card>
+          )}
+        </div>
+      </section>
     </div>
+  )
+}
+
+function SessionRow({
+  disabled,
+  onDelete,
+  onEdit,
+  session,
+}: {
+  disabled: boolean
+  onDelete: () => void
+  onEdit: () => void
+  session: RecentSessionSummary
+}) {
+  return (
+    <Card className="grid grid-cols-[1fr_auto] items-center gap-3 p-3">
+      <div>
+        <div className="flex items-center gap-2">
+          <strong>{formatSessionDate(session.date)}</strong>
+          <span className="rounded-full bg-white/10 px-2 py-1 text-[10px] font-bold text-arsen-muted">
+            {session.setCount} series
+          </span>
+        </div>
+        <p className="mt-1 text-xs text-arsen-muted">
+          Mejor {session.bestSetLabel} · {Math.round(session.volumeKg)} kg volumen · {session.exerciseCount} ejercicios
+        </p>
+      </div>
+      <div className="flex items-center gap-1">
+        <button
+          className="grid size-9 place-items-center rounded-[10px] border border-white/10 text-arsen-purple2 disabled:opacity-40"
+          disabled={disabled || !session.bestSetId}
+          onClick={onEdit}
+          type="button"
+        >
+          <Pencil aria-hidden="true" className="size-4" />
+          <span className="sr-only">Editar sesion</span>
+        </button>
+        <button
+          className="grid size-9 place-items-center rounded-[10px] border border-red-300/25 text-red-300 disabled:opacity-40"
+          disabled={disabled}
+          onClick={onDelete}
+          type="button"
+        >
+          <Trash2 aria-hidden="true" className="size-4" />
+          <span className="sr-only">Eliminar sesion</span>
+        </button>
+      </div>
+    </Card>
+  )
+}
+
+function formatSessionDate(date: string) {
+  return new Intl.DateTimeFormat('es-MX', { day: 'numeric', month: 'short', year: 'numeric' }).format(
+    new Date(`${date}T12:00:00`),
   )
 }

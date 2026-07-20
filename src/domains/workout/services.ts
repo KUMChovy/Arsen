@@ -239,6 +239,43 @@ export async function reactivateExercise(sessionId: string, routineExerciseId: s
   })
 }
 
+export async function updateMainSet(
+  setLogId: string,
+  input: {
+    reps: number
+    rir: number
+    weightKg: number
+  },
+) {
+  const set = await db.setLogs.get(setLogId)
+  if (!set) throw new Error('Serie no encontrada')
+
+  await db.transaction('rw', [db.setLogs, db.exerciseLogs], async () => {
+    await db.setLogs.update(setLogId, {
+      reps: input.reps,
+      rir: input.rir,
+      updatedAt: new Date().toISOString(),
+      weightKg: input.weightKg,
+    })
+    await refreshExerciseState(set.exerciseLogId)
+  })
+}
+
+export async function deleteWorkoutSession(sessionId: string) {
+  const exerciseLogs = await db.exerciseLogs.where('sessionId').equals(sessionId).toArray()
+  const exerciseLogIds = exerciseLogs.map((log) => log.id)
+  const setLogs = await db.setLogs.where('exerciseLogId').anyOf(exerciseLogIds).toArray()
+  const setLogIds = setLogs.map((set) => set.id)
+
+  await db.transaction('rw', [db.workoutSessions, db.exerciseLogs, db.setLogs, db.dropSetLogs, db.skipLogs], async () => {
+    await Promise.all(setLogIds.map((setLogId) => db.dropSetLogs.where('setLogId').equals(setLogId).delete()))
+    await db.setLogs.bulkDelete(setLogIds)
+    await db.exerciseLogs.bulkDelete(exerciseLogIds)
+    await db.skipLogs.where('sessionId').equals(sessionId).delete()
+    await db.workoutSessions.delete(sessionId)
+  })
+}
+
 async function refreshExerciseState(exerciseLogId: string) {
   const log = await db.exerciseLogs.get(exerciseLogId)
   if (!log) return

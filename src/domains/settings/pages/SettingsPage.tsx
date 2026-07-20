@@ -1,3 +1,5 @@
+import { useRef, useState, type PropsWithChildren } from 'react'
+import { useLiveQuery } from 'dexie-react-hooks'
 import {
   ChartNoAxesCombined,
   ChevronRight,
@@ -12,16 +14,16 @@ import {
   Trash2,
   type LucideIcon,
 } from 'lucide-react'
-import type { PropsWithChildren } from 'react'
 import { Card } from '../../../shared/components/Card'
 import { PageHeader } from '../../../shared/components/PageHeader'
-
-const dataActions = [
-  { icon: CloudUpload, label: 'Exportar respaldo', meta: 'Guarda todos tus datos' },
-  { icon: CloudDownload, label: 'Importar respaldo', meta: 'Fusionar o reemplazar' },
-  { icon: ChartNoAxesCombined, label: 'Exportar progreso', meta: 'JSON + CSV cronológico' },
-  { icon: Scale, label: 'Unidades', meta: 'kg base, vista kg/lb' },
-]
+import {
+  exportFullBackup,
+  exportProgressCsv,
+  exportProgressJson,
+  getStorageOverview,
+  importFullBackup,
+  requestPersistentStorage,
+} from '../services'
 
 const routineActions = [
   { icon: Folder, label: 'Rutinas guardadas', meta: 'Cambiar, duplicar o eliminar' },
@@ -29,19 +31,84 @@ const routineActions = [
 ]
 
 export function SettingsPage() {
+  const importInputRef = useRef<HTMLInputElement>(null)
+  const [busyAction, setBusyAction] = useState<string | null>(null)
+  const [message, setMessage] = useState<string | null>(null)
+  const storage = useLiveQuery(() => getStorageOverview(), [], undefined)
+  const storagePercent = storage?.usage && storage.quota ? Math.min(100, Math.round((storage.usage / storage.quota) * 100)) : 0
+
+  async function runAction(id: string, action: () => Promise<void | boolean>, success: string) {
+    try {
+      setBusyAction(id)
+      setMessage(null)
+      await action()
+      setMessage(success)
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'No se pudo completar la accion')
+    } finally {
+      setBusyAction(null)
+    }
+  }
+
   return (
     <div className="space-y-4">
       <PageHeader eyebrow="Datos, respaldos y offline" title="Ajustes">
-        <button className="grid size-10 place-items-center rounded-[10px] text-arsen-purple2">
+        <button className="grid size-10 place-items-center rounded-[10px] text-arsen-purple2" type="button">
           <Settings aria-hidden="true" className="size-6" />
           <span className="sr-only">Configurar Arsen</span>
         </button>
       </PageHeader>
 
+      {message ? (
+        <div className="rounded-[10px] border border-arsen-purple2/40 bg-arsen-purple/15 px-3 py-2 text-sm text-white">
+          {message}
+        </div>
+      ) : null}
+
       <SettingsSection title="Datos">
-        {dataActions.map((item) => (
-          <ActionRow icon={item.icon} key={item.label} label={item.label} meta={item.meta} />
-        ))}
+        <ActionRow
+          busy={busyAction === 'backup-export'}
+          icon={CloudUpload}
+          label="Exportar respaldo"
+          meta="JSON completo de IndexedDB"
+          onClick={() => runAction('backup-export', exportFullBackup, 'Respaldo exportado')}
+        />
+        <ActionRow
+          busy={busyAction === 'backup-import'}
+          icon={CloudDownload}
+          label="Importar respaldo"
+          meta="Reemplaza datos locales"
+          onClick={() => importInputRef.current?.click()}
+        />
+        <input
+          accept="application/json,.json"
+          className="hidden"
+          onChange={(event) => {
+            const file = event.target.files?.[0]
+            event.target.value = ''
+            if (!file) return
+            void runAction('backup-import', () => importFullBackup(file), 'Respaldo importado')
+          }}
+          ref={importInputRef}
+          type="file"
+        />
+        <ActionRow
+          busy={busyAction === 'progress-export'}
+          icon={ChartNoAxesCombined}
+          label="Exportar progreso"
+          meta="JSON + CSV cronologico"
+          onClick={() =>
+            runAction(
+              'progress-export',
+              async () => {
+                await exportProgressJson()
+                await exportProgressCsv()
+              },
+              'Progreso exportado en JSON y CSV',
+            )
+          }
+        />
+        <ActionRow icon={Scale} label="Unidades" meta="kg base, vista kg/lb" />
       </SettingsSection>
 
       <SettingsSection title="Rutinas">
@@ -68,17 +135,36 @@ export function SettingsPage() {
           <div className="flex items-center justify-between gap-3">
             <div>
               <h2 className="text-lg font-black">Estado de almacenamiento</h2>
-              <p className="text-sm text-arsen-muted">IndexedDB persistente</p>
+              <p className="text-sm text-arsen-muted">
+                {storage?.persisted ? 'IndexedDB persistente' : 'Persistencia pendiente'}
+              </p>
             </div>
             <Database aria-hidden="true" className="size-8 text-arsen-acid" />
           </div>
           <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/15">
-            <div className="h-full w-1/4 rounded-full bg-gradient-to-r from-arsen-acid to-arsen-acid2" />
+            <div
+              className="h-full rounded-full bg-gradient-to-r from-arsen-acid to-arsen-acid2"
+              style={{ width: `${storagePercent}%` }}
+            />
           </div>
           <div className="mt-3 flex items-center justify-between text-xs text-arsen-muted">
-            <span>1.24 GB usados</span>
-            <span>5.00 GB disponibles</span>
+            <span>{formatBytes(storage?.usage)} usados</span>
+            <span>{formatBytes(storage?.quota)} cuota</span>
           </div>
+          <div className="mt-4 grid grid-cols-3 divide-x divide-white/10 overflow-hidden rounded-[10px] border border-white/10 text-center">
+            <Metric label="Rutinas" value={storage?.routines ?? 0} />
+            <Metric label="Sesiones" value={storage?.sessions ?? 0} />
+            <Metric label="Series" value={storage?.setLogs ?? 0} />
+          </div>
+          {!storage?.persisted ? (
+            <button
+              className="mt-3 w-full rounded-[10px] border border-arsen-acid/40 px-3 py-2 text-sm font-extrabold text-arsen-acid"
+              onClick={() => runAction('persist', requestPersistentStorage, 'Persistencia solicitada')}
+              type="button"
+            >
+              Fijar almacenamiento offline
+            </button>
+          ) : null}
         </Card>
       </SettingsSection>
 
@@ -115,22 +201,47 @@ function SettingsSection({ children, danger = false, title }: SettingsSectionPro
 }
 
 type ActionRowProps = {
+  busy?: boolean
   icon: LucideIcon
   label: string
   meta: string
+  onClick?: () => void
 }
 
-function ActionRow({ icon: Icon, label, meta }: ActionRowProps) {
+function ActionRow({ busy = false, icon: Icon, label, meta, onClick }: ActionRowProps) {
   return (
-    <Card className="content-auto grid grid-cols-[42px_1fr_auto] items-center gap-3 p-3">
+    <button
+      className="content-auto grid w-full grid-cols-[42px_1fr_auto] items-center gap-3 rounded-xl border border-white/10 bg-arsen-surface p-3 text-left shadow-[inset_0_1px_0_rgb(255_255_255_/_0.04)] disabled:opacity-60"
+      disabled={busy}
+      onClick={onClick}
+      type="button"
+    >
       <div className="grid size-10 place-items-center text-arsen-purple2">
         <Icon aria-hidden="true" className="size-6" />
       </div>
       <div>
         <strong>{label}</strong>
-        <span className="mt-1 block text-xs text-arsen-muted">{meta}</span>
+        <span className="mt-1 block text-xs text-arsen-muted">{busy ? 'Procesando...' : meta}</span>
       </div>
       <ChevronRight aria-hidden="true" className="size-5 text-arsen-muted" />
-    </Card>
+    </button>
   )
+}
+
+function Metric({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="px-2 py-3">
+      <div className="text-lg font-black text-arsen-acid">{value}</div>
+      <div className="text-[11px] text-arsen-muted">{label}</div>
+    </div>
+  )
+}
+
+function formatBytes(value?: number | null) {
+  if (!value) return '0 MB'
+
+  const gb = value / 1024 / 1024 / 1024
+  if (gb >= 1) return `${gb.toFixed(2)} GB`
+
+  return `${(value / 1024 / 1024).toFixed(1)} MB`
 }

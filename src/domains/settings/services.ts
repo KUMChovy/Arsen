@@ -7,7 +7,7 @@ import type {
   WeeklyVolumeTarget,
 } from '../routine/types'
 import type { AppSettings } from './types'
-import type { DropSetLog, ExerciseLog, SetLog, SkipLog, WorkoutSession } from '../workout/types'
+import type { DropSetLog, ExerciseLog, SetLog, SkipLog, WeightUnit, WorkoutSession } from '../workout/types'
 import { performanceScore, volumeForSet } from '../../shared/calculations/workout'
 import { downloadJson, downloadText } from '../../shared/utils/download'
 import { localDateKey } from '../../shared/utils/date'
@@ -152,6 +152,17 @@ export async function requestPersistentStorage() {
   if (!navigator.storage?.persist) return false
 
   return navigator.storage.persist()
+}
+
+export async function getAppSettings() {
+  return db.settings.get('app')
+}
+
+export async function updatePreferredUnit(preferredUnit: WeightUnit) {
+  await db.settings.update('app', {
+    preferredUnit,
+    updatedAt: new Date().toISOString(),
+  })
 }
 
 async function buildProgressExport() {

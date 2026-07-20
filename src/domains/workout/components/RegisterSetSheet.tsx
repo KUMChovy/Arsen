@@ -3,6 +3,7 @@ import { Check, Dumbbell, Flame, X } from 'lucide-react'
 import type { RoutineExercise } from '../../routine/types'
 import { ActionButton } from '../../../shared/components/ActionButton'
 import { Card } from '../../../shared/components/Card'
+import { kgToUnit, unitToKg } from '../../../shared/utils/weight'
 import { registerMainSetForExercise, skipRoutineExerciseForDay } from '../services'
 import type { WeightUnit } from '../types'
 
@@ -23,11 +24,11 @@ export function RegisterSetSheet({
   onClose,
   routineId,
 }: RegisterSetSheetProps) {
-  const [weightKg, setWeightKg] = useState('60')
+  const [weightValue, setWeightValue] = useState('60')
   const [reps, setReps] = useState('8')
   const [rir, setRir] = useState('2')
   const [dropEnabled, setDropEnabled] = useState(false)
-  const [dropWeightKg, setDropWeightKg] = useState('48')
+  const [dropWeightValue, setDropWeightValue] = useState('48')
   const [dropReps, setDropReps] = useState('10')
   const [dropRir, setDropRir] = useState('2')
   const [message, setMessage] = useState<string | null>(null)
@@ -36,9 +37,9 @@ export function RegisterSetSheet({
   useEffect(() => {
     if (!exercise) return
     const baseWeight = exercise.currentWeightKg > 0 ? exercise.currentWeightKg : 60
-    setWeightKg(String(baseWeight))
-    setDropWeightKg(String(Math.round(baseWeight * 0.8)))
-  }, [exercise])
+    setWeightValue(String(kgToUnit(baseWeight, displayUnit)))
+    setDropWeightValue(String(kgToUnit(baseWeight * 0.8, displayUnit)))
+  }, [displayUnit, exercise])
 
   if (!exercise) return null
   const activeExercise = exercise
@@ -53,14 +54,14 @@ export function RegisterSetSheet({
           ? {
               reps: numberOrZero(dropReps),
               rir: numberOrZero(dropRir),
-              weightKg: numberOrZero(dropWeightKg),
+              weightKg: unitToKg(numberOrZero(dropWeightValue), displayUnit),
             }
           : null,
         exercise: activeExercise,
         reps: numberOrZero(reps),
         rir: numberOrZero(rir),
         routineId,
-        weightKg: numberOrZero(weightKg),
+        weightKg: unitToKg(numberOrZero(weightValue), displayUnit),
       })
         .then(() => {
           setMessage('Serie guardada')
@@ -109,7 +110,7 @@ export function RegisterSetSheet({
         </div>
 
         <div className="grid grid-cols-3 gap-2">
-          <NumberField label="KG" onChange={setWeightKg} value={weightKg} />
+          <NumberField label={displayUnit.toUpperCase()} onChange={setWeightValue} value={weightValue} />
           <NumberField label="Reps" onChange={setReps} value={reps} />
           <NumberField label="RIR" onChange={setRir} value={rir} />
         </div>
@@ -129,7 +130,7 @@ export function RegisterSetSheet({
           </label>
           {dropEnabled ? (
             <div className="mt-3 grid grid-cols-3 gap-2">
-              <NumberField label="KG drop" onChange={setDropWeightKg} value={dropWeightKg} />
+              <NumberField label={`${displayUnit.toUpperCase()} drop`} onChange={setDropWeightValue} value={dropWeightValue} />
               <NumberField label="Reps" onChange={setDropReps} value={dropReps} />
               <NumberField label="RIR" onChange={setDropRir} value={dropRir} />
             </div>

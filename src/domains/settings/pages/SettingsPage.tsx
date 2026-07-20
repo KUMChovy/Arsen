@@ -20,9 +20,11 @@ import {
   exportFullBackup,
   exportProgressCsv,
   exportProgressJson,
+  getAppSettings,
   getStorageOverview,
   importFullBackup,
   requestPersistentStorage,
+  updatePreferredUnit,
 } from '../services'
 
 const routineActions = [
@@ -34,6 +36,7 @@ export function SettingsPage() {
   const importInputRef = useRef<HTMLInputElement>(null)
   const [busyAction, setBusyAction] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
+  const appSettings = useLiveQuery(() => getAppSettings(), [], undefined)
   const storage = useLiveQuery(() => getStorageOverview(), [], undefined)
   const storagePercent = storage?.usage && storage.quota ? Math.min(100, Math.round((storage.usage / storage.quota) * 100)) : 0
 
@@ -108,7 +111,30 @@ export function SettingsPage() {
             )
           }
         />
-        <ActionRow icon={Scale} label="Unidades" meta="kg base, vista kg/lb" />
+        <Card className="grid grid-cols-[42px_1fr_auto] items-center gap-3 p-3">
+          <div className="grid size-10 place-items-center text-arsen-purple2">
+            <Scale aria-hidden="true" className="size-6" />
+          </div>
+          <div>
+            <strong>Unidades</strong>
+            <span className="mt-1 block text-xs text-arsen-muted">kg base, vista kg/lb</span>
+          </div>
+          <div className="grid grid-cols-2 overflow-hidden rounded-[10px] border border-white/10 text-xs font-black">
+            {(['kg', 'lb'] as const).map((unit) => (
+              <button
+                className={[
+                  'min-h-9 px-3',
+                  appSettings?.preferredUnit === unit ? 'bg-arsen-purple text-white' : 'bg-white/5 text-arsen-muted',
+                ].join(' ')}
+                key={unit}
+                onClick={() => runAction('unit', () => updatePreferredUnit(unit), `Unidad cambiada a ${unit}`)}
+                type="button"
+              >
+                {unit}
+              </button>
+            ))}
+          </div>
+        </Card>
       </SettingsSection>
 
       <SettingsSection title="Rutinas">

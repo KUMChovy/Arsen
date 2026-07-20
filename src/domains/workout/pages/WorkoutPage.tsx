@@ -15,6 +15,7 @@ import { PageHeader } from '../../../shared/components/PageHeader'
 import { useWorkoutDay } from '../../routine/hooks'
 import type { RoutineExercise } from '../../routine/types'
 import { localDateKey } from '../../../shared/utils/date'
+import { formatWeight } from '../../../shared/utils/weight'
 import { RegisterSetSheet } from '../components/RegisterSetSheet'
 import { useWorkoutProgress } from '../hooks'
 import type { ExerciseState } from '../types'
@@ -35,6 +36,7 @@ export function WorkoutPage() {
   const selectedExercise = selectedExerciseId ? dayExercises.find((exercise) => exercise.id === selectedExerciseId) : null
   const completedCount = dailyProgress.completedCount
   const totalCount = dayExercises.length
+  const preferredUnit = workoutDay?.settings.preferredUnit ?? 'kg'
   const statusSummary = [
     { label: 'Pendientes', value: dailyProgress.pendingCount },
     { label: 'En progreso', value: dailyProgress.inProgressCount, tone: 'text-arsen-purple2' },
@@ -120,7 +122,7 @@ export function WorkoutPage() {
 
           <div className="grid grid-cols-4 gap-0 py-3 text-center">
             {[
-              ['Peso anterior', `${currentExercise?.currentWeightKg ?? 0} kg`, 'text-arsen-acid'],
+              ['Peso anterior', formatWeight(currentExercise?.currentWeightKg ?? 0, preferredUnit), 'text-arsen-acid'],
               ['Series', String(currentExercise?.targetSets ?? 0), 'text-arsen-ink'],
               ['RIR', currentExercise?.recommendedRir ?? '-', 'text-arsen-ink'],
               ['Descanso', `${currentExercise?.restSeconds ?? 0} s`, 'text-arsen-acid'],

@@ -1,3 +1,4 @@
+import { useState, useTransition } from 'react'
 import {
   ArrowUpDown,
   CalendarPlus,
@@ -15,6 +16,7 @@ import { Card } from '../../../shared/components/Card'
 import { ExerciseArt, type ExerciseArtKind } from '../../../shared/components/ExerciseArt'
 import { PageHeader } from '../../../shared/components/PageHeader'
 import { useActiveRoutineBundle } from '../hooks'
+import { createDay, createRoutine, duplicateRoutine, setActiveRoutine } from '../services'
 
 
 const quickActions = [
@@ -27,6 +29,16 @@ const quickActions = [
 export function RoutinePage() {
   const bundle = useActiveRoutineBundle()
   const days = bundle?.days ?? []
+  const [isPending, startTransition] = useTransition()
+  const [actionMessage, setActionMessage] = useState<string | null>(null)
+
+  function runRoutineAction(action: () => Promise<string | void>, message: string) {
+    startTransition(() => {
+      action()
+        .then(() => setActionMessage(message))
+        .catch((error: unknown) => setActionMessage(error instanceof Error ? error.message : 'Acción no completada'))
+    })
+  }
 
   return (
     <div className="space-y-4">
@@ -47,12 +59,27 @@ export function RoutinePage() {
                 : 'border-white/10 bg-arsen-surface text-arsen-muted',
             ].join(' ')}
             key={item.label}
+            onClick={() => {
+              if (!bundle) return
+              if (item.label === 'Crear día') {
+                runRoutineAction(() => createDay(bundle.routine.id, `Dia ${days.length + 1}`), 'Día creado')
+              }
+              if (item.label === 'Duplicar') {
+                runRoutineAction(() => duplicateRoutine(bundle.routine.id), 'Rutina duplicada')
+              }
+            }}
           >
             <item.icon aria-hidden="true" className="size-5" />
             {item.label}
           </button>
         ))}
       </section>
+
+      {actionMessage ? (
+        <div className="rounded-[10px] border border-arsen-purple/40 bg-arsen-purple/15 px-3 py-2 text-xs text-arsen-purple2">
+          {actionMessage}
+        </div>
+      ) : null}
 
       <div className="grid grid-cols-3 overflow-hidden rounded-[10px] border border-white/10 bg-arsen-surface">
         {['Ver', 'Editar', 'Catálogo'].map((tab, index) => (
@@ -122,7 +149,17 @@ export function RoutinePage() {
       </section>
 
       <div className="space-y-2">
-        <ActionButton className="w-full">
+        <ActionButton
+          className="w-full"
+          disabled={isPending}
+          onClick={() =>
+            runRoutineAction(async () => {
+              const routineId = await createRoutine('Nueva rutina')
+              await setActiveRoutine(routineId)
+              return routineId
+            }, 'Rutina creada y activada')
+          }
+        >
           <PlusCircle aria-hidden="true" className="size-5" />
           Crear rutina
         </ActionButton>

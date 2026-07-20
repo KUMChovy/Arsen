@@ -24,6 +24,13 @@ export type ProgressExerciseOption = {
   sessions: number
 }
 
+export type ProgressDayOption = {
+  dayId: string
+  name: string
+  routineName: string
+  sessions: number
+}
+
 export type RecentSessionSummary = {
   bestSetId: string | null
   bestSetLabel: string
@@ -34,17 +41,25 @@ export type RecentSessionSummary = {
   volumeKg: number
 }
 
-export async function getProgressOverview(canonicalNameFilter: string | null = null): Promise<ProgressOverview> {
-  const [sessions, exerciseLogs, setLogs, dropSetLogs] = await Promise.all([
+export type ProgressOverviewFilters = {
+  canonicalName?: string | null
+  dayId?: string | null
+}
+
+export async function getProgressOverview(filters: ProgressOverviewFilters = {}): Promise<ProgressOverview> {
+  const [allSessions, exerciseLogs, setLogs, dropSetLogs] = await Promise.all([
     db.workoutSessions.orderBy('date').toArray(),
     db.exerciseLogs.toArray(),
     db.setLogs.toArray(),
     db.dropSetLogs.toArray(),
   ])
-  const filteredExerciseLogs = canonicalNameFilter
-    ? exerciseLogs.filter((log) => log.snapshot.canonicalName === canonicalNameFilter)
-    : exerciseLogs
+  const sessions = filters.dayId ? allSessions.filter((session) => session.dayId === filters.dayId) : allSessions
+  const sessionIds = new Set(sessions.map((session) => session.id))
+  const filteredExerciseLogs = filters.canonicalName
+    ? exerciseLogs.filter((log) => sessionIds.has(log.sessionId) && log.snapshot.canonicalName === filters.canonicalName)
+    : exerciseLogs.filter((log) => sessionIds.has(log.sessionId))
   const filteredExerciseLogIds = new Set(filteredExerciseLogs.map((log) => log.id))
+  const filteredSessionIds = new Set(filteredExerciseLogs.map((log) => log.sessionId))
   const firstExerciseLog = filteredExerciseLogs[0]
   const exerciseName = firstExerciseLog?.snapshot.name ?? 'Sin registros'
   const mainSets = setLogs.filter((set) => set.kind === 'main' && filteredExerciseLogIds.has(set.exerciseLogId))
@@ -115,7 +130,7 @@ export async function getProgressOverview(canonicalNameFilter: string | null = n
     lastSessionDate: recentSessions[0]?.date ?? null,
     maxWeightKg,
     recentSessions,
-    sessionCount: sessions.length,
+    sessionCount: filteredSessionIds.size,
     totalSets: mainSets.length,
     volumeKg,
   }
@@ -139,6 +154,30 @@ export async function getProgressExerciseOptions(): Promise<ProgressExerciseOpti
   }
 
   return [...options.values()].sort((a, b) => a.name.localeCompare(b.name))
+}
+
+export async function getProgressDayOptions(): Promise<ProgressDayOption[]> {
+  const [routines, days, sessions] = await Promise.all([
+    db.routines.toArray(),
+    db.routineDays.toArray(),
+    db.workoutSessions.toArray(),
+  ])
+  const routineById = new Map(routines.map((routine) => [routine.id, routine.name]))
+  const sessionsByDay = new Map<string, number>()
+
+  for (const session of sessions) {
+    sessionsByDay.set(session.dayId, (sessionsByDay.get(session.dayId) ?? 0) + 1)
+  }
+
+  return days
+    .map((day) => ({
+      dayId: day.id,
+      name: day.name,
+      routineName: routineById.get(day.routineId) ?? 'Rutina eliminada',
+      sessions: sessionsByDay.get(day.id) ?? 0,
+    }))
+    .filter((option) => option.sessions > 0)
+    .sort((a, b) => a.routineName.localeCompare(b.routineName) || a.name.localeCompare(b.name))
 }
 
 function formatShortDate(date: string) {

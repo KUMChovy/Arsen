@@ -3,7 +3,7 @@ import { db } from '../../db/schema'
 import { createId } from '../../shared/utils/id'
 import { canonicalName } from '../../shared/utils/normalize'
 
-type ExerciseInput = {
+export type ExerciseInput = {
   name: string
   mainMuscle: string
   equipment?: Equipment
@@ -160,6 +160,22 @@ export async function renameDay(dayId: string, name: string) {
   })
 }
 
+export async function updateDay(
+  dayId: string,
+  input: {
+    description: string
+    name: string
+    weekday: RoutineDay['weekday']
+  },
+) {
+  await db.routineDays.update(dayId, {
+    description: input.description.trim(),
+    name: input.name.trim() || 'Dia sin nombre',
+    updatedAt: new Date().toISOString(),
+    weekday: input.weekday,
+  })
+}
+
 export async function duplicateDay(dayId: string) {
   const day = await db.routineDays.get(dayId)
   if (!day) throw new Error('Día no encontrado')
@@ -241,6 +257,41 @@ export async function createExercise(routineId: string, dayId: string, input: Ex
     progression: input.progression ?? '',
     technicalNotes: input.technicalNotes ?? '',
     currentWeightKg: input.currentWeightKg ?? 0,
+    order,
+    createdAt: now,
+    updatedAt: now,
+  }
+
+  await db.routineExercises.add(exercise)
+
+  return exercise.id
+}
+
+export async function addCatalogExerciseToDay(routineId: string, dayId: string, catalogItemId: string) {
+  const catalogItem = await db.exerciseCatalog.get(catalogItemId)
+  if (!catalogItem) throw new Error('Ejercicio de catalogo no encontrado')
+
+  const now = new Date().toISOString()
+  const order = await db.routineExercises.where('dayId').equals(dayId).count()
+  const exercise: RoutineExercise = {
+    id: createId('exercise'),
+    routineId,
+    dayId,
+    sourceExerciseId: catalogItem.id,
+    name: catalogItem.name,
+    canonicalName: catalogItem.canonicalName,
+    mainMuscle: catalogItem.mainMuscle,
+    equipment: catalogItem.equipment,
+    targetSets: catalogItem.defaultTargetSets,
+    repRange: catalogItem.defaultRepRange,
+    recommendedRir: catalogItem.defaultRecommendedRir,
+    rest: `${catalogItem.defaultRestSeconds} seg`,
+    restSeconds: catalogItem.defaultRestSeconds,
+    warmupSets: 0,
+    warmupProtocol: '',
+    progression: '',
+    technicalNotes: '',
+    currentWeightKg: 0,
     order,
     createdAt: now,
     updatedAt: now,

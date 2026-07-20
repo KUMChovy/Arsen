@@ -41,3 +41,11 @@ export async function getWorkoutDayForDate(date: Date) {
     dayExercises: bundle.exercisesByDay.get(day.id) ?? [],
   }
 }
+
+export async function getExerciseCatalog() {
+  return db.exerciseCatalog.orderBy('canonicalName').toArray()
+}
+
+export async function getRoutines() {
+  return db.routines.orderBy('updatedAt').reverse().toArray()
+}

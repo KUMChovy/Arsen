@@ -11,6 +11,7 @@ import type { DropSetLog, ExerciseLog, SetLog, SkipLog, WeightUnit, WorkoutSessi
 import { performanceScore, volumeForSet } from '../../shared/calculations/workout'
 import { downloadJson, downloadText } from '../../shared/utils/download'
 import { localDateKey } from '../../shared/utils/date'
+import { backupSchema } from '../../shared/validation/arsenImportSchemas'
 import { deleteWorkoutSession } from '../workout/services'
 
 export async function exportFullBackup() {
@@ -325,13 +326,10 @@ type BackupTables = {
 
 function parseBackup(content: string): { tables: BackupTables } {
   const parsed: unknown = JSON.parse(content)
-  if (!isObject(parsed) || !isObject(parsed.tables)) {
+  const result = backupSchema.safeParse(parsed)
+  if (!result.success) {
     throw new Error('El archivo no es un respaldo Arsen valido')
   }
 
-  return { tables: parsed.tables as BackupTables }
-}
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null
+  return { tables: result.data.tables as BackupTables }
 }

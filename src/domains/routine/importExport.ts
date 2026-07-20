@@ -1,6 +1,7 @@
 import { CURRENT_SCHEMA_VERSION, db } from '../../db/schema'
 import { downloadJson } from '../../shared/utils/download'
 import { createId } from '../../shared/utils/id'
+import { routineExportSchema } from '../../shared/validation/arsenImportSchemas'
 import type { Routine, RoutineDay, RoutineExercise, WeeklyVolumeTarget } from './types'
 
 type RoutineExport = {
@@ -81,20 +82,18 @@ export async function importRoutineJson(file: File) {
 
 function parseRoutineExport(content: string): RoutineExport {
   const parsed: unknown = JSON.parse(content)
-  if (!isObject(parsed) || !isObject(parsed.routine) || !Array.isArray(parsed.days) || !Array.isArray(parsed.exercises)) {
+  const result = routineExportSchema.safeParse(parsed)
+  if (!result.success) {
     throw new Error('El archivo no es una rutina Arsen valida')
   }
+  const data = result.data
 
   return {
-    days: parsed.days as RoutineDay[],
-    exercises: parsed.exercises as RoutineExercise[],
-    exportedAt: String(parsed.exportedAt ?? ''),
-    routine: parsed.routine as Routine,
-    schemaVersion: Number(parsed.schemaVersion ?? CURRENT_SCHEMA_VERSION),
-    weeklyVolumeTargets: Array.isArray(parsed.weeklyVolumeTargets) ? (parsed.weeklyVolumeTargets as WeeklyVolumeTarget[]) : [],
+    days: data.days as RoutineDay[],
+    exercises: data.exercises as RoutineExercise[],
+    exportedAt: data.exportedAt,
+    routine: data.routine as Routine,
+    schemaVersion: data.schemaVersion,
+    weeklyVolumeTargets: data.weeklyVolumeTargets as WeeklyVolumeTarget[],
   }
-}
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null
 }

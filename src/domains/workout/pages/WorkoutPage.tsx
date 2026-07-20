@@ -1,42 +1,35 @@
-import {
-  CalendarDays,
-  ChevronRight,
-  Clock3,
-  History,
-  Info,
-  ListChecks,
-  StickyNote,
-} from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { CalendarDays, Check, ChevronRight, Clock3, History, Info, ListChecks, StickyNote } from 'lucide-react'
+import { useEffect, useMemo, useState, useTransition } from 'react'
 import { ActionButton } from '../../../shared/components/ActionButton'
 import { Card } from '../../../shared/components/Card'
 import { ExerciseArt, type ExerciseArtKind } from '../../../shared/components/ExerciseArt'
 import { PageHeader } from '../../../shared/components/PageHeader'
-import { useWorkoutDay } from '../../routine/hooks'
-import type { RoutineExercise } from '../../routine/types'
 import { localDateKey } from '../../../shared/utils/date'
 import { formatWeight } from '../../../shared/utils/weight'
+import { useWorkoutDay } from '../../routine/hooks'
+import type { RoutineExercise } from '../../routine/types'
 import { RegisterSetSheet } from '../components/RegisterSetSheet'
 import { useWorkoutProgress } from '../hooks'
-import type { ExerciseState } from '../types'
-
-const warmups = [
-  { weight: '40 kg', reps: '10 reps', rir: 'RIR 4' },
-  { weight: '50 kg', reps: '6 reps', rir: 'RIR 3' },
-]
+import { updateSessionNotesForDay } from '../services'
+import type { ExerciseState, WeightUnit } from '../types'
 
 export function WorkoutPage() {
   const today = useMemo(() => new Date(), [])
-  const dateKey = localDateKey(today)
-  const workoutDay = useWorkoutDay(today)
+  const [dateKey, setDateKey] = useState(() => localDateKey(today))
+  const selectedDate = useMemo(() => new Date(`${dateKey}T12:00:00`), [dateKey])
+  const workoutDay = useWorkoutDay(selectedDate)
   const dayExercises = workoutDay?.dayExercises ?? []
   const dailyProgress = useWorkoutProgress(dateKey, workoutDay?.day.id, dayExercises)
   const [selectedExerciseId, setSelectedExerciseId] = useState<string | null>(null)
+  const [notes, setNotes] = useState('')
+  const [isPending, startTransition] = useTransition()
+  const [message, setMessage] = useState<string | null>(null)
   const currentExercise = dayExercises.find((exercise) => dailyProgress.stateByExerciseId.get(exercise.id) !== 'done') ?? dayExercises[0]
   const selectedExercise = selectedExerciseId ? dayExercises.find((exercise) => exercise.id === selectedExerciseId) : null
   const completedCount = dailyProgress.completedCount
   const totalCount = dayExercises.length
   const preferredUnit = workoutDay?.settings.preferredUnit ?? 'kg'
+  const warmups = buildWarmups(currentExercise, preferredUnit)
   const statusSummary = [
     { label: 'Pendientes', value: dailyProgress.pendingCount },
     { label: 'En progreso', value: dailyProgress.inProgressCount, tone: 'text-arsen-purple2' },
@@ -44,16 +37,37 @@ export function WorkoutPage() {
     { label: 'Saltados', value: dailyProgress.skippedCount, tone: 'text-arsen-dim' },
   ]
 
+  useEffect(() => {
+    setNotes(dailyProgress.progress?.session?.notes ?? '')
+  }, [dailyProgress.progress?.session?.notes])
+
+  function saveNotes() {
+    if (!workoutDay) return
+
+    startTransition(() => {
+      updateSessionNotesForDay({
+        date: dateKey,
+        dayId: workoutDay.day.id,
+        displayUnit: workoutDay.settings.preferredUnit,
+        notes,
+        routineId: workoutDay.routine.id,
+      })
+        .then(() => setMessage('Notas guardadas'))
+        .catch((error: unknown) => setMessage(error instanceof Error ? error.message : 'No se guardaron las notas'))
+    })
+  }
+
   return (
     <div className="space-y-4">
       <PageHeader
-        eyebrow={`${weekdayLabel(today)} · ${workoutDay?.day.name ?? 'Cargando'} · sesión activa`}
-        title="Entreno de hoy"
+        eyebrow={`${weekdayLabel(selectedDate)} · ${workoutDay?.day.name ?? 'Cargando'} · sesion activa`}
+        title={dateKey === localDateKey(today) ? 'Entreno de hoy' : 'Entreno registrado'}
       >
-        <button className="grid size-10 place-items-center rounded-[10px] text-arsen-muted">
+        <label className="grid size-10 place-items-center rounded-[10px] text-arsen-muted">
           <CalendarDays aria-hidden="true" className="size-5" />
           <span className="sr-only">Cambiar fecha</span>
-        </button>
+          <input className="sr-only" onChange={(event) => setDateKey(event.target.value)} type="date" value={dateKey} />
+        </label>
       </PageHeader>
 
       <section className="grid grid-cols-4 gap-2">
@@ -71,12 +85,49 @@ export function WorkoutPage() {
                 : 'border-white/10 bg-arsen-surface text-arsen-muted',
             ].join(' ')}
             key={item.label}
+            type="button"
           >
             <item.icon aria-hidden="true" className="size-5" />
             {item.label}
           </button>
         ))}
       </section>
+
+      <Card className="p-3">
+        <div className="grid grid-cols-[1fr_auto] items-end gap-3">
+          <label className="block">
+            <span className="mb-1 block text-xs font-bold text-arsen-muted">Fecha de sesion</span>
+            <input
+              className="min-h-11 w-full rounded-[10px] border border-white/10 bg-arsen-bg px-3 text-sm font-extrabold text-arsen-ink"
+              onChange={(event) => setDateKey(event.target.value)}
+              type="date"
+              value={dateKey}
+            />
+          </label>
+          <span className="pb-3 text-xs font-extrabold text-arsen-purple2">{preferredUnit.toUpperCase()}</span>
+        </div>
+        <label className="mt-3 block">
+          <span className="mb-1 block text-xs font-bold text-arsen-muted">Notas personales</span>
+          <textarea
+            className="min-h-20 w-full rounded-[10px] border border-white/10 bg-arsen-bg px-3 py-2 text-sm font-semibold text-arsen-ink"
+            onChange={(event) => setNotes(event.target.value)}
+            placeholder="Sensaciones, tecnica, energia, molestias..."
+            value={notes}
+          />
+        </label>
+        <div className="mt-3 flex items-center justify-between gap-3">
+          <span className="text-xs text-arsen-muted">{message ?? 'Offline en IndexedDB'}</span>
+          <button
+            className="inline-flex min-h-10 items-center gap-2 rounded-[10px] bg-arsen-purple px-3 text-xs font-extrabold text-white disabled:opacity-50"
+            disabled={isPending || !workoutDay}
+            onClick={saveNotes}
+            type="button"
+          >
+            <Check aria-hidden="true" className="size-4" />
+            Guardar
+          </button>
+        </div>
+      </Card>
 
       <Card className="p-4">
         <div className="flex items-center justify-between gap-3">
@@ -144,17 +195,17 @@ export function WorkoutPage() {
       <section>
         <div className="mb-2 flex items-center justify-between text-xs font-extrabold">
           <span className="text-arsen-muted">Calentamiento</span>
-          <span className="text-arsen-purple2">2 series</span>
+          <span className="text-arsen-purple2">{warmups.length} series</span>
         </div>
         <div className="space-y-2">
           {warmups.map((set, index) => (
-            <Card className="grid grid-cols-[28px_1fr_1fr_1fr] items-center gap-2 p-3 text-sm" key={set.weight}>
+            <Card className="grid grid-cols-[28px_1fr_1fr_1fr] items-center gap-2 p-3 text-sm" key={`${set.weight}-${index}`}>
               <span className="grid size-6 place-items-center rounded-full border border-white/15 text-xs text-arsen-muted">
                 {index + 1}
               </span>
               <strong className="text-arsen-acid">{set.weight}</strong>
-              <span>{set.reps}</span>
-              <span>{set.rir}</span>
+              <span>{set.reps} reps</span>
+              <span>RIR {set.rir}</span>
             </Card>
           ))}
         </div>
@@ -162,29 +213,30 @@ export function WorkoutPage() {
 
       <section>
         <div className="mb-2 flex items-center justify-between text-xs font-extrabold">
-          <span className="text-arsen-muted">Ejercicios del día</span>
+          <span className="text-arsen-muted">Ejercicios del dia</span>
           <span className="text-arsen-purple2">Estado</span>
         </div>
         <div className="space-y-2">
-          {dayExercises.slice(0, 6).map((exercise) => {
+          {dayExercises.slice(0, 8).map((exercise) => {
             const state = dailyProgress.stateByExerciseId.get(exercise.id) ?? 'pending'
 
             return (
-            <button className="block text-left" key={exercise.name} onClick={() => setSelectedExerciseId(exercise.id)}>
-              <Card className="content-auto grid grid-cols-[52px_1fr_auto] items-center gap-3 p-2">
-              <ExerciseArt alt={exercise.name} className="size-[52px]" kind={artForExercise(exercise)} />
-              <div className="min-w-0">
-                <h3 className="truncate text-sm font-extrabold">{exercise.name}</h3>
-                <span className="mt-1 block truncate text-xs text-arsen-muted">
-                  {exercise.mainMuscle} · {exercise.targetSets}x{exercise.repRange} · RIR {exercise.recommendedRir}
-                </span>
-              </div>
-              <span className={['rounded-full px-2 py-1 text-[10px] font-bold', stateClassName(state)].join(' ')}>
-                {stateLabel(state)}
-              </span>
-              </Card>
-            </button>
-          )})}
+              <button className="block w-full text-left" key={exercise.id} onClick={() => setSelectedExerciseId(exercise.id)} type="button">
+                <Card className="content-auto grid grid-cols-[52px_1fr_auto] items-center gap-3 p-2">
+                  <ExerciseArt alt={exercise.name} className="size-[52px]" kind={artForExercise(exercise)} />
+                  <div className="min-w-0">
+                    <h3 className="truncate text-sm font-extrabold">{exercise.name}</h3>
+                    <span className="mt-1 block truncate text-xs text-arsen-muted">
+                      {exercise.mainMuscle} · {exercise.targetSets}x{exercise.repRange} · RIR {exercise.recommendedRir}
+                    </span>
+                  </div>
+                  <span className={['rounded-full px-2 py-1 text-[10px] font-bold', stateClassName(state)].join(' ')}>
+                    {stateLabel(state)}
+                  </span>
+                </Card>
+              </button>
+            )
+          })}
         </div>
       </section>
 
@@ -200,6 +252,22 @@ export function WorkoutPage() {
       ) : null}
     </div>
   )
+}
+
+function buildWarmups(exercise: RoutineExercise | undefined, unit: WeightUnit) {
+  if (!exercise) return []
+
+  const workingWeight = exercise.currentWeightKg
+  const warmupCount = exercise.warmupSets || 2
+  if (warmupCount <= 0 || workingWeight <= 0) return []
+
+  const percentages = warmupCount >= 3 ? [0.5, 0.65, 0.8] : [0.55, 0.75]
+  const reps = warmupCount >= 3 ? [10, 6, 3] : [10, 6]
+  return percentages.slice(0, warmupCount).map((percentage, index) => ({
+    reps: reps[index] ?? 5,
+    rir: Math.max(4 - index, 2),
+    weight: formatWeight(Math.round(workingWeight * percentage * 2) / 2, unit),
+  }))
 }
 
 function artForExercise(exercise: RoutineExercise | undefined): ExerciseArtKind {

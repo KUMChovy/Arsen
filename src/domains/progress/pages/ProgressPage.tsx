@@ -1,6 +1,5 @@
-import { useState, useTransition } from 'react'
+import { lazy, Suspense, useState, useTransition } from 'react'
 import { ChartLine, ChevronDown, Download, NotebookTabs, Pencil, SlidersHorizontal, Trash2, Trophy } from 'lucide-react'
-import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { Card } from '../../../shared/components/Card'
 import { ExerciseArt } from '../../../shared/components/ExerciseArt'
 import { PageHeader } from '../../../shared/components/PageHeader'
@@ -10,6 +9,10 @@ import { useProgressDayOptions, useProgressExerciseOptions, useProgressOverview 
 import type { RecentSessionSummary } from '../repository'
 
 type ProgressMode = 'general' | 'day' | 'exercise' | 'global'
+
+const ProgressChart = lazy(() =>
+  import('../components/ProgressChart').then((module) => ({ default: module.ProgressChart })),
+)
 
 export function ProgressPage() {
   const [mode, setMode] = useState<ProgressMode>('general')
@@ -207,28 +210,9 @@ export function ProgressPage() {
 
         <div className="h-48 rounded-[10px] border border-white/10 bg-arsen-bg/50 p-2">
           {chartData.length > 0 ? (
-            <ResponsiveContainer height="100%" width="100%">
-              <LineChart data={chartData} margin={{ bottom: 4, left: -28, right: 8, top: 8 }}>
-                <XAxis dataKey="date" fontSize={10} stroke="oklch(0.73 0.012 280)" tickLine={false} />
-                <YAxis domain={[0, 100]} fontSize={10} stroke="oklch(0.73 0.012 280)" tickLine={false} />
-                <Tooltip
-                  contentStyle={{
-                    background: 'oklch(0.155 0.016 280)',
-                    border: '1px solid rgb(255 255 255 / 0.12)',
-                    borderRadius: '10px',
-                    color: 'white',
-                  }}
-                />
-                <Line
-                  activeDot={{ fill: 'oklch(0.86 0.20 125)', r: 5 }}
-                  dataKey="score"
-                  dot={{ fill: 'oklch(0.86 0.20 125)', r: 4 }}
-                  stroke="oklch(0.72 0.13 300)"
-                  strokeWidth={3}
-                  type="monotone"
-                />
-              </LineChart>
-            </ResponsiveContainer>
+            <Suspense fallback={<div className="h-full animate-pulse rounded-[10px] bg-white/5" />}>
+              <ProgressChart data={chartData} />
+            </Suspense>
           ) : (
             <div className="grid h-full place-items-center text-center text-sm text-arsen-muted">
               Registra una serie para crear tu primera grafica.

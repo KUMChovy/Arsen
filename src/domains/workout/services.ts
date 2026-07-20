@@ -289,6 +289,17 @@ export async function updateMainSet(
   })
 }
 
+export async function deleteMainSet(setLogId: string) {
+  const set = await db.setLogs.get(setLogId)
+  if (!set) throw new Error('Serie no encontrada')
+
+  await db.transaction('rw', [db.setLogs, db.dropSetLogs, db.exerciseLogs], async () => {
+    await db.dropSetLogs.where('setLogId').equals(setLogId).delete()
+    await db.setLogs.delete(setLogId)
+    await refreshExerciseState(set.exerciseLogId)
+  })
+}
+
 export async function deleteWorkoutSession(sessionId: string) {
   const exerciseLogs = await db.exerciseLogs.where('sessionId').equals(sessionId).toArray()
   const exerciseLogIds = exerciseLogs.map((log) => log.id)

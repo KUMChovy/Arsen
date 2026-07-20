@@ -13,6 +13,7 @@ type RegisterSetSheetProps = {
   displayUnit: WeightUnit
   exercise: RoutineExercise | null
   onClose: () => void
+  onSaved?: (restSeconds: number) => void
   routineId: string
 }
 
@@ -22,6 +23,7 @@ export function RegisterSetSheet({
   displayUnit,
   exercise,
   onClose,
+  onSaved,
   routineId,
 }: RegisterSetSheetProps) {
   const [weightValue, setWeightValue] = useState('60')
@@ -65,6 +67,7 @@ export function RegisterSetSheet({
       })
         .then(() => {
           setMessage('Serie guardada')
+          onSaved?.(activeExercise.restSeconds)
           onClose()
         })
         .catch((error: unknown) => setMessage(error instanceof Error ? error.message : 'No se guardó la serie'))

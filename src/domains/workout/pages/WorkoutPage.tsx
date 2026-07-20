@@ -1,4 +1,17 @@
-import { CalendarDays, Check, ChevronRight, Clock3, History, Info, ListChecks, StickyNote } from 'lucide-react'
+import {
+  CalendarDays,
+  Check,
+  ChevronRight,
+  Clock3,
+  History,
+  Info,
+  ListChecks,
+  Pencil,
+  Play,
+  Square,
+  StickyNote,
+  Trash2,
+} from 'lucide-react'
 import { useEffect, useMemo, useState, useTransition } from 'react'
 import { ActionButton } from '../../../shared/components/ActionButton'
 import { Card } from '../../../shared/components/Card'
@@ -11,8 +24,8 @@ import { useWorkoutDay } from '../../routine/hooks'
 import type { RoutineExercise } from '../../routine/types'
 import { RegisterSetSheet } from '../components/RegisterSetSheet'
 import { useWorkoutProgress } from '../hooks'
-import { updateSessionNotesForDay } from '../services'
-import type { ExerciseState, WeightUnit } from '../types'
+import { deleteMainSet, updateMainSet, updateSessionNotesForDay } from '../services'
+import type { ExerciseState, SetLog, WeightUnit } from '../types'
 
 export function WorkoutPage() {
   const today = useMemo(() => new Date(), [])
@@ -23,6 +36,8 @@ export function WorkoutPage() {
   const dailyProgress = useWorkoutProgress(dateKey, workoutDay?.day.id, dayExercises)
   const [selectedExerciseId, setSelectedExerciseId] = useState<string | null>(null)
   const [notes, setNotes] = useState('')
+  const [restRemaining, setRestRemaining] = useState(0)
+  const [restRunning, setRestRunning] = useState(false)
   const [isPending, startTransition] = useTransition()
   const [message, setMessage] = useState<string | null>(null)
   const currentExercise = dayExercises.find((exercise) => dailyProgress.stateByExerciseId.get(exercise.id) !== 'done') ?? dayExercises[0]
@@ -33,6 +48,19 @@ export function WorkoutPage() {
   const warmups = buildWarmups(currentExercise, preferredUnit)
   const mainSets = dailyProgress.setLogs.filter((set) => set.kind === 'main')
   const dailyVolume = Math.round(totalVolume(mainSets, dailyProgress.dropSets))
+  const loggedSetRows = useMemo(
+    () =>
+      dayExercises.flatMap((exercise) => {
+        const log = dailyProgress.exerciseLogByExerciseId.get(exercise.id)
+        if (!log) return []
+
+        return dailyProgress.setLogs
+          .filter((set) => set.kind === 'main' && set.exerciseLogId === log.id)
+          .sort((a, b) => a.order - b.order)
+          .map((set) => ({ exercise, set }))
+      }),
+    [dailyProgress.exerciseLogByExerciseId, dailyProgress.setLogs, dayExercises],
+  )
   const statusSummary = [
     { label: 'Pendientes', value: dailyProgress.pendingCount },
     { label: 'En progreso', value: dailyProgress.inProgressCount, tone: 'text-arsen-purple2' },
@@ -43,6 +71,20 @@ export function WorkoutPage() {
   useEffect(() => {
     setNotes(dailyProgress.progress?.session?.notes ?? '')
   }, [dailyProgress.progress?.session?.notes])
+
+  useEffect(() => {
+    if (!restRunning) return
+
+    const id = window.setInterval(() => {
+      setRestRemaining((current) => Math.max(current - 1, 0))
+    }, 1000)
+
+    return () => window.clearInterval(id)
+  }, [restRunning])
+
+  useEffect(() => {
+    if (restRemaining === 0) setRestRunning(false)
+  }, [restRemaining])
 
   function saveNotes() {
     if (!workoutDay) return
@@ -58,6 +100,36 @@ export function WorkoutPage() {
         .then(() => setMessage('Notas guardadas'))
         .catch((error: unknown) => setMessage(error instanceof Error ? error.message : 'No se guardaron las notas'))
     })
+  }
+
+  function runSetAction(action: () => Promise<void>, success: string) {
+    startTransition(() => {
+      action()
+        .then(() => setMessage(success))
+        .catch((error: unknown) => setMessage(error instanceof Error ? error.message : 'Accion no completada'))
+    })
+  }
+
+  function editSet(set: SetLog) {
+    const value = window.prompt('Editar serie: peso kg, reps, RIR', `${set.weightKg},${set.reps},${set.rir}`)
+    if (!value) return
+
+    const values = value.split(',').map((item) => Number(item.trim()))
+    const weightKg = values[0]
+    const reps = values[1]
+    const rir = values[2]
+    if (weightKg === undefined || reps === undefined || rir === undefined || ![weightKg, reps, rir].every(Number.isFinite)) {
+      setMessage('Formato invalido. Usa: 80,8,1')
+      return
+    }
+
+    runSetAction(() => updateMainSet(set.id, { reps, rir, weightKg }), 'Serie editada')
+  }
+
+  function deleteSet(set: SetLog) {
+    if (!window.confirm('Eliminar esta serie y sus drop sets?')) return
+
+    runSetAction(() => deleteMainSet(set.id), 'Serie eliminada')
   }
 
   return (
@@ -95,6 +167,17 @@ export function WorkoutPage() {
           </button>
         ))}
       </section>
+
+      <RestTimerCard
+        onPause={() => setRestRunning(false)}
+        onResume={() => setRestRunning(true)}
+        onStop={() => {
+          setRestRemaining(0)
+          setRestRunning(false)
+        }}
+        remaining={restRemaining}
+        running={restRunning}
+      />
 
       <Card className="p-3">
         <div className="grid grid-cols-[1fr_auto] items-end gap-3">
@@ -175,6 +258,49 @@ export function WorkoutPage() {
             <strong className="block text-base text-arsen-acid">{dailyVolume}</strong>
             <span className="mt-1 block text-[10px] text-arsen-muted">Volumen kg</span>
           </Card>
+        </div>
+      </section>
+
+      <section>
+        <div className="mb-2 flex items-center justify-between text-xs font-extrabold">
+          <span className="text-arsen-muted">Series registradas</span>
+          <span className="text-arsen-purple2">{loggedSetRows.length}</span>
+        </div>
+        <div className="space-y-2">
+          {loggedSetRows.length > 0 ? (
+            loggedSetRows.map(({ exercise, set }) => (
+              <Card className="grid grid-cols-[1fr_auto] items-center gap-3 p-3" key={set.id}>
+                <div className="min-w-0">
+                  <strong className="block truncate text-sm">{exercise.name}</strong>
+                  <span className="mt-1 block text-xs text-arsen-muted">
+                    Serie {set.order + 1} · {formatWeight(set.weightKg, preferredUnit)} · {set.reps} reps · RIR {set.rir}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <button
+                    className="grid size-9 place-items-center rounded-[10px] border border-white/10 text-arsen-purple2 disabled:opacity-40"
+                    disabled={isPending}
+                    onClick={() => editSet(set)}
+                    type="button"
+                  >
+                    <Pencil aria-hidden="true" className="size-4" />
+                    <span className="sr-only">Editar serie</span>
+                  </button>
+                  <button
+                    className="grid size-9 place-items-center rounded-[10px] border border-red-300/30 text-red-300 disabled:opacity-40"
+                    disabled={isPending}
+                    onClick={() => deleteSet(set)}
+                    type="button"
+                  >
+                    <Trash2 aria-hidden="true" className="size-4" />
+                    <span className="sr-only">Eliminar serie</span>
+                  </button>
+                </div>
+              </Card>
+            ))
+          ) : (
+            <Card className="p-4 text-sm text-arsen-muted">Sin series registradas en esta sesion.</Card>
+          )}
         </div>
       </section>
 
@@ -268,6 +394,10 @@ export function WorkoutPage() {
           displayUnit={workoutDay.settings.preferredUnit}
           exercise={selectedExercise}
           onClose={() => setSelectedExerciseId(null)}
+          onSaved={(restSeconds) => {
+            setRestRemaining(restSeconds)
+            setRestRunning(restSeconds > 0)
+          }}
           routineId={workoutDay.routine.id}
         />
       ) : null}
@@ -289,6 +419,49 @@ function buildWarmups(exercise: RoutineExercise | undefined, unit: WeightUnit) {
     rir: Math.max(4 - index, 2),
     weight: formatWeight(Math.round(workingWeight * percentage * 2) / 2, unit),
   }))
+}
+
+function RestTimerCard({
+  onPause,
+  onResume,
+  onStop,
+  remaining,
+  running,
+}: {
+  onPause: () => void
+  onResume: () => void
+  onStop: () => void
+  remaining: number
+  running: boolean
+}) {
+  if (remaining <= 0) return null
+
+  const minutes = Math.floor(remaining / 60)
+  const seconds = String(remaining % 60).padStart(2, '0')
+
+  return (
+    <Card className="grid grid-cols-[1fr_auto] items-center gap-3 border-arsen-acid/35 p-3">
+      <div>
+        <span className="text-xs font-extrabold text-arsen-muted">Descanso</span>
+        <strong className="mt-1 block text-3xl leading-none text-arsen-acid">
+          {minutes}:{seconds}
+        </strong>
+      </div>
+      <div className="flex items-center gap-2">
+        <button
+          className="grid size-10 place-items-center rounded-[10px] bg-arsen-purple text-white"
+          onClick={running ? onPause : onResume}
+          type="button"
+        >
+          {running ? <Square aria-hidden="true" className="size-4" /> : <Play aria-hidden="true" className="size-4" />}
+          <span className="sr-only">{running ? 'Pausar descanso' : 'Reanudar descanso'}</span>
+        </button>
+        <button className="rounded-[10px] border border-white/10 px-3 py-2 text-xs font-extrabold text-arsen-muted" onClick={onStop} type="button">
+          Cerrar
+        </button>
+      </div>
+    </Card>
+  )
 }
 
 function artForExercise(exercise: RoutineExercise | undefined): ExerciseArtKind {

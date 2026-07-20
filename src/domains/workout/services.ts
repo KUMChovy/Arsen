@@ -105,6 +105,53 @@ export async function saveMainSet(input: {
   return set.id
 }
 
+export async function registerMainSetForExercise(input: {
+  date: string
+  dayId: string
+  displayUnit: WeightUnit
+  dropSet?: {
+    reps: number
+    rir: number
+    weightKg: number
+  } | null
+  exercise: RoutineExercise
+  reps: number
+  rir: number
+  routineId: string
+  weightKg: number
+}) {
+  const sessionId = await getOrCreateSessionForDay({
+    date: input.date,
+    dayId: input.dayId,
+    displayUnit: input.displayUnit,
+    routineId: input.routineId,
+  })
+  const exerciseLogId = await ensureExerciseLog(sessionId, input.exercise)
+  const setLogId = await saveMainSet({
+    displayUnit: input.displayUnit,
+    exerciseLogId,
+    reps: input.reps,
+    rir: input.rir,
+    weightKg: input.weightKg,
+  })
+
+  if (input.dropSet) {
+    await addDropSet({
+      displayUnit: input.displayUnit,
+      reps: input.dropSet.reps,
+      rir: input.dropSet.rir,
+      setLogId,
+      weightKg: input.dropSet.weightKg,
+    })
+  }
+
+  await db.workoutSessions.update(sessionId, {
+    updatedAt: new Date().toISOString(),
+  })
+
+  return { exerciseLogId, sessionId, setLogId }
+}
+
 export async function addDropSet(input: {
   displayUnit: WeightUnit
   reps: number
@@ -151,6 +198,26 @@ export async function skipExercise(sessionId: string, routineExerciseId: string,
       await db.exerciseLogs.update(log.id, { state: 'skipped', updatedAt: now })
     }
   })
+}
+
+export async function skipRoutineExerciseForDay(input: {
+  date: string
+  dayId: string
+  displayUnit: WeightUnit
+  exercise: RoutineExercise
+  reason?: string
+  routineId: string
+}) {
+  const sessionId = await getOrCreateSessionForDay({
+    date: input.date,
+    dayId: input.dayId,
+    displayUnit: input.displayUnit,
+    routineId: input.routineId,
+  })
+  await ensureExerciseLog(sessionId, input.exercise)
+  await skipExercise(sessionId, input.exercise.id, input.reason)
+
+  return sessionId
 }
 
 export async function reactivateExercise(sessionId: string, routineExerciseId: string) {

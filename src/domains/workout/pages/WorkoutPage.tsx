@@ -7,12 +7,17 @@ import {
   ListChecks,
   StickyNote,
 } from 'lucide-react'
+import { useMemo, useState } from 'react'
 import { ActionButton } from '../../../shared/components/ActionButton'
 import { Card } from '../../../shared/components/Card'
 import { ExerciseArt, type ExerciseArtKind } from '../../../shared/components/ExerciseArt'
 import { PageHeader } from '../../../shared/components/PageHeader'
 import { useWorkoutDay } from '../../routine/hooks'
 import type { RoutineExercise } from '../../routine/types'
+import { localDateKey } from '../../../shared/utils/date'
+import { RegisterSetSheet } from '../components/RegisterSetSheet'
+import { useWorkoutProgress } from '../hooks'
+import type { ExerciseState } from '../types'
 
 const warmups = [
   { weight: '40 kg', reps: '10 reps', rir: 'RIR 4' },
@@ -20,22 +25,27 @@ const warmups = [
 ]
 
 export function WorkoutPage() {
-  const workoutDay = useWorkoutDay(new Date())
+  const today = useMemo(() => new Date(), [])
+  const dateKey = localDateKey(today)
+  const workoutDay = useWorkoutDay(today)
   const dayExercises = workoutDay?.dayExercises ?? []
-  const currentExercise = dayExercises[0]
-  const completedCount = Math.min(3, dayExercises.length)
+  const dailyProgress = useWorkoutProgress(dateKey, workoutDay?.day.id, dayExercises)
+  const [selectedExerciseId, setSelectedExerciseId] = useState<string | null>(null)
+  const currentExercise = dayExercises.find((exercise) => dailyProgress.stateByExerciseId.get(exercise.id) !== 'done') ?? dayExercises[0]
+  const selectedExercise = selectedExerciseId ? dayExercises.find((exercise) => exercise.id === selectedExerciseId) : null
+  const completedCount = dailyProgress.completedCount
   const totalCount = dayExercises.length
   const statusSummary = [
-    { label: 'Pendientes', value: Math.max(totalCount - completedCount - 1, 0) },
-    { label: 'En progreso', value: currentExercise ? 1 : 0, tone: 'text-arsen-purple2' },
-    { label: 'Hechos', value: completedCount, tone: 'text-arsen-acid' },
-    { label: 'Saltados', value: 0, tone: 'text-arsen-dim' },
+    { label: 'Pendientes', value: dailyProgress.pendingCount },
+    { label: 'En progreso', value: dailyProgress.inProgressCount, tone: 'text-arsen-purple2' },
+    { label: 'Hechos', value: dailyProgress.completedCount, tone: 'text-arsen-acid' },
+    { label: 'Saltados', value: dailyProgress.skippedCount, tone: 'text-arsen-dim' },
   ]
 
   return (
     <div className="space-y-4">
       <PageHeader
-        eyebrow={`${weekdayLabel(new Date())} · ${workoutDay?.day.name ?? 'Cargando'} · sesión activa`}
+        eyebrow={`${weekdayLabel(today)} · ${workoutDay?.day.name ?? 'Cargando'} · sesión activa`}
         title="Entreno de hoy"
       >
         <button className="grid size-10 place-items-center rounded-[10px] text-arsen-muted">
@@ -122,7 +132,7 @@ export function WorkoutPage() {
             ))}
           </div>
 
-          <ActionButton className="w-full">
+          <ActionButton className="w-full" disabled={!currentExercise} onClick={() => setSelectedExerciseId(currentExercise?.id ?? null)}>
             Registrar
             <ChevronRight aria-hidden="true" className="size-5" />
           </ActionButton>
@@ -154,8 +164,12 @@ export function WorkoutPage() {
           <span className="text-arsen-purple2">Estado</span>
         </div>
         <div className="space-y-2">
-          {dayExercises.slice(0, 6).map((exercise, index) => (
-            <Card className="content-auto grid grid-cols-[52px_1fr_auto] items-center gap-3 p-2" key={exercise.name}>
+          {dayExercises.slice(0, 6).map((exercise) => {
+            const state = dailyProgress.stateByExerciseId.get(exercise.id) ?? 'pending'
+
+            return (
+            <button className="block text-left" key={exercise.name} onClick={() => setSelectedExerciseId(exercise.id)}>
+              <Card className="content-auto grid grid-cols-[52px_1fr_auto] items-center gap-3 p-2">
               <ExerciseArt alt={exercise.name} className="size-[52px]" kind={artForExercise(exercise)} />
               <div className="min-w-0">
                 <h3 className="truncate text-sm font-extrabold">{exercise.name}</h3>
@@ -163,13 +177,25 @@ export function WorkoutPage() {
                   {exercise.mainMuscle} · {exercise.targetSets}x{exercise.repRange} · RIR {exercise.recommendedRir}
                 </span>
               </div>
-              <span className="rounded-full bg-arsen-purple/25 px-2 py-1 text-[10px] font-bold text-arsen-purple2">
-                {index < completedCount ? 'Hecho' : index === completedCount ? 'En progreso' : 'Pendiente'}
+              <span className={['rounded-full px-2 py-1 text-[10px] font-bold', stateClassName(state)].join(' ')}>
+                {stateLabel(state)}
               </span>
-            </Card>
-          ))}
+              </Card>
+            </button>
+          )})}
         </div>
       </section>
+
+      {selectedExercise && workoutDay ? (
+        <RegisterSetSheet
+          date={dateKey}
+          dayId={workoutDay.day.id}
+          displayUnit={workoutDay.settings.preferredUnit}
+          exercise={selectedExercise}
+          onClose={() => setSelectedExerciseId(null)}
+          routineId={workoutDay.routine.id}
+        />
+      ) : null}
     </div>
   )
 }
@@ -187,4 +213,26 @@ function artForExercise(exercise: RoutineExercise | undefined): ExerciseArtKind 
 
 function weekdayLabel(date: Date) {
   return new Intl.DateTimeFormat('es-MX', { weekday: 'long' }).format(date)
+}
+
+function stateLabel(state: ExerciseState) {
+  const labels: Record<ExerciseState, string> = {
+    done: 'Hecho',
+    in_progress: 'En progreso',
+    pending: 'Pendiente',
+    skipped: 'Saltado',
+  }
+
+  return labels[state]
+}
+
+function stateClassName(state: ExerciseState) {
+  const classes: Record<ExerciseState, string> = {
+    done: 'bg-arsen-acid/20 text-arsen-acid',
+    in_progress: 'bg-arsen-purple/25 text-arsen-purple2',
+    pending: 'bg-white/10 text-arsen-muted',
+    skipped: 'bg-white/5 text-arsen-dim',
+  }
+
+  return classes[state]
 }

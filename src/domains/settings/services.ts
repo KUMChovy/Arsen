@@ -200,7 +200,7 @@ export async function deleteWorkoutLogsByDateRange(startDate: string, endDate: s
   await Promise.all(sessions.map((session) => deleteWorkoutSession(session.id)))
 }
 
-async function buildProgressExport() {
+export async function buildProgressExport() {
   const [routines, days, exercises, sessions, exerciseLogs, setLogs, dropSetLogs] = await Promise.all([
     db.routines.toArray(),
     db.routineDays.toArray(),
@@ -236,13 +236,14 @@ async function buildProgressExport() {
       const routine = routineById.get(session.routineId)
       const day = dayById.get(session.dayId)
       const exercise = exerciseById.get(log.routineExerciseId)
+      const dropSets = dropSetsBySetId.get(set.id) ?? []
 
       return [
         {
           canonicalName: log.snapshot.canonicalName,
           date: session.date,
           dayName: day?.name ?? 'Dia eliminado',
-          dropSets: dropSetsBySetId.get(set.id) ?? [],
+          dropSets,
           equipment: log.snapshot.equipment,
           exerciseName: log.snapshot.name,
           mainMuscle: log.snapshot.mainMuscle,
@@ -255,7 +256,7 @@ async function buildProgressExport() {
           setLogId: set.id,
           score: Math.round(performanceScore(set) * 100) / 100,
           sourceExerciseId: exercise?.id ?? log.routineExerciseId,
-          volume: volumeForSet(set),
+          volume: volumeForSet(set) + dropSets.reduce((total, dropSet) => total + volumeForSet(dropSet), 0),
           weightKg: set.weightKg,
         },
       ]

@@ -1,9 +1,9 @@
 import 'fake-indexeddb/auto'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { db } from './schema'
-import type { Routine, RoutineExercise } from '../domains/routine/types'
+import type { Routine, RoutineDay, RoutineExercise } from '../domains/routine/types'
 import type { AppSettings } from '../domains/settings/types'
-import { importFullBackup } from '../domains/settings/services'
+import { buildProgressExport, importFullBackup } from '../domains/settings/services'
 import {
   deleteWorkoutSession,
   registerMainSetForExercise,
@@ -126,6 +126,72 @@ describe('IndexedDB integration', () => {
     await expect(db.dropSetLogs.count()).resolves.toBe(0)
     await expect(db.skipLogs.count()).resolves.toBe(0)
   })
+
+  it('exports chronological progress with routines, graph points and drop set volume', async () => {
+    const routineA = routine('routine-a', 'Rutina A')
+    const routineB = routine('routine-b', 'Rutina B')
+    const dayA = routineDay('day-a', routineA.id, 'Dia A')
+    const dayB = routineDay('day-b', routineB.id, 'Dia B')
+    const exerciseA = routineExercise({ dayId: dayA.id, id: 'exercise-a', routineId: routineA.id })
+    const exerciseB = routineExercise({ dayId: dayB.id, id: 'exercise-b', routineId: routineB.id })
+    await db.routines.bulkPut([routineA, routineB])
+    await db.routineDays.bulkPut([dayA, dayB])
+    await db.routineExercises.bulkPut([exerciseA, exerciseB])
+
+    await registerMainSetForExercise({
+      date: '2026-07-27',
+      dayId: dayB.id,
+      displayUnit: 'kg',
+      exercise: exerciseB,
+      reps: 5,
+      rir: 1,
+      routineId: routineB.id,
+      weightKg: 80,
+    })
+    await registerMainSetForExercise({
+      date: '2026-07-20',
+      dayId: dayA.id,
+      displayUnit: 'kg',
+      dropSet: { reps: 10, rir: 2, weightKg: 40 },
+      exercise: exerciseA,
+      reps: 8,
+      rir: 1,
+      routineId: routineA.id,
+      weightKg: 60,
+    })
+
+    const exported = await buildProgressExport()
+
+    expect(exported.timeline.map((row) => row.date)).toEqual(['2026-07-20', '2026-07-27'])
+    expect(exported.timeline[0]).toMatchObject({
+      canonicalName: 'press-inclinado',
+      dayName: 'Dia A',
+      exerciseName: 'Press inclinado',
+      routineName: 'Rutina A',
+      volume: 880,
+    })
+    expect(exported.graphPoints).toEqual([
+      expect.objectContaining({
+        canonicalName: 'press-inclinado',
+        date: '2026-07-20',
+        routineName: 'Rutina A',
+        volume: 880,
+      }),
+      expect.objectContaining({
+        canonicalName: 'press-inclinado',
+        date: '2026-07-27',
+        routineName: 'Rutina B',
+        volume: 400,
+      }),
+    ])
+    expect(exported.summary).toMatchObject({
+      exercises: 1,
+      routines: 2,
+      sessions: 2,
+      sets: 2,
+      volume: 1280,
+    })
+  })
 })
 
 async function resetDb() {
@@ -174,14 +240,29 @@ function settings(activeRoutineId: string, preferredUnit: 'kg' | 'lb'): AppSetti
   }
 }
 
-function routineExercise(): RoutineExercise {
+function routineDay(id: string, routineId: string, name: string): RoutineDay {
+  return {
+    createdAt: now,
+    description: '',
+    id,
+    name,
+    order: 0,
+    routineId,
+    updatedAt: now,
+    weekday: null,
+  }
+}
+
+function routineExercise(
+  overrides: Partial<Pick<RoutineExercise, 'dayId' | 'id' | 'routineId'>> = {},
+): RoutineExercise {
   return {
     canonicalName: 'press-inclinado',
     createdAt: now,
     currentWeightKg: 50,
-    dayId: 'day-1',
+    dayId: overrides.dayId ?? 'day-1',
     equipment: 'Barra',
-    id: 'exercise-1',
+    id: overrides.id ?? 'exercise-1',
     mainMuscle: 'Pecho',
     name: 'Press inclinado',
     order: 0,
@@ -190,7 +271,7 @@ function routineExercise(): RoutineExercise {
     repRange: '8-10',
     rest: '90 seg',
     restSeconds: 90,
-    routineId: 'routine-1',
+    routineId: overrides.routineId ?? 'routine-1',
     sourceExerciseId: null,
     targetSets: 2,
     technicalNotes: '',

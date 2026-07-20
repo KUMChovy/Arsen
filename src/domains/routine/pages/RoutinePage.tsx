@@ -1,4 +1,4 @@
-import { useState, useTransition } from 'react'
+import { useRef, useState, useTransition } from 'react'
 import {
   ArrowUpDown,
   CalendarPlus,
@@ -17,6 +17,7 @@ import { ExerciseArt, type ExerciseArtKind } from '../../../shared/components/Ex
 import { PageHeader } from '../../../shared/components/PageHeader'
 import { useActiveRoutineBundle } from '../hooks'
 import { createDay, createRoutine, duplicateRoutine, setActiveRoutine } from '../services'
+import { exportRoutineJson, importRoutineJson } from '../importExport'
 
 
 const quickActions = [
@@ -29,6 +30,7 @@ const quickActions = [
 export function RoutinePage() {
   const bundle = useActiveRoutineBundle()
   const days = bundle?.days ?? []
+  const importInputRef = useRef<HTMLInputElement>(null)
   const [isPending, startTransition] = useTransition()
   const [actionMessage, setActionMessage] = useState<string | null>(null)
 
@@ -66,6 +68,9 @@ export function RoutinePage() {
               }
               if (item.label === 'Duplicar') {
                 runRoutineAction(() => duplicateRoutine(bundle.routine.id), 'Rutina duplicada')
+              }
+              if (item.label === 'JSON') {
+                runRoutineAction(() => exportRoutineJson(bundle.routine.id), 'Rutina exportada')
               }
             }}
           >
@@ -109,14 +114,39 @@ export function RoutinePage() {
       </Card>
 
       <section className="grid grid-cols-2 gap-2">
-        <Card className="flex items-center gap-2 p-3 text-xs font-semibold text-arsen-muted">
+        <button
+          className="flex items-center gap-2 rounded-xl border border-white/10 bg-arsen-surface p-3 text-left text-xs font-semibold text-arsen-muted shadow-[inset_0_1px_0_rgb(255_255_255_/_0.04)]"
+          disabled={!bundle || isPending}
+          onClick={() => {
+            if (!bundle) return
+            runRoutineAction(() => exportRoutineJson(bundle.routine.id), 'Rutina exportada')
+          }}
+          type="button"
+        >
           <Download aria-hidden="true" className="size-4 text-arsen-purple2" />
           Exportar activa
-        </Card>
-        <Card className="flex items-center gap-2 p-3 text-xs font-semibold text-arsen-muted">
+        </button>
+        <button
+          className="flex items-center gap-2 rounded-xl border border-white/10 bg-arsen-surface p-3 text-left text-xs font-semibold text-arsen-muted shadow-[inset_0_1px_0_rgb(255_255_255_/_0.04)]"
+          disabled={isPending}
+          onClick={() => importInputRef.current?.click()}
+          type="button"
+        >
           <Upload aria-hidden="true" className="size-4 text-arsen-purple2" />
           Importar rutina
-        </Card>
+        </button>
+        <input
+          accept="application/json,.json"
+          className="hidden"
+          onChange={(event) => {
+            const file = event.target.files?.[0]
+            event.target.value = ''
+            if (!file) return
+            runRoutineAction(() => importRoutineJson(file), 'Rutina importada y activada')
+          }}
+          ref={importInputRef}
+          type="file"
+        />
       </section>
 
       <section>
@@ -163,7 +193,7 @@ export function RoutinePage() {
           <PlusCircle aria-hidden="true" className="size-5" />
           Crear rutina
         </ActionButton>
-        <ActionButton className="w-full" tone="ghost">
+        <ActionButton className="w-full" disabled={isPending} onClick={() => importInputRef.current?.click()} tone="ghost">
           <UploadCloud aria-hidden="true" className="size-5 text-arsen-acid" />
           Subir JSON
         </ActionButton>

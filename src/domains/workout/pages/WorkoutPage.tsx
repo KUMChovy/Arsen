@@ -4,6 +4,7 @@ import { ActionButton } from '../../../shared/components/ActionButton'
 import { Card } from '../../../shared/components/Card'
 import { ExerciseArt, type ExerciseArtKind } from '../../../shared/components/ExerciseArt'
 import { PageHeader } from '../../../shared/components/PageHeader'
+import { totalVolume } from '../../../shared/calculations/workout'
 import { localDateKey } from '../../../shared/utils/date'
 import { formatWeight } from '../../../shared/utils/weight'
 import { useWorkoutDay } from '../../routine/hooks'
@@ -30,6 +31,8 @@ export function WorkoutPage() {
   const totalCount = dayExercises.length
   const preferredUnit = workoutDay?.settings.preferredUnit ?? 'kg'
   const warmups = buildWarmups(currentExercise, preferredUnit)
+  const mainSets = dailyProgress.setLogs.filter((set) => set.kind === 'main')
+  const dailyVolume = Math.round(totalVolume(mainSets, dailyProgress.dropSets))
   const statusSummary = [
     { label: 'Pendientes', value: dailyProgress.pendingCount },
     { label: 'En progreso', value: dailyProgress.inProgressCount, tone: 'text-arsen-purple2' },
@@ -155,6 +158,24 @@ export function WorkoutPage() {
             <span className="mt-1 block text-[10px] text-arsen-muted">{item.label}</span>
           </Card>
         ))}
+      </section>
+
+      <section>
+        <div className="mb-2 text-xs font-extrabold text-arsen-muted">Resumen diario</div>
+        <div className="grid grid-cols-3 gap-2">
+          <Card className="p-2 text-center">
+            <strong className="block text-base text-arsen-acid">{mainSets.length}</strong>
+            <span className="mt-1 block text-[10px] text-arsen-muted">Series</span>
+          </Card>
+          <Card className="p-2 text-center">
+            <strong className="block text-base text-arsen-acid">{dailyProgress.dropSets.length}</strong>
+            <span className="mt-1 block text-[10px] text-arsen-muted">Drops</span>
+          </Card>
+          <Card className="p-2 text-center">
+            <strong className="block text-base text-arsen-acid">{dailyVolume}</strong>
+            <span className="mt-1 block text-[10px] text-arsen-muted">Volumen kg</span>
+          </Card>
+        </div>
       </section>
 
       <div>

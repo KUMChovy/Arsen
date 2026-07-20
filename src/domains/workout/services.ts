@@ -145,9 +145,15 @@ export async function registerMainSetForExercise(input: {
     })
   }
 
-  await db.workoutSessions.update(sessionId, {
-    updatedAt: new Date().toISOString(),
-  })
+  await Promise.all([
+    db.workoutSessions.update(sessionId, {
+      updatedAt: new Date().toISOString(),
+    }),
+    db.routineExercises.update(input.exercise.id, {
+      currentWeightKg: input.weightKg,
+      updatedAt: new Date().toISOString(),
+    }),
+  ])
 
   return { exerciseLogId, sessionId, setLogId }
 }

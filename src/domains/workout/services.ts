@@ -292,7 +292,7 @@ export async function updateMainSet(
 export async function deleteWorkoutSession(sessionId: string) {
   const exerciseLogs = await db.exerciseLogs.where('sessionId').equals(sessionId).toArray()
   const exerciseLogIds = exerciseLogs.map((log) => log.id)
-  const setLogs = await db.setLogs.where('exerciseLogId').anyOf(exerciseLogIds).toArray()
+  const setLogs = exerciseLogIds.length > 0 ? await db.setLogs.where('exerciseLogId').anyOf(exerciseLogIds).toArray() : []
   const setLogIds = setLogs.map((set) => set.id)
 
   await db.transaction('rw', [db.workoutSessions, db.exerciseLogs, db.setLogs, db.dropSetLogs, db.skipLogs], async () => {

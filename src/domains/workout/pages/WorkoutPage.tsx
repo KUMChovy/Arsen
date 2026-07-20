@@ -24,7 +24,7 @@ import { useWorkoutDay } from '../../routine/hooks'
 import type { RoutineExercise } from '../../routine/types'
 import { RegisterSetSheet } from '../components/RegisterSetSheet'
 import { useWorkoutProgress } from '../hooks'
-import { deleteMainSet, updateMainSet, updateSessionNotesForDay } from '../services'
+import { completeSessionForDay, deleteMainSet, updateMainSet, updateSessionNotesForDay } from '../services'
 import type { ExerciseState, SetLog, WeightUnit } from '../types'
 
 export function WorkoutPage() {
@@ -107,6 +107,21 @@ export function WorkoutPage() {
       action()
         .then(() => setMessage(success))
         .catch((error: unknown) => setMessage(error instanceof Error ? error.message : 'Accion no completada'))
+    })
+  }
+
+  function completeSession() {
+    if (!workoutDay) return
+
+    startTransition(() => {
+      completeSessionForDay({
+        date: dateKey,
+        dayId: workoutDay.day.id,
+        displayUnit: workoutDay.settings.preferredUnit,
+        routineId: workoutDay.routine.id,
+      })
+        .then(() => setMessage('Sesion finalizada'))
+        .catch((error: unknown) => setMessage(error instanceof Error ? error.message : 'No se pudo finalizar'))
     })
   }
 
@@ -230,8 +245,12 @@ export function WorkoutPage() {
           <span>
             {completedCount} / {totalCount} ejercicios
           </span>
-          <span>{workoutDay?.day.description ?? 'Sin rutina activa'}</span>
+          <span>{dailyProgress.progress?.session?.status === 'completed' ? 'Finalizada' : workoutDay?.day.description ?? 'Sin rutina activa'}</span>
         </div>
+        <ActionButton className="mt-3 w-full" disabled={isPending || !workoutDay} onClick={completeSession} tone="ghost">
+          <Check aria-hidden="true" className="size-5" />
+          Finalizar sesion
+        </ActionButton>
       </Card>
 
       <section className="grid grid-cols-4 gap-2">

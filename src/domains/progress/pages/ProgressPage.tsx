@@ -4,6 +4,7 @@ import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'rec
 import { Card } from '../../../shared/components/Card'
 import { ExerciseArt } from '../../../shared/components/ExerciseArt'
 import { PageHeader } from '../../../shared/components/PageHeader'
+import { exportProgressCsv, exportProgressJson } from '../../settings/services'
 import { deleteWorkoutSession, updateMainSet } from '../../workout/services'
 import { useProgressExerciseOptions, useProgressOverview } from '../hooks'
 import type { RecentSessionSummary } from '../repository'
@@ -30,6 +31,16 @@ export function ProgressPage() {
         .then(() => setMessage(success))
         .catch((error: unknown) => setMessage(error instanceof Error ? error.message : 'Accion no completada'))
     })
+  }
+
+  function exportProgress() {
+    runHistoryAction(
+      async () => {
+        await exportProgressJson()
+        await exportProgressCsv()
+      },
+      'Progreso exportado',
+    )
   }
 
   return (
@@ -60,7 +71,7 @@ export function ProgressPage() {
           { icon: ChartLine, label: 'Score', active: true },
           { icon: Trophy, label: 'Mejores' },
           { icon: NotebookTabs, label: 'Historial' },
-          { icon: Download, label: 'Exportar' },
+          { icon: Download, label: 'Exportar', onClick: exportProgress },
         ].map((item) => (
           <button
             className={[
@@ -70,6 +81,8 @@ export function ProgressPage() {
                 : 'border-white/10 bg-arsen-surface text-arsen-muted',
             ].join(' ')}
             key={item.label}
+            onClick={item.onClick}
+            type="button"
           >
             <item.icon aria-hidden="true" className="size-5" />
             {item.label}

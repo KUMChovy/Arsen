@@ -248,6 +248,27 @@ export async function updateSessionNotesForDay(input: {
   return sessionId
 }
 
+export async function completeSessionForDay(input: {
+  date: string
+  dayId: string
+  displayUnit: WeightUnit
+  routineId: string
+}) {
+  const sessionId = await getOrCreateSessionForDay({
+    date: input.date,
+    dayId: input.dayId,
+    displayUnit: input.displayUnit,
+    routineId: input.routineId,
+  })
+
+  await db.workoutSessions.update(sessionId, {
+    status: 'completed',
+    updatedAt: new Date().toISOString(),
+  })
+
+  return sessionId
+}
+
 export async function reactivateExercise(sessionId: string, routineExerciseId: string) {
   await db.transaction('rw', [db.skipLogs, db.exerciseLogs, db.setLogs], async () => {
     await db.skipLogs

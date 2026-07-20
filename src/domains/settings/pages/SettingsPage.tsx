@@ -1,5 +1,6 @@
 import { useRef, useState, type PropsWithChildren } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
+import { useNavigate } from 'react-router-dom'
 import {
   ChartNoAxesCombined,
   ChevronRight,
@@ -16,6 +17,7 @@ import {
 } from 'lucide-react'
 import { Card } from '../../../shared/components/Card'
 import { PageHeader } from '../../../shared/components/PageHeader'
+import { importRoutineJson } from '../../routine/importExport'
 import {
   exportFullBackup,
   exportProgressCsv,
@@ -37,6 +39,8 @@ const routineActions = [
 
 export function SettingsPage() {
   const importInputRef = useRef<HTMLInputElement>(null)
+  const routineImportInputRef = useRef<HTMLInputElement>(null)
+  const navigate = useNavigate()
   const [busyAction, setBusyAction] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const appSettings = useLiveQuery(() => getAppSettings(), [], undefined)
@@ -142,9 +146,37 @@ export function SettingsPage() {
       </SettingsSection>
 
       <SettingsSection title="Rutinas">
-        {routineActions.map((item) => (
-          <ActionRow icon={item.icon} key={item.label} label={item.label} meta={item.meta} />
-        ))}
+        <ActionRow
+          icon={routineActions[0]!.icon}
+          label={routineActions[0]!.label}
+          meta={routineActions[0]!.meta}
+          onClick={() => navigate('/rutina')}
+        />
+        <ActionRow
+          busy={busyAction === 'routine-import'}
+          icon={routineActions[1]!.icon}
+          label={routineActions[1]!.label}
+          meta={routineActions[1]!.meta}
+          onClick={() => routineImportInputRef.current?.click()}
+        />
+        <input
+          accept="application/json,.json"
+          className="hidden"
+          onChange={(event) => {
+            const file = event.target.files?.[0]
+            event.target.value = ''
+            if (!file) return
+            void runAction(
+              'routine-import',
+              async () => {
+                await importRoutineJson(file)
+              },
+              'Rutina importada y activada',
+            )
+          }}
+          ref={routineImportInputRef}
+          type="file"
+        />
       </SettingsSection>
 
       <SettingsSection title="Notificaciones">

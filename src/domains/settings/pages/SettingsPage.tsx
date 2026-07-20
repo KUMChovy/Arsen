@@ -30,6 +30,7 @@ import {
   importFullBackup,
   requestPersistentStorage,
   updatePreferredUnit,
+  type BackupImportMode,
 } from '../services'
 import { getDeloadOverview, requestDeloadNotifications } from '../notifications'
 import { localDateKey } from '../../../shared/utils/date'
@@ -41,6 +42,7 @@ const routineActions = [
 
 export function SettingsPage() {
   const importInputRef = useRef<HTMLInputElement>(null)
+  const importModeRef = useRef<BackupImportMode>('merge')
   const routineImportInputRef = useRef<HTMLInputElement>(null)
   const navigate = useNavigate()
   const today = localDateKey(new Date())
@@ -90,11 +92,24 @@ export function SettingsPage() {
           onClick={() => runAction('backup-export', exportFullBackup, 'Respaldo exportado')}
         />
         <ActionRow
-          busy={busyAction === 'backup-import'}
+          busy={busyAction === 'backup-import-merge'}
           icon={CloudDownload}
-          label="Importar respaldo"
-          meta="Reemplaza datos locales"
-          onClick={() => importInputRef.current?.click()}
+          label="Fusionar respaldo"
+          meta="Agrega datos sin borrar lo local"
+          onClick={() => {
+            importModeRef.current = 'merge'
+            importInputRef.current?.click()
+          }}
+        />
+        <ActionRow
+          busy={busyAction === 'backup-import-replace'}
+          icon={CloudDownload}
+          label="Reemplazar respaldo"
+          meta="Borra datos locales y restaura archivo"
+          onClick={() => {
+            importModeRef.current = 'replace'
+            importInputRef.current?.click()
+          }}
         />
         <input
           accept="application/json,.json"
@@ -103,7 +118,13 @@ export function SettingsPage() {
             const file = event.target.files?.[0]
             event.target.value = ''
             if (!file) return
-            void runAction('backup-import', () => importFullBackup(file), 'Respaldo importado')
+            const mode = importModeRef.current
+            if (mode === 'replace' && !window.confirm('Reemplazar todos los datos locales con este respaldo?')) return
+            void runAction(
+              `backup-import-${mode}`,
+              () => importFullBackup(file, mode),
+              mode === 'merge' ? 'Respaldo fusionado' : 'Respaldo reemplazado',
+            )
           }}
           ref={importInputRef}
           type="file"

@@ -36,7 +36,9 @@ export async function exportFullBackup() {
   downloadJson(`arsen-backup-${localDateKey(new Date())}.json`, data)
 }
 
-export async function importFullBackup(file: File) {
+export type BackupImportMode = 'merge' | 'replace'
+
+export async function importFullBackup(file: File, mode: BackupImportMode = 'replace') {
   const backup = parseBackup(await file.text())
   const tables = backup.tables
 
@@ -56,35 +58,44 @@ export async function importFullBackup(file: File) {
       db.workoutSessions,
     ],
     async () => {
-      await Promise.all([
-        db.dropSetLogs.clear(),
-        db.exerciseCatalog.clear(),
-        db.exerciseLogs.clear(),
-        db.routineDays.clear(),
-        db.routineExercises.clear(),
-        db.routines.clear(),
-        db.setLogs.clear(),
-        db.settings.clear(),
-        db.skipLogs.clear(),
-        db.weeklyVolumeTargets.clear(),
-        db.workoutSessions.clear(),
-      ])
-
-      await Promise.all([
-        db.dropSetLogs.bulkPut(tables.dropSetLogs ?? []),
-        db.exerciseCatalog.bulkPut(tables.exerciseCatalog ?? []),
-        db.exerciseLogs.bulkPut(tables.exerciseLogs ?? []),
-        db.routineDays.bulkPut(tables.routineDays ?? []),
-        db.routineExercises.bulkPut(tables.routineExercises ?? []),
-        db.routines.bulkPut(tables.routines ?? []),
-        db.setLogs.bulkPut(tables.setLogs ?? []),
-        db.settings.bulkPut(tables.settings ?? []),
-        db.skipLogs.bulkPut(tables.skipLogs ?? []),
-        db.weeklyVolumeTargets.bulkPut(tables.weeklyVolumeTargets ?? []),
-        db.workoutSessions.bulkPut(tables.workoutSessions ?? []),
-      ])
+      if (mode === 'replace') await clearBackupTables()
+      await putBackupTables(tables, mode)
     },
   )
+}
+
+async function clearBackupTables() {
+  await Promise.all([
+    db.dropSetLogs.clear(),
+    db.exerciseCatalog.clear(),
+    db.exerciseLogs.clear(),
+    db.routineDays.clear(),
+    db.routineExercises.clear(),
+    db.routines.clear(),
+    db.setLogs.clear(),
+    db.settings.clear(),
+    db.skipLogs.clear(),
+    db.weeklyVolumeTargets.clear(),
+    db.workoutSessions.clear(),
+  ])
+}
+
+async function putBackupTables(tables: BackupTables, mode: BackupImportMode) {
+  const shouldImportSettings = mode === 'replace' || !(await db.settings.get('app'))
+
+  await Promise.all([
+    db.dropSetLogs.bulkPut(tables.dropSetLogs ?? []),
+    db.exerciseCatalog.bulkPut(tables.exerciseCatalog ?? []),
+    db.exerciseLogs.bulkPut(tables.exerciseLogs ?? []),
+    db.routineDays.bulkPut(tables.routineDays ?? []),
+    db.routineExercises.bulkPut(tables.routineExercises ?? []),
+    db.routines.bulkPut(tables.routines ?? []),
+    db.setLogs.bulkPut(tables.setLogs ?? []),
+    shouldImportSettings ? db.settings.bulkPut(tables.settings ?? []) : Promise.resolve(),
+    db.skipLogs.bulkPut(tables.skipLogs ?? []),
+    db.weeklyVolumeTargets.bulkPut(tables.weeklyVolumeTargets ?? []),
+    db.workoutSessions.bulkPut(tables.workoutSessions ?? []),
+  ])
 }
 
 export async function exportProgressJson() {

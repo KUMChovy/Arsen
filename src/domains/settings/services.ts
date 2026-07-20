@@ -8,7 +8,7 @@ import type {
 } from '../routine/types'
 import type { AppSettings } from './types'
 import type { DropSetLog, ExerciseLog, SetLog, SkipLog, WeightUnit, WorkoutSession } from '../workout/types'
-import { performanceScore, shouldNotifyDeload, volumeForSet, weeksSince } from '../../shared/calculations/workout'
+import { performanceScore, volumeForSet } from '../../shared/calculations/workout'
 import { downloadJson, downloadText } from '../../shared/utils/download'
 import { localDateKey } from '../../shared/utils/date'
 import { deleteWorkoutSession } from '../workout/services'
@@ -164,18 +164,6 @@ export async function updatePreferredUnit(preferredUnit: WeightUnit) {
     preferredUnit,
     updatedAt: new Date().toISOString(),
   })
-}
-
-export async function getDeloadOverview() {
-  const firstSession = await db.workoutSessions.orderBy('date').first()
-  const today = localDateKey(new Date())
-  const weeks = firstSession ? weeksSince(firstSession.date, today) : 0
-
-  return {
-    firstLogDate: firstSession?.date ?? null,
-    shouldNotify: shouldNotifyDeload(firstSession?.date ?? null, today),
-    weeks,
-  }
 }
 
 export async function deleteAllWorkoutLogs() {

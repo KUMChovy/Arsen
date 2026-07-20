@@ -1,6 +1,7 @@
 import type { PropsWithChildren } from 'react'
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import { ensureDemoData } from '../db/seedDemoRoutine'
+import { notifyDeloadIfNeeded } from '../domains/settings/notifications'
 
 type DatabaseStatus = 'loading' | 'ready' | 'error'
 
@@ -22,6 +23,7 @@ export function AppProviders({ children }: PropsWithChildren) {
       .then(() => {
         if (cancelled) return
         setDatabaseStatus('ready')
+        void notifyDeloadIfNeeded().catch(() => undefined)
       })
       .catch((error: unknown) => {
         if (cancelled) return

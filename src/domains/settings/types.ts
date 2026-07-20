@@ -6,6 +6,8 @@ export type AppSettings = {
   activeRoutineId: string | null
   preferredUnit: WeightUnit
   deloadNotifications: boolean
+  lastDeloadNotificationDate?: string | null
+  notificationPermission?: NotificationPermission | 'unsupported'
   storagePersisted: boolean | null
   createdAt: string
   updatedAt: string

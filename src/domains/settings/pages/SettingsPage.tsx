@@ -23,12 +23,12 @@ import {
   deleteActiveRoutineWorkoutLogs,
   deleteAllWorkoutLogs,
   getAppSettings,
-  getDeloadOverview,
   getStorageOverview,
   importFullBackup,
   requestPersistentStorage,
   updatePreferredUnit,
 } from '../services'
+import { getDeloadOverview, requestDeloadNotifications } from '../notifications'
 
 const routineActions = [
   { icon: Folder, label: 'Rutinas guardadas', meta: 'Cambiar, duplicar o eliminar' },
@@ -148,18 +148,26 @@ export function SettingsPage() {
       </SettingsSection>
 
       <SettingsSection title="Notificaciones">
-        <Card className="grid grid-cols-[42px_1fr_auto] items-center gap-3 p-3">
-          <div className="grid size-10 place-items-center text-arsen-acid">
-            <Flame aria-hidden="true" className="size-6" />
-          </div>
-          <div>
-            <strong>Deload</strong>
-            <span className="mt-1 block text-xs text-arsen-muted">
-              {deload?.firstLogDate ? `${deload.weeks} semanas desde primer registro` : 'Sin registros aun'}
-            </span>
-          </div>
-          <span className="text-sm font-extrabold text-arsen-acid">{deload?.shouldNotify ? 'avisar' : 'on'}</span>
-        </Card>
+        <ActionRow
+          busy={busyAction === 'notify'}
+          icon={Flame}
+          label="Deload"
+          meta={
+            deload?.firstLogDate
+              ? `${deload.weeks} semanas · ${appSettings?.notificationPermission ?? 'sin permiso'}`
+              : 'Sin registros aun'
+          }
+          onClick={() =>
+            runAction(
+              'notify',
+              async () => {
+                const permission = await requestDeloadNotifications()
+                if (permission !== 'granted') throw new Error(`Permiso de notificacion: ${permission}`)
+              },
+              deload?.shouldNotify ? 'Aviso de deload activado' : 'Notificaciones activadas',
+            )
+          }
+        />
       </SettingsSection>
 
       <SettingsSection title="Almacenamiento">

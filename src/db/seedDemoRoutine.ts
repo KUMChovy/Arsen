@@ -86,6 +86,8 @@ export async function ensureDemoData() {
     activeRoutineId: routineId,
     preferredUnit: 'kg',
     deloadNotifications: true,
+    lastDeloadNotificationDate: null,
+    notificationPermission: 'default',
     storagePersisted: null,
     createdAt: now,
     updatedAt: now,

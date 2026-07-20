@@ -1,4 +1,5 @@
 .superpowers/
+.run/
 node_modules/
 dist/
 .env

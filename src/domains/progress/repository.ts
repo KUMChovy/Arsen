@@ -41,6 +41,44 @@ export type RecentSessionSummary = {
   volumeKg: number
 }
 
+export type SessionExerciseDetail = {
+  exerciseLogId: string
+  exerciseName: string
+  mainMuscle: string
+  routineExerciseId: string
+  sets: Array<{
+    displayUnit: string
+    dropSets: Array<{
+      id: string
+      order: number
+      reps: number
+      rir: number
+      weightKg: number
+    }>
+    id: string
+    order: number
+    reps: number
+    rir: number
+    weightKg: number
+  }>
+}
+
+export type SessionDetail = {
+  date: string
+  dayId: string
+  dayName: string
+  exercises: SessionExerciseDetail[]
+  id: string
+  routineId: string
+  routineName: string
+}
+
+export type ProgressEditOptions = {
+  days: Array<{ id: string; name: string; routineId: string; routineName: string }>
+  exercises: Array<{ dayId: string; id: string; name: string; routineId: string }>
+  routines: Array<{ id: string; name: string }>
+}
+
 export type ProgressOverviewFilters = {
   canonicalName?: string | null
   dayId?: string | null
@@ -178,6 +216,92 @@ export async function getProgressDayOptions(): Promise<ProgressDayOption[]> {
     }))
     .filter((option) => option.sessions > 0)
     .sort((a, b) => a.routineName.localeCompare(b.routineName) || a.name.localeCompare(b.name))
+}
+
+export async function getSessionDetail(sessionId: string): Promise<SessionDetail | null> {
+  const session = await db.workoutSessions.get(sessionId)
+  if (!session) return null
+
+  const [routine, day, exerciseLogs] = await Promise.all([
+    db.routines.get(session.routineId),
+    db.routineDays.get(session.dayId),
+    db.exerciseLogs.where('sessionId').equals(session.id).toArray(),
+  ])
+  const exerciseLogIds = exerciseLogs.map((log) => log.id)
+  const setLogs = exerciseLogIds.length > 0 ? await db.setLogs.where('exerciseLogId').anyOf(exerciseLogIds).toArray() : []
+  const setLogIds = setLogs.map((set) => set.id)
+  const dropSets = setLogIds.length > 0 ? await db.dropSetLogs.where('setLogId').anyOf(setLogIds).toArray() : []
+  const dropSetsBySetId = new Map<string, typeof dropSets>()
+
+  for (const dropSet of dropSets) {
+    const current = dropSetsBySetId.get(dropSet.setLogId)
+    if (current) current.push(dropSet)
+    else dropSetsBySetId.set(dropSet.setLogId, [dropSet])
+  }
+
+  return {
+    date: session.date,
+    dayId: session.dayId,
+    dayName: day?.name ?? 'Dia eliminado',
+    exercises: exerciseLogs.map((log) => ({
+      exerciseLogId: log.id,
+      exerciseName: log.snapshot.name,
+      mainMuscle: log.snapshot.mainMuscle,
+      routineExerciseId: log.routineExerciseId,
+      sets: setLogs
+        .filter((set) => set.kind === 'main' && set.exerciseLogId === log.id)
+        .sort((a, b) => a.order - b.order)
+        .map((set) => ({
+          displayUnit: set.displayUnit,
+          dropSets: (dropSetsBySetId.get(set.id) ?? [])
+            .sort((a, b) => a.order - b.order)
+            .map((dropSet) => ({
+              id: dropSet.id,
+              order: dropSet.order,
+              reps: dropSet.reps,
+              rir: dropSet.rir,
+              weightKg: dropSet.weightKg,
+            })),
+          id: set.id,
+          order: set.order,
+          reps: set.reps,
+          rir: set.rir,
+          weightKg: set.weightKg,
+        })),
+    })),
+    id: session.id,
+    routineId: session.routineId,
+    routineName: routine?.name ?? 'Rutina eliminada',
+  }
+}
+
+export async function getProgressEditOptions(): Promise<ProgressEditOptions> {
+  const [routines, days, exercises] = await Promise.all([
+    db.routines.orderBy('updatedAt').reverse().toArray(),
+    db.routineDays.toArray(),
+    db.routineExercises.toArray(),
+  ])
+  const routineById = new Map(routines.map((routine) => [routine.id, routine.name]))
+
+  return {
+    days: days
+      .sort((a, b) => a.routineId.localeCompare(b.routineId) || a.order - b.order)
+      .map((day) => ({
+        id: day.id,
+        name: day.name,
+        routineId: day.routineId,
+        routineName: routineById.get(day.routineId) ?? 'Rutina eliminada',
+      })),
+    exercises: exercises
+      .sort((a, b) => a.dayId.localeCompare(b.dayId) || a.order - b.order)
+      .map((exercise) => ({
+        dayId: exercise.dayId,
+        id: exercise.id,
+        name: exercise.name,
+        routineId: exercise.routineId,
+      })),
+    routines: routines.map((routine) => ({ id: routine.id, name: routine.name })),
+  }
 }
 
 function formatShortDate(date: string) {

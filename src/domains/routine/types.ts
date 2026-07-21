@@ -1,6 +1,7 @@
 export type Weekday = 0 | 1 | 2 | 3 | 4 | 5 | 6
 
 export type Equipment = 'Barra' | 'Mancuerna' | 'Maquina' | 'Polea' | 'Peso corporal' | 'Otro'
+export type MuscleGroup = 'Pecho' | 'Espalda' | 'Hombros' | 'Brazos' | 'Abdomen' | 'Piernas'
 
 export type Routine = {
   id: string

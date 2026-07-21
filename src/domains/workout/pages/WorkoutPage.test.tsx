@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { WorkoutPage } from './WorkoutPage'
 import type { RoutineExercise } from '../../routine/types'
 import type { ExerciseLog, SetLog } from '../types'
-import { completeSessionForDay, updateSessionNotesForDay } from '../services'
+import { completeSessionForDay } from '../services'
 
 vi.mock('../../routine/hooks', () => ({
   useWorkoutDay: () => ({
@@ -26,6 +26,7 @@ vi.mock('../../routine/hooks', () => ({
 }))
 
 vi.mock('../hooks', () => ({
+  useWeightIncreaseRecommendations: () => [],
   useWorkoutProgress: () => ({
     completedCount: 0,
     dropSets: [],
@@ -49,7 +50,6 @@ vi.mock('../services', () => ({
   completeSessionForDay: vi.fn(() => Promise.resolve('session-1')),
   deleteMainSet: vi.fn(() => Promise.resolve()),
   updateMainSet: vi.fn(() => Promise.resolve()),
-  updateSessionNotesForDay: vi.fn(() => Promise.resolve('session-1')),
 }))
 
 describe('WorkoutPage', () => {
@@ -61,27 +61,15 @@ describe('WorkoutPage', () => {
     vi.clearAllMocks()
   })
 
-  it('renders daily workout and saves notes', async () => {
+  it('renders clean daily workout without date, notes or rest controls', () => {
     render(<WorkoutPage />)
 
     expect(screen.getByRole('heading', { name: /Entreno/i })).toBeInTheDocument()
     expect(screen.getByText('Mi rutina actual - Dia 1')).toBeInTheDocument()
     expect(screen.getAllByText('Press inclinado').length).toBeGreaterThan(0)
-
-    fireEvent.change(screen.getByLabelText('Notas personales'), {
-      target: { value: 'Buen control' },
-    })
-    fireEvent.click(screen.getByRole('button', { name: 'Guardar' }))
-
-    await waitFor(() => {
-      expect(updateSessionNotesForDay).toHaveBeenCalledWith(
-        expect.objectContaining({
-          dayId: 'day-1',
-          notes: 'Buen control',
-          routineId: 'routine-1',
-        }),
-      )
-    })
+    expect(screen.queryByLabelText('Notas personales')).not.toBeInTheDocument()
+    expect(screen.queryByText('Fecha de sesion')).not.toBeInTheDocument()
+    expect(screen.queryByText('Descanso')).not.toBeInTheDocument()
   })
 
   it('completes current session', async () => {

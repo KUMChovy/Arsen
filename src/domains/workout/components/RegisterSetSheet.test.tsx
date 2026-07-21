@@ -22,8 +22,7 @@ describe('RegisterSetSheet', () => {
 
   it('saves main set with drop set and closes sheet', async () => {
     const onClose = vi.fn()
-    const onSaved = vi.fn()
-    render(<Sheet onClose={onClose} onSaved={onSaved} />)
+    render(<Sheet onClose={onClose} />)
 
     fireEvent.change(screen.getByLabelText('KG'), { target: { value: '80' } })
     fireEvent.change(screen.getAllByLabelText('Reps')[0]!, { target: { value: '6' } })
@@ -47,7 +46,6 @@ describe('RegisterSetSheet', () => {
           weightKg: 80,
         }),
       )
-      expect(onSaved).toHaveBeenCalledWith(90)
       expect(onClose).toHaveBeenCalled()
     })
   })
@@ -73,7 +71,7 @@ describe('RegisterSetSheet', () => {
   })
 })
 
-function Sheet({ onClose, onSaved = vi.fn() }: { onClose: () => void; onSaved?: (restSeconds: number) => void }) {
+function Sheet({ onClose }: { onClose: () => void }) {
   return (
     <RegisterSetSheet
       date="2026-07-20"
@@ -81,7 +79,6 @@ function Sheet({ onClose, onSaved = vi.fn() }: { onClose: () => void; onSaved?: 
       displayUnit="kg"
       exercise={exercise}
       onClose={onClose}
-      onSaved={onSaved}
       routineId="routine-1"
     />
   )

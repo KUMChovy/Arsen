@@ -1,13 +1,28 @@
-import { useEffect, useMemo, useRef, useState, useTransition } from 'react'
+import { useEffect, useMemo, useRef, useState, useTransition, type ReactNode } from 'react'
 import {
-  ArrowDown,
-  ArrowUp,
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core'
+import {
+  SortableContext,
+  arrayMove,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
+import {
   CalendarPlus,
   Check,
   Copy,
   Download,
-  Dumbbell,
   EllipsisVertical,
+  GripVertical,
   ListPlus,
   Pencil,
   PlusCircle,
@@ -18,33 +33,43 @@ import {
 } from 'lucide-react'
 import { ActionButton } from '../../../shared/components/ActionButton'
 import { Card } from '../../../shared/components/Card'
-import { ExerciseArt, type ExerciseArtKind } from '../../../shared/components/ExerciseArt'
+import { ExerciseArt } from '../../../shared/components/ExerciseArt'
 import { PageHeader } from '../../../shared/components/PageHeader'
-import type { Equipment, ExerciseCatalogItem, Routine, RoutineDay, RoutineExercise } from '../types'
+import { confirmDanger } from '../../../shared/utils/alerts'
+import type { Equipment, ExerciseCatalogItem, MuscleGroup, Routine, RoutineDay, RoutineExercise } from '../types'
 import { useActiveRoutineBundle, useExerciseCatalog, useRoutines } from '../hooks'
 import { exportRoutineJson, importRoutineJson } from '../importExport'
 import {
   addCatalogExerciseToDay,
+  createCatalogExercise,
   createDay,
-  createExercise,
   createRoutine,
+  deleteCatalogExercise,
   deleteDay,
   deleteExercise,
   deleteRoutine,
   duplicateDay,
   duplicateExercise,
   duplicateRoutine,
-  moveDay,
-  moveExercise,
   renameRoutine,
+  reorderDays,
+  reorderExercises,
   setActiveRoutine,
+  updateCatalogExercise,
   updateDay,
   updateExercise,
+  type CatalogExerciseInput,
   type ExerciseInput,
 } from '../services'
+import { dominantMuscleForExercises } from '../utils/dominantMuscle'
+import { muscleGroups, normalizeMuscleGroup } from '../utils/muscles'
 
 type Mode = 'view' | 'edit' | 'catalog'
-type SheetState = { exercise: RoutineExercise | null; mode: 'create' | 'edit' } | null
+type CatalogSheetState = { item: ExerciseCatalogItem | null } | null
+type RecipeSheetState =
+  | { catalogItem: ExerciseCatalogItem; exercise: null; mode: 'add' }
+  | { catalogItem: null; exercise: RoutineExercise; mode: 'edit' }
+  | null
 
 const equipmentOptions: Equipment[] = ['Barra', 'Mancuerna', 'Maquina', 'Polea', 'Peso corporal', 'Otro']
 const weekdayOptions = [
@@ -66,7 +91,9 @@ export function RoutinePage() {
   const importInputRef = useRef<HTMLInputElement>(null)
   const [mode, setMode] = useState<Mode>('view')
   const [selectedDayId, setSelectedDayId] = useState<string | null>(null)
-  const [sheet, setSheet] = useState<SheetState>(null)
+  const [catalogSheet, setCatalogSheet] = useState<CatalogSheetState>(null)
+  const [recipeSheet, setRecipeSheet] = useState<RecipeSheetState>(null)
+  const [catalogPickerOpen, setCatalogPickerOpen] = useState(false)
   const [isPending, startTransition] = useTransition()
   const [actionMessage, setActionMessage] = useState<string | null>(null)
 
@@ -89,10 +116,20 @@ export function RoutinePage() {
   return (
     <div className="space-y-4">
       <PageHeader eyebrow="Gestion de rutinas y catalogo" title="Rutina">
-        <button className="grid size-10 place-items-center rounded-[10px] text-arsen-purple2" type="button">
-          <EllipsisVertical aria-hidden="true" className="size-5" />
-          <span className="sr-only">Abrir menu de rutina</span>
-        </button>
+        <RoutineActions
+          disabled={isPending || !bundle}
+          onCreate={() =>
+            runRoutineAction(async () => {
+              const routineId = await createRoutine('Nueva rutina')
+              await setActiveRoutine(routineId)
+              return routineId
+            }, 'Rutina creada y activada')
+          }
+          onExport={() => {
+            if (bundle) void exportRoutineJson(bundle.routine.id)
+          }}
+          onImport={() => importInputRef.current?.click()}
+        />
       </PageHeader>
 
       <ModeTabs mode={mode} onModeChange={setMode} />
@@ -106,45 +143,48 @@ export function RoutinePage() {
       <RoutineSwitcher
         activeRoutineId={bundle?.routine.id ?? null}
         disabled={isPending}
-        onCreate={() =>
-          runRoutineAction(async () => {
-            const routineId = await createRoutine('Nueva rutina')
-            await setActiveRoutine(routineId)
-            return routineId
-          }, 'Rutina creada y activada')
-        }
         onSelect={(routineId) => runRoutineAction(() => setActiveRoutine(routineId), 'Rutina activa cambiada')}
         routines={routines}
       />
 
-      {mode === 'view' ? <RoutineView bundle={bundle} days={days} /> : null}
+      {mode === 'view' ? (
+        <RoutineView
+          bundle={bundle}
+          days={days}
+          onSelectDay={setSelectedDayId}
+          selectedDay={selectedDay}
+        />
+      ) : null}
 
       {mode === 'edit' && bundle ? (
         <RoutineEditor
           days={days}
           disabled={isPending}
           exercises={selectedExercises}
+          onAddExercise={() => setCatalogPickerOpen(true)}
           onCreateDay={() => runRoutineAction(() => createDay(bundle.routine.id, `Dia ${days.length + 1}`), 'Dia creado')}
-          onDeleteDay={(dayId) => {
-            if (!window.confirm('Eliminar este dia y sus ejercicios?')) return
+          onDeleteDay={async (dayId) => {
+            if (!(await confirmDanger('Eliminar dia', 'Se borrara este dia y sus ejercicios.'))) return
             runRoutineAction(() => deleteDay(dayId), 'Dia eliminado')
           }}
-          onDeleteExercise={(exerciseId) => {
-            if (!window.confirm('Eliminar este ejercicio?')) return
-            runRoutineAction(() => deleteExercise(exerciseId), 'Ejercicio eliminado')
+          onDeleteExercise={async (exerciseId) => {
+            if (!(await confirmDanger('Quitar ejercicio', 'Se quitara este ejercicio del dia.'))) return
+            runRoutineAction(() => deleteExercise(exerciseId), 'Ejercicio quitado')
           }}
-          onDeleteRoutine={() => {
-            if (!window.confirm('Eliminar rutina activa? El historial queda intacto.')) return
+          onDeleteRoutine={async () => {
+            if (!(await confirmDanger('Eliminar rutina', 'El historial queda intacto, pero la rutina se borrara.'))) return
             runRoutineAction(() => deleteRoutine(bundle.routine.id), 'Rutina eliminada')
           }}
           onDuplicateDay={(dayId) => runRoutineAction(() => duplicateDay(dayId), 'Dia duplicado')}
           onDuplicateExercise={(exerciseId) => runRoutineAction(() => duplicateExercise(exerciseId), 'Ejercicio duplicado')}
           onDuplicateRoutine={() => runRoutineAction(() => duplicateRoutine(bundle.routine.id), 'Rutina duplicada')}
-          onEditExercise={(exercise) => setSheet({ exercise, mode: 'edit' })}
-          onMoveDay={(dayId, direction) => runRoutineAction(() => moveDay(dayId, direction), 'Dia movido')}
-          onMoveExercise={(exerciseId, direction) => runRoutineAction(() => moveExercise(exerciseId, direction), 'Ejercicio movido')}
-          onNewExercise={() => setSheet({ exercise: null, mode: 'create' })}
+          onEditExercise={(exercise) => setRecipeSheet({ catalogItem: null, exercise, mode: 'edit' })}
           onRenameRoutine={(name) => runRoutineAction(() => renameRoutine(bundle.routine.id, name), 'Rutina renombrada')}
+          onReorderDays={(orderedIds) => runRoutineAction(() => reorderDays(bundle.routine.id, orderedIds), 'Dias reordenados')}
+          onReorderExercises={(orderedIds) => {
+            if (!selectedDay) return
+            runRoutineAction(() => reorderExercises(selectedDay.id, orderedIds), 'Ejercicios reordenados')
+          }}
           onSelectDay={setSelectedDayId}
           onUpdateDay={(dayId, input) => runRoutineAction(() => updateDay(dayId, input), 'Dia guardado')}
           routine={bundle.routine}
@@ -152,37 +192,18 @@ export function RoutinePage() {
         />
       ) : null}
 
-      {mode === 'catalog' && bundle && selectedDay ? (
+      {mode === 'catalog' ? (
         <CatalogPanel
           catalog={catalog}
           disabled={isPending}
-          onAdd={(catalogItemId) =>
-            runRoutineAction(() => addCatalogExerciseToDay(bundle.routine.id, selectedDay.id, catalogItemId), 'Ejercicio agregado')
-          }
-          selectedDay={selectedDay}
+          onCreate={() => setCatalogSheet({ item: null })}
+          onDelete={async (catalogItemId) => {
+            if (!(await confirmDanger('Eliminar del catalogo', 'Las rutinas existentes no se borran.'))) return
+            runRoutineAction(() => deleteCatalogExercise(catalogItemId), 'Ejercicio eliminado del catalogo')
+          }}
+          onEdit={(item) => setCatalogSheet({ item })}
         />
       ) : null}
-
-      <div className="space-y-2">
-        <ActionButton
-          className="w-full"
-          disabled={isPending}
-          onClick={() =>
-            runRoutineAction(async () => {
-              const routineId = await createRoutine('Nueva rutina')
-              await setActiveRoutine(routineId)
-              return routineId
-            }, 'Rutina creada y activada')
-          }
-        >
-          <PlusCircle aria-hidden="true" className="size-5" />
-          Crear rutina
-        </ActionButton>
-        <ActionButton className="w-full" disabled={isPending} onClick={() => importInputRef.current?.click()} tone="ghost">
-          <UploadCloud aria-hidden="true" className="size-5 text-arsen-acid" />
-          Subir JSON
-        </ActionButton>
-      </div>
 
       <input
         accept="application/json,.json"
@@ -197,23 +218,77 @@ export function RoutinePage() {
         type="file"
       />
 
-      {sheet && bundle && selectedDay ? (
-        <ExerciseEditorSheet
+      {catalogPickerOpen && selectedDay && bundle ? (
+        <CatalogPickerSheet
+          catalog={catalog}
+          onClose={() => setCatalogPickerOpen(false)}
+          onCreateCatalog={() => setCatalogSheet({ item: null })}
+          onSelect={(item) => {
+            setCatalogPickerOpen(false)
+            setRecipeSheet({ catalogItem: item, exercise: null, mode: 'add' })
+          }}
+          selectedDay={selectedDay}
+        />
+      ) : null}
+
+      {catalogSheet ? (
+        <CatalogExerciseEditorSheet
           disabled={isPending}
-          exercise={sheet.exercise}
-          key={sheet.exercise?.id ?? 'new'}
-          onClose={() => setSheet(null)}
+          item={catalogSheet.item}
+          onClose={() => setCatalogSheet(null)}
+          onSave={(input) => {
+            const action = catalogSheet.item
+              ? () => updateCatalogExercise(catalogSheet.item!.id, input)
+              : () => createCatalogExercise(input)
+            runRoutineAction(action, catalogSheet.item ? 'Ejercicio de catalogo guardado' : 'Ejercicio creado en catalogo')
+            setCatalogSheet(null)
+          }}
+        />
+      ) : null}
+
+      {recipeSheet && selectedDay && bundle ? (
+        <RoutineExerciseRecipeSheet
+          catalogItem={recipeSheet.catalogItem}
+          disabled={isPending}
+          exercise={recipeSheet.exercise}
+          onClose={() => setRecipeSheet(null)}
           onSave={(input) => {
             const action =
-              sheet.mode === 'edit' && sheet.exercise
-                ? () => updateExercise(sheet.exercise!.id, input)
-                : () => createExercise(bundle.routine.id, selectedDay.id, input)
-            runRoutineAction(action, sheet.mode === 'edit' ? 'Ejercicio guardado' : 'Ejercicio creado')
-            setSheet(null)
+              recipeSheet.mode === 'edit' && recipeSheet.exercise
+                ? () => updateExercise(recipeSheet.exercise!.id, input)
+                : () => addCatalogExerciseToDay(bundle.routine.id, selectedDay.id, recipeSheet.catalogItem!.id, input)
+            runRoutineAction(action, recipeSheet.mode === 'edit' ? 'Receta guardada' : 'Ejercicio agregado al dia')
+            setRecipeSheet(null)
           }}
         />
       ) : null}
     </div>
+  )
+}
+
+function RoutineActions({
+  disabled,
+  onCreate,
+  onExport,
+  onImport,
+}: {
+  disabled: boolean
+  onCreate: () => void
+  onExport: () => void
+  onImport: () => void
+}) {
+  return (
+    <details className="relative">
+      <summary className="grid size-10 cursor-pointer list-none place-items-center rounded-[10px] text-arsen-purple2">
+        <EllipsisVertical aria-hidden="true" className="size-5" />
+        <span className="sr-only">Abrir acciones de rutina</span>
+      </summary>
+      <div className="absolute right-0 z-30 mt-2 w-44 rounded-[10px] border border-white/10 bg-arsen-surface p-1 shadow-lg">
+        <MenuButton disabled={disabled} icon={PlusCircle} label="Crear rutina" onClick={onCreate} />
+        <MenuButton disabled={disabled} icon={UploadCloud} label="Importar JSON" onClick={onImport} />
+        <MenuButton disabled={disabled} icon={Download} label="Exportar JSON" onClick={onExport} />
+      </div>
+    </details>
   )
 }
 
@@ -240,13 +315,11 @@ function ModeTabs({ mode, onModeChange }: { mode: Mode; onModeChange: (mode: Mod
 function RoutineSwitcher({
   activeRoutineId,
   disabled,
-  onCreate,
   onSelect,
   routines,
 }: {
   activeRoutineId: string | null
   disabled: boolean
-  onCreate: () => void
   onSelect: (routineId: string) => void
   routines: Routine[]
 }) {
@@ -270,14 +343,6 @@ function RoutineSwitcher({
             {routine.name}
           </button>
         ))}
-        <button
-          className="shrink-0 rounded-[10px] border border-arsen-acid/40 px-3 py-2 text-xs font-extrabold text-arsen-acid"
-          disabled={disabled}
-          onClick={onCreate}
-          type="button"
-        >
-          + Nueva
-        </button>
       </div>
     </section>
   )
@@ -286,10 +351,16 @@ function RoutineSwitcher({
 function RoutineView({
   bundle,
   days,
+  onSelectDay,
+  selectedDay,
 }: {
   bundle: ReturnType<typeof useActiveRoutineBundle>
   days: RoutineDay[]
+  onSelectDay: (dayId: string) => void
+  selectedDay: RoutineDay | null
 }) {
+  const selectedExercises = selectedDay ? bundle?.exercisesByDay.get(selectedDay.id) ?? [] : []
+
   return (
     <>
       <Card className="flex items-center justify-between gap-3 p-3">
@@ -302,17 +373,6 @@ function RoutineView({
             <p className="text-sm font-bold text-arsen-purple2">{days.length} dias</p>
           </div>
         </div>
-        <button
-          className="grid size-10 place-items-center rounded-[10px] text-arsen-purple2"
-          disabled={!bundle}
-          onClick={() => {
-            if (bundle) void exportRoutineJson(bundle.routine.id)
-          }}
-          type="button"
-        >
-          <Download aria-hidden="true" className="size-5" />
-          <span className="sr-only">Exportar rutina activa</span>
-        </button>
       </Card>
 
       <section>
@@ -320,31 +380,70 @@ function RoutineView({
         <div className="space-y-3">
           {days.map((day) => {
             const dayExercises = bundle?.exercisesByDay.get(day.id) ?? []
-            const previewExercises = dayExercises.slice(0, 3).map((exercise) => exercise.name)
-            const remainingCount = Math.max(dayExercises.length - previewExercises.length, 0)
+            const dominantMuscle = dominantMuscleForExercises(dayExercises)
 
             return (
-              <Card className="content-auto grid grid-cols-[1fr_74px] gap-3 p-4" key={day.id}>
-                <div className="min-w-0">
-                  <div className="flex items-center justify-between gap-2">
-                    <h2 className="text-2xl font-black">{day.name}</h2>
-                    <span className="text-xs font-extrabold text-arsen-acid">{dayExercises.length} ejercicios</span>
+              <button className="block w-full text-left" key={day.id} onClick={() => onSelectDay(day.id)} type="button">
+                <Card className="content-auto grid grid-cols-[1fr_74px] items-center gap-3 p-4">
+                  <div className="min-w-0">
+                    <div className="flex items-center justify-between gap-2">
+                      <h2 className="text-2xl font-black">{day.name}</h2>
+                      <span className="text-xs font-extrabold text-arsen-acid">{dayExercises.length} ejercicios</span>
+                    </div>
+                    <p className="font-extrabold text-arsen-purple2">{dominantMuscle}</p>
+                    <p className="mt-1 text-sm text-arsen-muted">{day.description || 'Sin descripcion'}</p>
                   </div>
-                  <p className="font-extrabold text-arsen-purple2">{day.description}</p>
-                  <ul className="mt-2 space-y-1 text-xs text-arsen-muted">
-                    {previewExercises.map((exercise) => (
-                      <li key={exercise}>{exercise}</li>
-                    ))}
-                    {remainingCount > 0 ? <li>+ {remainingCount} mas</li> : null}
-                  </ul>
-                </div>
-                <ExerciseArt alt={day.name} className="h-[106px] w-[74px]" kind={artForDay(day.name)} />
-              </Card>
+                  <ExerciseArt alt={day.name} className="size-[74px]" muscle={dominantMuscle} />
+                </Card>
+              </button>
             )
           })}
         </div>
       </section>
+
+      {selectedDay ? <DayReadOnlyDetail day={selectedDay} exercises={selectedExercises} /> : null}
     </>
+  )
+}
+
+function DayReadOnlyDetail({ day, exercises }: { day: RoutineDay; exercises: RoutineExercise[] }) {
+  const dominantMuscle = dominantMuscleForExercises(exercises)
+
+  return (
+    <section>
+      <div className="mb-2 text-xs font-extrabold text-arsen-muted">Detalle del dia</div>
+      <Card className="p-3">
+        <div className="flex items-center gap-3">
+          <ExerciseArt alt={dominantMuscle} className="size-14" muscle={dominantMuscle} />
+          <div>
+            <h2 className="text-xl font-black">{day.name}</h2>
+            <p className="text-sm font-semibold text-arsen-muted">{day.description || 'Sin descripcion'}</p>
+            <span className="mt-1 inline-flex rounded-full bg-arsen-purple/30 px-2 py-1 text-xs font-bold text-arsen-purple2">
+              Dominante: {dominantMuscle}
+            </span>
+          </div>
+        </div>
+        <div className="mt-3 space-y-2">
+          {exercises.map((exercise) => (
+            <div className="rounded-[10px] border border-white/10 bg-arsen-bg/50 p-2" key={exercise.id}>
+              <div className="flex items-center gap-2">
+                <ExerciseArt alt={exercise.name} className="size-10" muscle={exercise.mainMuscle} />
+                <div className="min-w-0">
+                  <strong className="block truncate text-sm">{exercise.name}</strong>
+                  <span className="text-xs text-arsen-muted">
+                    {exercise.mainMuscle} - {exercise.equipment} - {exercise.targetSets}x{exercise.repRange} - RIR {exercise.recommendedRir}
+                  </span>
+                </div>
+              </div>
+              {exercise.progression || exercise.technicalNotes ? (
+                <p className="mt-2 text-xs text-arsen-muted">{exercise.progression || exercise.technicalNotes}</p>
+              ) : null}
+            </div>
+          ))}
+          {exercises.length === 0 ? <p className="text-sm text-arsen-muted">Este dia aun no tiene ejercicios.</p> : null}
+        </div>
+      </Card>
+    </section>
   )
 }
 
@@ -352,6 +451,7 @@ function RoutineEditor({
   days,
   disabled,
   exercises,
+  onAddExercise,
   onCreateDay,
   onDeleteDay,
   onDeleteExercise,
@@ -360,10 +460,9 @@ function RoutineEditor({
   onDuplicateExercise,
   onDuplicateRoutine,
   onEditExercise,
-  onMoveDay,
-  onMoveExercise,
-  onNewExercise,
   onRenameRoutine,
+  onReorderDays,
+  onReorderExercises,
   onSelectDay,
   onUpdateDay,
   routine,
@@ -372,6 +471,7 @@ function RoutineEditor({
   days: RoutineDay[]
   disabled: boolean
   exercises: RoutineExercise[]
+  onAddExercise: () => void
   onCreateDay: () => void
   onDeleteDay: (dayId: string) => void
   onDeleteExercise: (exerciseId: string) => void
@@ -380,10 +480,9 @@ function RoutineEditor({
   onDuplicateExercise: (exerciseId: string) => void
   onDuplicateRoutine: () => void
   onEditExercise: (exercise: RoutineExercise) => void
-  onMoveDay: (dayId: string, direction: 'up' | 'down') => void
-  onMoveExercise: (exerciseId: string, direction: 'up' | 'down') => void
-  onNewExercise: () => void
   onRenameRoutine: (name: string) => void
+  onReorderDays: (orderedIds: string[]) => void
+  onReorderExercises: (orderedIds: string[]) => void
   onSelectDay: (dayId: string) => void
   onUpdateDay: (dayId: string, input: { description: string; name: string; weekday: RoutineDay['weekday'] }) => void
   routine: Routine
@@ -418,21 +517,26 @@ function RoutineEditor({
             + Crear dia
           </button>
         </div>
-        <div className="flex gap-2 overflow-x-auto pb-1">
-          {days.map((day) => (
-            <button
-              className={[
-                'shrink-0 rounded-[10px] border px-3 py-2 text-xs font-extrabold',
-                day.id === selectedDay?.id ? 'border-arsen-purple2 bg-arsen-purple/40 text-white' : 'border-white/10 bg-arsen-surface text-arsen-muted',
-              ].join(' ')}
-              key={day.id}
-              onClick={() => onSelectDay(day.id)}
-              type="button"
-            >
-              {day.name}
-            </button>
-          ))}
-        </div>
+        <SortableList ids={days.map((day) => day.id)} onReorder={onReorderDays}>
+          <div className="space-y-2">
+            {days.map((day) => (
+              <SortableRow id={day.id} key={day.id}>
+                <button
+                  className={[
+                    'grid min-h-12 w-full grid-cols-[28px_1fr_auto] items-center gap-2 rounded-[10px] border px-3 text-left text-xs font-extrabold',
+                    day.id === selectedDay?.id ? 'border-arsen-purple2 bg-arsen-purple/40 text-white' : 'border-white/10 bg-arsen-surface text-arsen-muted',
+                  ].join(' ')}
+                  onClick={() => onSelectDay(day.id)}
+                  type="button"
+                >
+                  <GripVertical aria-hidden="true" className="size-4 text-arsen-dim" />
+                  {day.name}
+                  <span>{weekdayName(day.weekday)}</span>
+                </button>
+              </SortableRow>
+            ))}
+          </div>
+        </SortableList>
       </section>
 
       {selectedDay ? (
@@ -441,8 +545,6 @@ function RoutineEditor({
           disabled={disabled}
           onDelete={() => onDeleteDay(selectedDay.id)}
           onDuplicate={() => onDuplicateDay(selectedDay.id)}
-          onMoveDown={() => onMoveDay(selectedDay.id, 'down')}
-          onMoveUp={() => onMoveDay(selectedDay.id, 'up')}
           onSave={(input) => onUpdateDay(selectedDay.id, input)}
         />
       ) : null}
@@ -450,25 +552,26 @@ function RoutineEditor({
       <section>
         <div className="mb-2 flex items-center justify-between">
           <span className="text-xs font-extrabold text-arsen-muted">Ejercicios del dia</span>
-          <button className="text-xs font-extrabold text-arsen-acid" disabled={disabled || !selectedDay} onClick={onNewExercise} type="button">
+          <button className="text-xs font-extrabold text-arsen-acid" disabled={disabled || !selectedDay} onClick={onAddExercise} type="button">
             + Ejercicio
           </button>
         </div>
-        <div className="space-y-2">
-          {exercises.map((exercise) => (
-            <ExerciseEditRow
-              disabled={disabled}
-              exercise={exercise}
-              key={exercise.id}
-              onDelete={() => onDeleteExercise(exercise.id)}
-              onDuplicate={() => onDuplicateExercise(exercise.id)}
-              onEdit={() => onEditExercise(exercise)}
-              onMoveDown={() => onMoveExercise(exercise.id, 'down')}
-              onMoveUp={() => onMoveExercise(exercise.id, 'up')}
-            />
-          ))}
-          {exercises.length === 0 ? <Card className="p-4 text-sm text-arsen-muted">Este dia aun no tiene ejercicios.</Card> : null}
-        </div>
+        <SortableList ids={exercises.map((exercise) => exercise.id)} onReorder={onReorderExercises}>
+          <div className="space-y-2">
+            {exercises.map((exercise) => (
+              <SortableRow id={exercise.id} key={exercise.id}>
+                <ExerciseEditRow
+                  disabled={disabled}
+                  exercise={exercise}
+                  onDelete={() => onDeleteExercise(exercise.id)}
+                  onDuplicate={() => onDuplicateExercise(exercise.id)}
+                  onEdit={() => onEditExercise(exercise)}
+                />
+              </SortableRow>
+            ))}
+          </div>
+        </SortableList>
+        {exercises.length === 0 ? <Card className="p-4 text-sm text-arsen-muted">Este dia aun no tiene ejercicios.</Card> : null}
       </section>
     </>
   )
@@ -479,16 +582,12 @@ function DayEditorCard({
   disabled,
   onDelete,
   onDuplicate,
-  onMoveDown,
-  onMoveUp,
   onSave,
 }: {
   day: RoutineDay
   disabled: boolean
   onDelete: () => void
   onDuplicate: () => void
-  onMoveDown: () => void
-  onMoveUp: () => void
   onSave: (input: { description: string; name: string; weekday: RoutineDay['weekday'] }) => void
 }) {
   const [name, setName] = useState(day.name)
@@ -521,10 +620,8 @@ function DayEditorCard({
         </label>
       </div>
       <TextField label="Descripcion" onChange={setDescription} value={description} />
-      <div className="mt-3 grid grid-cols-5 gap-2">
+      <div className="mt-3 grid grid-cols-3 gap-2">
         <IconButton disabled={disabled} icon={Check} label="Guardar" onClick={() => onSave({ description, name, weekday: weekday === '' ? null : (Number(weekday) as RoutineDay['weekday']) })} />
-        <IconButton disabled={disabled} icon={ArrowUp} label="Subir" onClick={onMoveUp} />
-        <IconButton disabled={disabled} icon={ArrowDown} label="Bajar" onClick={onMoveDown} />
         <IconButton disabled={disabled} icon={Copy} label="Copiar" onClick={onDuplicate} />
         <IconButton danger disabled={disabled} icon={Trash2} label="Borrar" onClick={onDelete} />
       </div>
@@ -538,32 +635,27 @@ function ExerciseEditRow({
   onDelete,
   onDuplicate,
   onEdit,
-  onMoveDown,
-  onMoveUp,
 }: {
   disabled: boolean
   exercise: RoutineExercise
   onDelete: () => void
   onDuplicate: () => void
   onEdit: () => void
-  onMoveDown: () => void
-  onMoveUp: () => void
 }) {
   return (
-    <Card className="grid grid-cols-[52px_1fr_auto] items-center gap-3 p-2">
-      <ExerciseArt alt={exercise.name} className="size-[52px]" kind={artForExercise(exercise)} />
+    <Card className="grid grid-cols-[28px_52px_1fr_auto] items-center gap-2 p-2">
+      <GripVertical aria-hidden="true" className="size-4 text-arsen-dim" />
+      <ExerciseArt alt={exercise.name} className="size-[52px]" muscle={exercise.mainMuscle} />
       <div className="min-w-0">
         <h3 className="truncate text-sm font-extrabold">{exercise.name}</h3>
         <span className="mt-1 block truncate text-xs text-arsen-muted">
-          {exercise.mainMuscle} · {exercise.targetSets}x{exercise.repRange} · RIR {exercise.recommendedRir}
+          {exercise.mainMuscle} - {exercise.targetSets}x{exercise.repRange} - RIR {exercise.recommendedRir}
         </span>
       </div>
       <div className="grid grid-cols-3 gap-1">
-        <IconOnly disabled={disabled} icon={Pencil} label="Editar" onClick={onEdit} />
-        <IconOnly disabled={disabled} icon={ArrowUp} label="Subir" onClick={onMoveUp} />
-        <IconOnly disabled={disabled} icon={ArrowDown} label="Bajar" onClick={onMoveDown} />
+        <IconOnly disabled={disabled} icon={Pencil} label="Editar receta" onClick={onEdit} />
         <IconOnly disabled={disabled} icon={Copy} label="Duplicar" onClick={onDuplicate} />
-        <IconOnly danger disabled={disabled} icon={Trash2} label="Borrar" onClick={onDelete} />
+        <IconOnly danger disabled={disabled} icon={Trash2} label="Quitar" onClick={onDelete} />
       </div>
     </Card>
   )
@@ -572,57 +664,47 @@ function ExerciseEditRow({
 function CatalogPanel({
   catalog,
   disabled,
-  onAdd,
-  selectedDay,
+  onCreate,
+  onDelete,
+  onEdit,
 }: {
   catalog: ExerciseCatalogItem[]
   disabled: boolean
-  onAdd: (catalogItemId: string) => void
-  selectedDay: RoutineDay
+  onCreate: () => void
+  onDelete: (catalogItemId: string) => void
+  onEdit: (item: ExerciseCatalogItem) => void
 }) {
   const [query, setQuery] = useState('')
-  const filtered = useMemo(() => {
-    const value = query.trim().toLowerCase()
-    if (!value) return catalog
-
-    return catalog.filter(
-      (item) =>
-        item.name.toLowerCase().includes(value) ||
-        item.mainMuscle.toLowerCase().includes(value) ||
-        item.equipment.toLowerCase().includes(value),
-    )
-  }, [catalog, query])
+  const filtered = useMemo(() => filterCatalog(catalog, query), [catalog, query])
 
   return (
     <section className="space-y-3">
-      <Card className="grid grid-cols-[36px_1fr] items-center gap-2 p-3">
-        <Search aria-hidden="true" className="size-5 text-arsen-muted" />
-        <input
-          className="min-h-10 bg-transparent text-sm font-semibold outline-none placeholder:text-arsen-muted"
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder={`Agregar a ${selectedDay.name}`}
-          value={query}
-        />
-      </Card>
+      <div className="grid grid-cols-[1fr_auto] gap-2">
+        <SearchBox onChange={setQuery} placeholder="Buscar en catalogo" value={query} />
+        <button
+          className="grid size-12 place-items-center rounded-[10px] border border-arsen-acid/40 text-arsen-acid disabled:opacity-40"
+          disabled={disabled}
+          onClick={onCreate}
+          type="button"
+        >
+          <PlusCircle aria-hidden="true" className="size-5" />
+          <span className="sr-only">Crear ejercicio de catalogo</span>
+        </button>
+      </div>
       <div className="space-y-2">
         {filtered.map((item) => (
           <Card className="grid grid-cols-[52px_1fr_auto] items-center gap-3 p-2" key={item.id}>
-            <ExerciseArt alt={item.name} className="size-[52px]" kind={artForCatalogItem(item)} />
+            <ExerciseArt alt={item.name} className="size-[52px]" muscle={item.mainMuscle} />
             <div className="min-w-0">
               <h3 className="truncate text-sm font-extrabold">{item.name}</h3>
               <span className="mt-1 block truncate text-xs text-arsen-muted">
-                {item.mainMuscle} · {item.equipment} · {item.defaultTargetSets}x{item.defaultRepRange}
+                {normalizeMuscleGroup(item.mainMuscle)} - {item.equipment}
               </span>
             </div>
-            <button
-              className="grid size-10 place-items-center rounded-[10px] border border-arsen-purple2/45 text-arsen-purple2 disabled:opacity-40"
-              disabled={disabled}
-              onClick={() => onAdd(item.id)}
-              type="button"
-            >
-              <ListPlus aria-hidden="true" className="size-5" />
-              <span className="sr-only">Agregar ejercicio</span>
-            </button>
+            <div className="grid grid-cols-2 gap-1">
+              <IconOnly disabled={disabled} icon={Pencil} label="Editar catalogo" onClick={() => onEdit(item)} />
+              <IconOnly danger disabled={disabled} icon={Trash2} label="Eliminar catalogo" onClick={() => onDelete(item.id)} />
+            </div>
           </Card>
         ))}
       </div>
@@ -630,101 +712,161 @@ function CatalogPanel({
   )
 }
 
-function ExerciseEditorSheet({
+function CatalogPickerSheet({
+  catalog,
+  onClose,
+  onCreateCatalog,
+  onSelect,
+  selectedDay,
+}: {
+  catalog: ExerciseCatalogItem[]
+  onClose: () => void
+  onCreateCatalog: () => void
+  onSelect: (item: ExerciseCatalogItem) => void
+  selectedDay: RoutineDay
+}) {
+  const [query, setQuery] = useState('')
+  const filtered = useMemo(() => filterCatalog(catalog, query), [catalog, query])
+
+  return (
+    <SheetFrame onClose={onClose} title={`Agregar a ${selectedDay.name}`}>
+      <SearchBox onChange={setQuery} placeholder="Buscar ejercicio" value={query} />
+      <div className="mt-3 space-y-2">
+        {filtered.map((item) => (
+          <button className="block w-full text-left" key={item.id} onClick={() => onSelect(item)} type="button">
+            <Card className="grid grid-cols-[52px_1fr_auto] items-center gap-3 p-2">
+              <ExerciseArt alt={item.name} className="size-[52px]" muscle={item.mainMuscle} />
+              <div className="min-w-0">
+                <h3 className="truncate text-sm font-extrabold">{item.name}</h3>
+                <span className="mt-1 block truncate text-xs text-arsen-muted">
+                  {normalizeMuscleGroup(item.mainMuscle)} - {item.equipment}
+                </span>
+              </div>
+              <ListPlus aria-hidden="true" className="size-5 text-arsen-purple2" />
+            </Card>
+          </button>
+        ))}
+        <ActionButton className="w-full" onClick={onCreateCatalog} tone="ghost">
+          <PlusCircle aria-hidden="true" className="size-5" />
+          Crear nuevo en catalogo
+        </ActionButton>
+      </div>
+    </SheetFrame>
+  )
+}
+
+function CatalogExerciseEditorSheet({
+  disabled,
+  item,
+  onClose,
+  onSave,
+}: {
+  disabled: boolean
+  item: ExerciseCatalogItem | null
+  onClose: () => void
+  onSave: (input: CatalogExerciseInput) => void
+}) {
+  const [form, setForm] = useState(() => ({
+    aliases: item?.aliases.join(', ') ?? '',
+    equipment: item?.equipment ?? 'Barra',
+    mainMuscle: normalizeMuscleGroup(item?.mainMuscle),
+    name: item?.name ?? '',
+  }))
+
+  return (
+    <SheetFrame onClose={onClose} title={item ? 'Editar catalogo' : 'Crear ejercicio'}>
+      <div className="space-y-3">
+        <TextField label="Nombre" onChange={(value) => setForm((current) => ({ ...current, name: value }))} value={form.name} />
+        <div className="grid grid-cols-2 gap-2">
+          <MuscleSelect onChange={(value) => setForm((current) => ({ ...current, mainMuscle: value }))} value={form.mainMuscle} />
+          <EquipmentSelect onChange={(value) => setForm((current) => ({ ...current, equipment: value }))} value={form.equipment} />
+        </div>
+        <TextField label="Aliases" onChange={(value) => setForm((current) => ({ ...current, aliases: value }))} value={form.aliases} />
+      </div>
+      <ActionButton
+        className="mt-4 w-full"
+        disabled={disabled}
+        onClick={() =>
+          onSave({
+            aliases: form.aliases.split(',').map((alias) => alias.trim()).filter(Boolean),
+            equipment: form.equipment,
+            mainMuscle: form.mainMuscle,
+            name: form.name,
+          })
+        }
+        tone="acid"
+      >
+        <Check aria-hidden="true" className="size-5" />
+        Guardar
+      </ActionButton>
+    </SheetFrame>
+  )
+}
+
+function RoutineExerciseRecipeSheet({
+  catalogItem,
   disabled,
   exercise,
   onClose,
   onSave,
 }: {
+  catalogItem: ExerciseCatalogItem | null
   disabled: boolean
   exercise: RoutineExercise | null
   onClose: () => void
   onSave: (input: ExerciseInput) => void
 }) {
-  const [form, setForm] = useState(() => exerciseToForm(exercise))
+  const [form, setForm] = useState(() => exerciseToForm(exercise, catalogItem))
 
   function update<K extends keyof ExerciseForm>(key: K, value: ExerciseForm[K]) {
     setForm((current) => ({ ...current, [key]: value }))
   }
 
   return (
-    <div className="fixed inset-0 z-50 mx-auto flex max-w-[430px] items-end bg-black/55">
-      <button aria-label="Cerrar editor" className="absolute inset-0 cursor-default" onClick={onClose} type="button" />
-      <section className="relative max-h-[88vh] w-full overflow-y-auto rounded-t-[22px] border-t border-white/10 bg-arsen-bg2 p-4 shadow-[0_-16px_40px_rgb(0_0_0_/_0.35)]">
-        <div className="mx-auto mb-4 h-1.5 w-14 rounded-full bg-white/25" />
-        <div className="mb-4 flex items-start justify-between gap-3">
-          <div>
-            <h2 className="flex items-center gap-2 text-xl font-black">
-              <Dumbbell aria-hidden="true" className="size-5 text-arsen-purple2" />
-              {exercise ? 'Editar ejercicio' : 'Crear ejercicio'}
-            </h2>
-            <p className="mt-1 text-xs text-arsen-muted">Objetivo, descanso, calentamiento y notas.</p>
+    <SheetFrame onClose={onClose} title={exercise ? 'Editar receta' : 'Receta del dia'}>
+      <div className="space-y-3">
+        <Card className="grid grid-cols-[52px_1fr] items-center gap-3 p-2">
+          <ExerciseArt alt={form.name} className="size-[52px]" muscle={form.mainMuscle} />
+          <div className="min-w-0">
+            <strong className="block truncate text-sm">{form.name}</strong>
+            <span className="text-xs text-arsen-muted">
+              {form.mainMuscle} - {form.equipment}
+            </span>
           </div>
-          <button className="grid size-9 place-items-center rounded-[10px] text-arsen-muted" onClick={onClose} type="button">
-            <X aria-hidden="true" className="size-5" />
-            <span className="sr-only">Cerrar</span>
-          </button>
+        </Card>
+        <div className="grid grid-cols-3 gap-2">
+          <TextField label="Series" onChange={(value) => update('targetSets', value)} type="number" value={form.targetSets} />
+          <TextField label="Reps" onChange={(value) => update('repRange', value)} value={form.repRange} />
+          <TextField label="RIR" onChange={(value) => update('recommendedRir', value)} value={form.recommendedRir} />
         </div>
-
-        <div className="space-y-3">
-          <TextField label="Nombre" onChange={(value) => update('name', value)} value={form.name} />
-          <div className="grid grid-cols-2 gap-2">
-            <TextField label="Musculo" onChange={(value) => update('mainMuscle', value)} value={form.mainMuscle} />
-            <label className="block">
-              <span className="mb-1 block text-xs font-bold text-arsen-muted">Equipo</span>
-              <select
-                className="min-h-11 w-full rounded-[10px] border border-white/10 bg-arsen-surface px-3 text-sm font-extrabold text-arsen-ink"
-                onChange={(event) => update('equipment', event.target.value as Equipment)}
-                value={form.equipment}
-              >
-                {equipmentOptions.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-          <div className="grid grid-cols-3 gap-2">
-            <TextField label="Series" onChange={(value) => update('targetSets', value)} type="number" value={form.targetSets} />
-            <TextField label="Reps" onChange={(value) => update('repRange', value)} value={form.repRange} />
-            <TextField label="RIR" onChange={(value) => update('recommendedRir', value)} value={form.recommendedRir} />
-          </div>
-          <div className="grid grid-cols-3 gap-2">
-            <TextField label="Peso kg" onChange={(value) => update('currentWeightKg', value)} type="number" value={form.currentWeightKg} />
-            <TextField label="Descanso s" onChange={(value) => update('restSeconds', value)} type="number" value={form.restSeconds} />
-            <TextField label="Warmups" onChange={(value) => update('warmupSets', value)} type="number" value={form.warmupSets} />
-          </div>
-          <TextField label="Protocolo calentamiento" onChange={(value) => update('warmupProtocol', value)} value={form.warmupProtocol} />
-          <TextField label="Progresion" onChange={(value) => update('progression', value)} value={form.progression} />
-          <label className="block">
-            <span className="mb-1 block text-xs font-bold text-arsen-muted">Notas tecnicas</span>
-            <textarea
-              className="min-h-20 w-full rounded-[10px] border border-white/10 bg-arsen-surface px-3 py-2 text-sm font-semibold text-arsen-ink"
-              onChange={(event) => update('technicalNotes', event.target.value)}
-              value={form.technicalNotes}
-            />
-          </label>
+        <div className="grid grid-cols-3 gap-2">
+          <TextField label="Peso kg" onChange={(value) => update('currentWeightKg', value)} type="number" value={form.currentWeightKg} />
+          <TextField label="Descanso s" onChange={(value) => update('restSeconds', value)} type="number" value={form.restSeconds} />
+          <TextField label="Warmups" onChange={(value) => update('warmupSets', value)} type="number" value={form.warmupSets} />
         </div>
-
-        <ActionButton
-          className="mt-4 w-full"
-          disabled={disabled}
-          onClick={() => onSave(formToExerciseInput(form))}
-          tone="acid"
-        >
-          <Check aria-hidden="true" className="size-5" />
-          Guardar ejercicio
-        </ActionButton>
-      </section>
-    </div>
+        <TextField label="Protocolo calentamiento" onChange={(value) => update('warmupProtocol', value)} value={form.warmupProtocol} />
+        <TextField label="Progresion" onChange={(value) => update('progression', value)} value={form.progression} />
+        <label className="block">
+          <span className="mb-1 block text-xs font-bold text-arsen-muted">Notas tecnicas</span>
+          <textarea
+            className="min-h-20 w-full rounded-[10px] border border-white/10 bg-arsen-surface px-3 py-2 text-sm font-semibold text-arsen-ink"
+            onChange={(event) => update('technicalNotes', event.target.value)}
+            value={form.technicalNotes}
+          />
+        </label>
+      </div>
+      <ActionButton className="mt-4 w-full" disabled={disabled} onClick={() => onSave(formToExerciseInput(form))} tone="acid">
+        <Check aria-hidden="true" className="size-5" />
+        Guardar receta
+      </ActionButton>
+    </SheetFrame>
   )
 }
 
 type ExerciseForm = {
   currentWeightKg: string
   equipment: Equipment
-  mainMuscle: string
+  mainMuscle: MuscleGroup
   name: string
   progression: string
   recommendedRir: string
@@ -736,12 +878,12 @@ type ExerciseForm = {
   warmupSets: string
 }
 
-function exerciseToForm(exercise: RoutineExercise | null): ExerciseForm {
+function exerciseToForm(exercise: RoutineExercise | null, catalogItem: ExerciseCatalogItem | null): ExerciseForm {
   return {
     currentWeightKg: String(exercise?.currentWeightKg ?? 0),
-    equipment: exercise?.equipment ?? 'Barra',
-    mainMuscle: exercise?.mainMuscle ?? '',
-    name: exercise?.name ?? '',
+    equipment: exercise?.equipment ?? catalogItem?.equipment ?? 'Barra',
+    mainMuscle: normalizeMuscleGroup(exercise?.mainMuscle ?? catalogItem?.mainMuscle),
+    name: exercise?.name ?? catalogItem?.name ?? '',
     progression: exercise?.progression ?? '',
     recommendedRir: exercise?.recommendedRir ?? '1-2',
     repRange: exercise?.repRange ?? '8-10',
@@ -773,6 +915,91 @@ function formToExerciseInput(form: ExerciseForm): ExerciseInput {
   }
 }
 
+function SortableList({
+  children,
+  ids,
+  onReorder,
+}: {
+  children: ReactNode
+  ids: string[]
+  onReorder: (orderedIds: string[]) => void
+}) {
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  )
+
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+
+    const oldIndex = ids.indexOf(String(active.id))
+    const newIndex = ids.indexOf(String(over.id))
+    if (oldIndex < 0 || newIndex < 0) return
+
+    onReorder(arrayMove(ids, oldIndex, newIndex))
+  }
+
+  return (
+    <DndContext collisionDetection={closestCenter} onDragEnd={handleDragEnd} sensors={sensors}>
+      <SortableContext items={ids} strategy={verticalListSortingStrategy}>
+        {children}
+      </SortableContext>
+    </DndContext>
+  )
+}
+
+function SortableRow({ children, id }: { children: ReactNode; id: string }) {
+  const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id })
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+      }}
+      {...attributes}
+      {...listeners}
+    >
+      {children}
+    </div>
+  )
+}
+
+function SheetFrame({ children, onClose, title }: { children: ReactNode; onClose: () => void; title: string }) {
+  return (
+    <div className="fixed inset-0 z-50 mx-auto flex max-w-[430px] items-end bg-black/55">
+      <button aria-label="Cerrar" className="absolute inset-0 cursor-default" onClick={onClose} type="button" />
+      <section className="relative max-h-[88vh] w-full overflow-y-auto rounded-t-[22px] border-t border-white/10 bg-arsen-bg2 p-4 shadow-[0_-16px_40px_rgb(0_0_0_/_0.35)]">
+        <div className="mx-auto mb-4 h-1.5 w-14 rounded-full bg-white/25" />
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <h2 className="text-xl font-black">{title}</h2>
+          <button className="grid size-9 place-items-center rounded-[10px] text-arsen-muted" onClick={onClose} type="button">
+            <X aria-hidden="true" className="size-5" />
+            <span className="sr-only">Cerrar</span>
+          </button>
+        </div>
+        {children}
+      </section>
+    </div>
+  )
+}
+
+function SearchBox({ onChange, placeholder, value }: { onChange: (value: string) => void; placeholder: string; value: string }) {
+  return (
+    <Card className="grid grid-cols-[36px_1fr] items-center gap-2 p-3">
+      <Search aria-hidden="true" className="size-5 text-arsen-muted" />
+      <input
+        className="min-h-10 bg-transparent text-sm font-semibold outline-none placeholder:text-arsen-muted"
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={placeholder}
+        value={value}
+      />
+    </Card>
+  )
+}
+
 function TextField({
   label,
   onChange,
@@ -794,6 +1021,44 @@ function TextField({
         type={type}
         value={value}
       />
+    </label>
+  )
+}
+
+function MuscleSelect({ onChange, value }: { onChange: (value: MuscleGroup) => void; value: MuscleGroup }) {
+  return (
+    <label className="block">
+      <span className="mb-1 block text-xs font-bold text-arsen-muted">Musculo</span>
+      <select
+        className="min-h-11 w-full rounded-[10px] border border-white/10 bg-arsen-surface px-3 text-sm font-extrabold text-arsen-ink"
+        onChange={(event) => onChange(event.target.value as MuscleGroup)}
+        value={value}
+      >
+        {muscleGroups.map((group) => (
+          <option key={group} value={group}>
+            {group}
+          </option>
+        ))}
+      </select>
+    </label>
+  )
+}
+
+function EquipmentSelect({ onChange, value }: { onChange: (value: Equipment) => void; value: Equipment }) {
+  return (
+    <label className="block">
+      <span className="mb-1 block text-xs font-bold text-arsen-muted">Equipo</span>
+      <select
+        className="min-h-11 w-full rounded-[10px] border border-white/10 bg-arsen-surface px-3 text-sm font-extrabold text-arsen-ink"
+        onChange={(event) => onChange(event.target.value as Equipment)}
+        value={value}
+      >
+        {equipmentOptions.map((option) => (
+          <option key={option} value={option}>
+            {option}
+          </option>
+        ))}
+      </select>
     </label>
   )
 }
@@ -856,30 +1121,44 @@ function IconOnly({
   )
 }
 
-function artForDay(dayName: string): ExerciseArtKind {
-  if (dayName.includes('3')) return 'hackSquat'
-  if (dayName.includes('5')) return 'row'
-  if (dayName.includes('6')) return 'shoulderPress'
-
-  return 'press'
+function MenuButton({
+  disabled,
+  icon: Icon,
+  label,
+  onClick,
+}: {
+  disabled: boolean
+  icon: typeof Check
+  label: string
+  onClick: () => void
+}) {
+  return (
+    <button
+      className="flex min-h-10 w-full items-center gap-2 rounded-[8px] px-3 text-left text-xs font-extrabold text-arsen-muted hover:bg-white/5 disabled:opacity-40"
+      disabled={disabled}
+      onClick={onClick}
+      type="button"
+    >
+      <Icon aria-hidden="true" className="size-4" />
+      {label}
+    </button>
+  )
 }
 
-function artForExercise(exercise: RoutineExercise): ExerciseArtKind {
-  return artForCatalogValue(exercise.canonicalName)
+function filterCatalog(catalog: ExerciseCatalogItem[], query: string) {
+  const value = query.trim().toLowerCase()
+  if (!value) return catalog
+
+  return catalog.filter(
+    (item) =>
+      item.name.toLowerCase().includes(value) ||
+      item.mainMuscle.toLowerCase().includes(value) ||
+      item.equipment.toLowerCase().includes(value),
+  )
 }
 
-function artForCatalogItem(item: ExerciseCatalogItem): ExerciseArtKind {
-  return artForCatalogValue(item.canonicalName)
-}
-
-function artForCatalogValue(value: string): ExerciseArtKind {
-  if (value.includes('pec-deck')) return 'pecDeck'
-  if (value.includes('remo')) return 'row'
-  if (value.includes('hack') || value.includes('prensa')) return 'hackSquat'
-  if (value.includes('jalon') || value.includes('pullover')) return 'latPulldown'
-  if (value.includes('militar') || value.includes('hombro')) return 'shoulderPress'
-
-  return 'press'
+function weekdayName(weekday: RoutineDay['weekday']) {
+  return weekdayOptions.find((option) => option.value === (weekday === null ? '' : String(weekday)))?.label ?? 'Sin dia fijo'
 }
 
 function numberOrDefault(value: string, fallback: number) {

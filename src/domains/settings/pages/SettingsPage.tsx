@@ -18,6 +18,7 @@ import {
 import { Card } from '../../../shared/components/Card'
 import { PageHeader } from '../../../shared/components/PageHeader'
 import { importRoutineJson } from '../../routine/importExport'
+import { confirmAction, confirmDanger } from '../../../shared/utils/alerts'
 import {
   exportFullBackup,
   exportProgressCsv,
@@ -114,12 +115,12 @@ export function SettingsPage() {
         <input
           accept="application/json,.json"
           className="hidden"
-          onChange={(event) => {
+          onChange={async (event) => {
             const file = event.target.files?.[0]
             event.target.value = ''
             if (!file) return
             const mode = importModeRef.current
-            if (mode === 'replace' && !window.confirm('Reemplazar todos los datos locales con este respaldo?')) return
+            if (mode === 'replace' && !(await confirmAction('Reemplazar respaldo', 'Se borraran los datos locales y se restaurara este archivo.', 'Reemplazar'))) return
             void runAction(
               `backup-import-${mode}`,
               () => importFullBackup(file, mode),
@@ -291,8 +292,8 @@ export function SettingsPage() {
           <button
             className="mt-3 w-full rounded-[10px] border border-red-300/35 px-3 py-2 text-sm font-extrabold text-red-300 disabled:opacity-50"
             disabled={busyAction === 'delete-range'}
-            onClick={() => {
-              if (!window.confirm('Borrar registros dentro del rango seleccionado?')) return
+            onClick={async () => {
+              if (!(await confirmDanger('Borrar rango', 'Se borraran los registros dentro del rango seleccionado.'))) return
               void runAction(
                 'delete-range',
                 () => deleteWorkoutLogsByDateRange(cleanupStartDate, cleanupEndDate),
@@ -309,8 +310,8 @@ export function SettingsPage() {
           icon={Trash2}
           label="Borrar logs de rutina activa"
           meta="No borra rutina ni catalogo"
-          onClick={() => {
-            if (!window.confirm('Borrar registros de la rutina activa?')) return
+          onClick={async () => {
+            if (!(await confirmDanger('Borrar logs', 'Se borraran los registros de la rutina activa.'))) return
             void runAction('delete-active', deleteActiveRoutineWorkoutLogs, 'Registros de rutina activa borrados')
           }}
           tone="danger"
@@ -320,8 +321,8 @@ export function SettingsPage() {
           icon={Trash2}
           label="Borrar todos los logs"
           meta="Mantiene rutinas guardadas"
-          onClick={() => {
-            if (!window.confirm('Borrar todos los registros de entrenamiento?')) return
+          onClick={async () => {
+            if (!(await confirmDanger('Borrar todos los logs', 'Se borraran todos los registros de entrenamiento.'))) return
             void runAction('delete-all', deleteAllWorkoutLogs, 'Todos los registros borrados')
           }}
           tone="danger"

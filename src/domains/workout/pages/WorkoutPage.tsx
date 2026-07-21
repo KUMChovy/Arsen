@@ -1,43 +1,30 @@
-import {
-  CalendarDays,
-  Check,
-  ChevronRight,
-  Clock3,
-  History,
-  Info,
-  ListChecks,
-  Pencil,
-  Play,
-  Square,
-  StickyNote,
-  Trash2,
-} from 'lucide-react'
-import { useEffect, useMemo, useState, useTransition } from 'react'
+import { Check, ChevronRight, Info, Pencil, Trash2, TrendingUp } from 'lucide-react'
+import { useMemo, useState, useTransition } from 'react'
 import { ActionButton } from '../../../shared/components/ActionButton'
 import { Card } from '../../../shared/components/Card'
 import { ExerciseArt, type ExerciseArtKind } from '../../../shared/components/ExerciseArt'
 import { PageHeader } from '../../../shared/components/PageHeader'
+import type { WeightIncreaseRecommendation } from '../../../shared/calculations/progression'
 import { totalVolume } from '../../../shared/calculations/workout'
 import { localDateKey } from '../../../shared/utils/date'
+import { confirmDanger } from '../../../shared/utils/alerts'
 import { formatWeight } from '../../../shared/utils/weight'
 import { useWorkoutDay } from '../../routine/hooks'
 import type { RoutineExercise } from '../../routine/types'
 import { RegisterSetSheet } from '../components/RegisterSetSheet'
-import { useWorkoutProgress } from '../hooks'
-import { completeSessionForDay, deleteMainSet, updateMainSet, updateSessionNotesForDay } from '../services'
+import { useWeightIncreaseRecommendations, useWorkoutProgress } from '../hooks'
+import { completeSessionForDay, deleteMainSet, updateMainSet } from '../services'
 import type { ExerciseState, SetLog, WeightUnit } from '../types'
 
 export function WorkoutPage() {
   const today = useMemo(() => new Date(), [])
-  const [dateKey, setDateKey] = useState(() => localDateKey(today))
+  const dateKey = useMemo(() => localDateKey(today), [today])
   const selectedDate = useMemo(() => new Date(`${dateKey}T12:00:00`), [dateKey])
   const workoutDay = useWorkoutDay(selectedDate)
   const dayExercises = workoutDay?.dayExercises ?? []
   const dailyProgress = useWorkoutProgress(dateKey, workoutDay?.day.id, dayExercises)
+  const weightIncreaseRecommendations = useWeightIncreaseRecommendations(dayExercises)
   const [selectedExerciseId, setSelectedExerciseId] = useState<string | null>(null)
-  const [notes, setNotes] = useState('')
-  const [restRemaining, setRestRemaining] = useState(0)
-  const [restRunning, setRestRunning] = useState(false)
   const [isPending, startTransition] = useTransition()
   const [message, setMessage] = useState<string | null>(null)
   const currentExercise = dayExercises.find((exercise) => dailyProgress.stateByExerciseId.get(exercise.id) !== 'done') ?? dayExercises[0]
@@ -68,40 +55,6 @@ export function WorkoutPage() {
     { label: 'Saltados', value: dailyProgress.skippedCount, tone: 'text-arsen-dim' },
   ]
 
-  useEffect(() => {
-    setNotes(dailyProgress.progress?.session?.notes ?? '')
-  }, [dailyProgress.progress?.session?.notes])
-
-  useEffect(() => {
-    if (!restRunning) return
-
-    const id = window.setInterval(() => {
-      setRestRemaining((current) => Math.max(current - 1, 0))
-    }, 1000)
-
-    return () => window.clearInterval(id)
-  }, [restRunning])
-
-  useEffect(() => {
-    if (restRemaining === 0) setRestRunning(false)
-  }, [restRemaining])
-
-  function saveNotes() {
-    if (!workoutDay) return
-
-    startTransition(() => {
-      updateSessionNotesForDay({
-        date: dateKey,
-        dayId: workoutDay.day.id,
-        displayUnit: workoutDay.settings.preferredUnit,
-        notes,
-        routineId: workoutDay.routine.id,
-      })
-        .then(() => setMessage('Notas guardadas'))
-        .catch((error: unknown) => setMessage(error instanceof Error ? error.message : 'No se guardaron las notas'))
-    })
-  }
-
   function runSetAction(action: () => Promise<void>, success: string) {
     startTransition(() => {
       action()
@@ -125,9 +78,21 @@ export function WorkoutPage() {
     })
   }
 
-  function editSet(set: SetLog) {
-    const value = window.prompt('Editar serie: peso kg, reps, RIR', `${set.weightKg},${set.reps},${set.rir}`)
-    if (!value) return
+  async function editSet(set: SetLog) {
+    const Swal = await import('sweetalert2')
+    const result = await Swal.default.fire({
+      background: 'oklch(0.155 0.016 280)',
+      color: 'white',
+      confirmButtonColor: '#8b5cf6',
+      confirmButtonText: 'Guardar',
+      input: 'text',
+      inputLabel: 'Peso kg, reps, RIR',
+      inputValue: `${set.weightKg},${set.reps},${set.rir}`,
+      showCancelButton: true,
+      title: 'Editar serie',
+    })
+    const value = typeof result.value === 'string' ? result.value : ''
+    if (!result.isConfirmed || !value) return
 
     const values = value.split(',').map((item) => Number(item.trim()))
     const weightKg = values[0]
@@ -141,94 +106,77 @@ export function WorkoutPage() {
     runSetAction(() => updateMainSet(set.id, { reps, rir, weightKg }), 'Serie editada')
   }
 
-  function deleteSet(set: SetLog) {
-    if (!window.confirm('Eliminar esta serie y sus drop sets?')) return
+  async function deleteSet(set: SetLog) {
+    if (!(await confirmDanger('Eliminar serie', 'Se borrara esta serie y sus drop sets.'))) return
 
     runSetAction(() => deleteMainSet(set.id), 'Serie eliminada')
   }
 
   return (
     <div className="space-y-4">
-      <PageHeader
-        eyebrow={`${weekdayLabel(selectedDate)} · ${workoutDay?.day.name ?? 'Cargando'} · sesion activa`}
-        title={dateKey === localDateKey(today) ? 'Entreno de hoy' : 'Entreno registrado'}
-      >
-        <label className="grid size-10 place-items-center rounded-[10px] text-arsen-muted">
-          <CalendarDays aria-hidden="true" className="size-5" />
-          <span className="sr-only">Cambiar fecha</span>
-          <input className="sr-only" onChange={(event) => setDateKey(event.target.value)} type="date" value={dateKey} />
-        </label>
-      </PageHeader>
+      <PageHeader eyebrow={`${weekdayLabel(selectedDate)} - ${workoutDay?.day.name ?? 'Cargando'} - sesion activa`} title="Entreno de hoy" />
 
-      <section className="grid grid-cols-4 gap-2">
-        {[
-          { icon: ListChecks, label: 'Plan', active: true },
-          { icon: Clock3, label: 'Descanso' },
-          { icon: StickyNote, label: 'Notas' },
-          { icon: History, label: 'Historial' },
-        ].map((item) => (
-          <button
-            className={[
-              'grid min-h-[54px] place-items-center gap-1 rounded-[10px] border text-[10px] font-semibold',
-              item.active
-                ? 'border-arsen-purple2 bg-arsen-purple/35 text-white'
-                : 'border-white/10 bg-arsen-surface text-arsen-muted',
-            ].join(' ')}
-            key={item.label}
-            type="button"
-          >
-            <item.icon aria-hidden="true" className="size-5" />
-            {item.label}
-          </button>
-        ))}
+      <div>
+        <div className="mb-2 text-xs font-extrabold text-arsen-purple2">Ejercicio actual</div>
+        <Card className="p-3">
+          <div className="grid grid-cols-[66px_1fr_28px] items-center gap-3 border-b border-white/10 pb-3">
+            <ExerciseArt alt={currentExercise?.name ?? 'Ejercicio'} kind={artForExercise(currentExercise)} />
+            <div className="min-w-0">
+              <h2 className="truncate text-[22px] font-black leading-tight">{currentExercise?.name ?? 'Sin ejercicio'}</h2>
+              <span className="mt-1 inline-flex rounded-full bg-arsen-purple/30 px-2 py-1 text-xs font-bold text-arsen-purple2">
+                {currentExercise?.mainMuscle ?? 'Descanso'}
+              </span>
+            </div>
+            <Info aria-hidden="true" className="size-5 text-arsen-muted" />
+          </div>
+
+          <div className="grid grid-cols-4 gap-0 py-3 text-center">
+            {[
+              ['Peso anterior', formatWeight(currentExercise?.currentWeightKg ?? 0, preferredUnit), 'text-arsen-acid'],
+              ['Series', String(currentExercise?.targetSets ?? 0), 'text-arsen-ink'],
+              ['Reps', currentExercise?.repRange ?? '-', 'text-arsen-ink'],
+              ['RIR', currentExercise?.recommendedRir ?? '-', 'text-arsen-ink'],
+            ].map(([label, value, tone]) => (
+              <div className="border-r border-white/10 px-1 last:border-r-0" key={label}>
+                <span className="block text-[10px] text-arsen-muted">{label}</span>
+                <strong className={['mt-1 block text-lg', tone].join(' ')}>{value}</strong>
+              </div>
+            ))}
+          </div>
+
+          <ActionButton className="w-full" disabled={!currentExercise} onClick={() => setSelectedExerciseId(currentExercise?.id ?? null)}>
+            Registrar
+            <ChevronRight aria-hidden="true" className="size-5" />
+          </ActionButton>
+        </Card>
+      </div>
+
+      <section>
+        <div className="mb-2 flex items-center justify-between text-xs font-extrabold">
+          <span className="text-arsen-muted">Calentamiento</span>
+          <span className="text-arsen-purple2">{warmups.length} series</span>
+        </div>
+        <div className="space-y-2">
+          {warmups.map((set, index) => (
+            <Card className="grid grid-cols-[28px_1fr_1fr_1fr] items-center gap-2 p-3 text-sm" key={`${set.weight}-${index}`}>
+              <span className="grid size-6 place-items-center rounded-full border border-white/15 text-xs text-arsen-muted">
+                {index + 1}
+              </span>
+              <strong className="text-arsen-acid">{set.weight}</strong>
+              <span>{set.reps} reps</span>
+              <span>RIR {set.rir}</span>
+            </Card>
+          ))}
+        </div>
       </section>
 
-      <RestTimerCard
-        onPause={() => setRestRunning(false)}
-        onResume={() => setRestRunning(true)}
-        onStop={() => {
-          setRestRemaining(0)
-          setRestRunning(false)
-        }}
-        remaining={restRemaining}
-        running={restRunning}
-      />
+      <WeightIncreaseCard recommendations={weightIncreaseRecommendations} unit={preferredUnit} />
 
-      <Card className="p-3">
-        <div className="grid grid-cols-[1fr_auto] items-end gap-3">
-          <label className="block">
-            <span className="mb-1 block text-xs font-bold text-arsen-muted">Fecha de sesion</span>
-            <input
-              className="min-h-11 w-full rounded-[10px] border border-white/10 bg-arsen-bg px-3 text-sm font-extrabold text-arsen-ink"
-              onChange={(event) => setDateKey(event.target.value)}
-              type="date"
-              value={dateKey}
-            />
-          </label>
-          <span className="pb-3 text-xs font-extrabold text-arsen-purple2">{preferredUnit.toUpperCase()}</span>
+      {message ? (
+        <div className="rounded-[10px] border border-arsen-purple/40 bg-arsen-purple/15 px-3 py-2 text-xs text-arsen-purple2">
+          {message}
         </div>
-        <label className="mt-3 block">
-          <span className="mb-1 block text-xs font-bold text-arsen-muted">Notas personales</span>
-          <textarea
-            className="min-h-20 w-full rounded-[10px] border border-white/10 bg-arsen-bg px-3 py-2 text-sm font-semibold text-arsen-ink"
-            onChange={(event) => setNotes(event.target.value)}
-            placeholder="Sensaciones, tecnica, energia, molestias..."
-            value={notes}
-          />
-        </label>
-        <div className="mt-3 flex items-center justify-between gap-3">
-          <span className="text-xs text-arsen-muted">{message ?? 'Offline en IndexedDB'}</span>
-          <button
-            className="inline-flex min-h-10 items-center gap-2 rounded-[10px] bg-arsen-purple px-3 text-xs font-extrabold text-white disabled:opacity-50"
-            disabled={isPending || !workoutDay}
-            onClick={saveNotes}
-            type="button"
-          >
-            <Check aria-hidden="true" className="size-4" />
-            Guardar
-          </button>
-        </div>
-      </Card>
+      ) : null}
 
       <Card className="p-4">
         <div className="flex items-center justify-between gap-3">
@@ -292,7 +240,7 @@ export function WorkoutPage() {
                 <div className="min-w-0">
                   <strong className="block truncate text-sm">{exercise.name}</strong>
                   <span className="mt-1 block text-xs text-arsen-muted">
-                    Serie {set.order + 1} · {formatWeight(set.weightKg, preferredUnit)} · {set.reps} reps · RIR {set.rir}
+                    Serie {set.order + 1} - {formatWeight(set.weightKg, preferredUnit)} - {set.reps} reps - RIR {set.rir}
                   </span>
                 </div>
                 <div className="flex items-center gap-1">
@@ -323,60 +271,6 @@ export function WorkoutPage() {
         </div>
       </section>
 
-      <div>
-        <div className="mb-2 text-xs font-extrabold text-arsen-purple2">Ejercicio actual</div>
-        <Card className="p-3">
-          <div className="grid grid-cols-[66px_1fr_28px] items-center gap-3 border-b border-white/10 pb-3">
-            <ExerciseArt alt={currentExercise?.name ?? 'Ejercicio'} kind={artForExercise(currentExercise)} />
-            <div className="min-w-0">
-              <h2 className="truncate text-[22px] font-black leading-tight">{currentExercise?.name ?? 'Sin ejercicio'}</h2>
-              <span className="mt-1 inline-flex rounded-full bg-arsen-purple/30 px-2 py-1 text-xs font-bold text-arsen-purple2">
-                {currentExercise?.mainMuscle ?? 'Descanso'}
-              </span>
-            </div>
-            <Info aria-hidden="true" className="size-5 text-arsen-muted" />
-          </div>
-
-          <div className="grid grid-cols-4 gap-0 py-3 text-center">
-            {[
-              ['Peso anterior', formatWeight(currentExercise?.currentWeightKg ?? 0, preferredUnit), 'text-arsen-acid'],
-              ['Series', String(currentExercise?.targetSets ?? 0), 'text-arsen-ink'],
-              ['RIR', currentExercise?.recommendedRir ?? '-', 'text-arsen-ink'],
-              ['Descanso', `${currentExercise?.restSeconds ?? 0} s`, 'text-arsen-acid'],
-            ].map(([label, value, tone]) => (
-              <div className="border-r border-white/10 px-1 last:border-r-0" key={label}>
-                <span className="block text-[10px] text-arsen-muted">{label}</span>
-                <strong className={['mt-1 block text-lg', tone].join(' ')}>{value}</strong>
-              </div>
-            ))}
-          </div>
-
-          <ActionButton className="w-full" disabled={!currentExercise} onClick={() => setSelectedExerciseId(currentExercise?.id ?? null)}>
-            Registrar
-            <ChevronRight aria-hidden="true" className="size-5" />
-          </ActionButton>
-        </Card>
-      </div>
-
-      <section>
-        <div className="mb-2 flex items-center justify-between text-xs font-extrabold">
-          <span className="text-arsen-muted">Calentamiento</span>
-          <span className="text-arsen-purple2">{warmups.length} series</span>
-        </div>
-        <div className="space-y-2">
-          {warmups.map((set, index) => (
-            <Card className="grid grid-cols-[28px_1fr_1fr_1fr] items-center gap-2 p-3 text-sm" key={`${set.weight}-${index}`}>
-              <span className="grid size-6 place-items-center rounded-full border border-white/15 text-xs text-arsen-muted">
-                {index + 1}
-              </span>
-              <strong className="text-arsen-acid">{set.weight}</strong>
-              <span>{set.reps} reps</span>
-              <span>RIR {set.rir}</span>
-            </Card>
-          ))}
-        </div>
-      </section>
-
       <section>
         <div className="mb-2 flex items-center justify-between text-xs font-extrabold">
           <span className="text-arsen-muted">Ejercicios del dia</span>
@@ -393,7 +287,7 @@ export function WorkoutPage() {
                   <div className="min-w-0">
                     <h3 className="truncate text-sm font-extrabold">{exercise.name}</h3>
                     <span className="mt-1 block truncate text-xs text-arsen-muted">
-                      {exercise.mainMuscle} · {exercise.targetSets}x{exercise.repRange} · RIR {exercise.recommendedRir}
+                      {exercise.mainMuscle} - {exercise.targetSets}x{exercise.repRange} - RIR {exercise.recommendedRir}
                     </span>
                   </div>
                   <span className={['rounded-full px-2 py-1 text-[10px] font-bold', stateClassName(state)].join(' ')}>
@@ -413,10 +307,6 @@ export function WorkoutPage() {
           displayUnit={workoutDay.settings.preferredUnit}
           exercise={selectedExercise}
           onClose={() => setSelectedExerciseId(null)}
-          onSaved={(restSeconds) => {
-            setRestRemaining(restSeconds)
-            setRestRunning(restSeconds > 0)
-          }}
           routineId={workoutDay.routine.id}
         />
       ) : null}
@@ -438,49 +328,6 @@ function buildWarmups(exercise: RoutineExercise | undefined, unit: WeightUnit) {
     rir: Math.max(4 - index, 2),
     weight: formatWeight(Math.round(workingWeight * percentage * 2) / 2, unit),
   }))
-}
-
-function RestTimerCard({
-  onPause,
-  onResume,
-  onStop,
-  remaining,
-  running,
-}: {
-  onPause: () => void
-  onResume: () => void
-  onStop: () => void
-  remaining: number
-  running: boolean
-}) {
-  if (remaining <= 0) return null
-
-  const minutes = Math.floor(remaining / 60)
-  const seconds = String(remaining % 60).padStart(2, '0')
-
-  return (
-    <Card className="grid grid-cols-[1fr_auto] items-center gap-3 border-arsen-acid/35 p-3">
-      <div>
-        <span className="text-xs font-extrabold text-arsen-muted">Descanso</span>
-        <strong className="mt-1 block text-3xl leading-none text-arsen-acid">
-          {minutes}:{seconds}
-        </strong>
-      </div>
-      <div className="flex items-center gap-2">
-        <button
-          className="grid size-10 place-items-center rounded-[10px] bg-arsen-purple text-white"
-          onClick={running ? onPause : onResume}
-          type="button"
-        >
-          {running ? <Square aria-hidden="true" className="size-4" /> : <Play aria-hidden="true" className="size-4" />}
-          <span className="sr-only">{running ? 'Pausar descanso' : 'Reanudar descanso'}</span>
-        </button>
-        <button className="rounded-[10px] border border-white/10 px-3 py-2 text-xs font-extrabold text-arsen-muted" onClick={onStop} type="button">
-          Cerrar
-        </button>
-      </div>
-    </Card>
-  )
 }
 
 function artForExercise(exercise: RoutineExercise | undefined): ExerciseArtKind {
@@ -518,4 +365,39 @@ function stateClassName(state: ExerciseState) {
   }
 
   return classes[state]
+}
+
+function WeightIncreaseCard({
+  recommendations,
+  unit,
+}: {
+  recommendations: WeightIncreaseRecommendation[]
+  unit: WeightUnit
+}) {
+  if (recommendations.length === 0) return null
+
+  return (
+    <Card className="border-arsen-acid/35 p-3">
+      <div className="flex items-center gap-2">
+        <TrendingUp aria-hidden="true" className="size-5 text-arsen-acid" />
+        <div>
+          <strong className="block text-sm text-arsen-acid">Listo para subir peso</strong>
+          <span className="text-xs text-arsen-muted">{recommendations.length} recomendacion activa</span>
+        </div>
+      </div>
+      <div className="mt-3 space-y-2">
+        {recommendations.slice(0, 3).map((recommendation) => (
+          <div className="rounded-[10px] border border-white/10 bg-arsen-bg/55 p-2" key={recommendation.exerciseId}>
+            <div className="flex items-center justify-between gap-2">
+              <strong className="truncate text-sm">{recommendation.exerciseName}</strong>
+              <span className="shrink-0 text-xs font-extrabold text-arsen-acid">{recommendation.suggestedIncreaseLabel}</span>
+            </div>
+            <p className="mt-1 text-xs text-arsen-muted">
+              Actual {formatWeight(recommendation.currentWeightKg, unit)} - {recommendation.reason}
+            </p>
+          </div>
+        ))}
+      </div>
+    </Card>
+  )
 }

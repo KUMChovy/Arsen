@@ -3,11 +3,15 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { db } from './schema'
 import type { Routine, RoutineDay, RoutineExercise } from '../domains/routine/types'
 import type { AppSettings } from '../domains/settings/types'
+import { addCatalogExerciseToDay, createCatalogExercise } from '../domains/routine/services'
 import { buildProgressExport, importFullBackup } from '../domains/settings/services'
+import { getProgressEditOptions, getSessionDetail } from '../domains/progress/repository'
 import {
   deleteWorkoutSession,
+  moveMainSetToExercise,
   registerMainSetForExercise,
   skipRoutineExerciseForDay,
+  updateWorkoutSession,
 } from '../domains/workout/services'
 
 const now = '2026-07-20T00:00:00.000Z'
@@ -127,6 +131,44 @@ describe('IndexedDB integration', () => {
     await expect(db.skipLogs.count()).resolves.toBe(0)
   })
 
+  it('keeps catalog exercise separate from day recipe', async () => {
+    const routineA = routine('routine-a', 'Rutina A')
+    const dayA = routineDay('day-a', routineA.id, 'Dia A')
+    const dayB = routineDay('day-b', routineA.id, 'Dia B')
+    await db.routines.put(routineA)
+    await db.routineDays.bulkPut([dayA, dayB])
+
+    const catalogItemId = await createCatalogExercise({
+      equipment: 'Barra',
+      mainMuscle: 'Pectoral mayor',
+      name: 'Press inclinado',
+    })
+    await addCatalogExerciseToDay(routineA.id, dayA.id, catalogItemId, {
+      recommendedRir: '1-2',
+      repRange: '8-10',
+      targetSets: 3,
+    })
+    await addCatalogExerciseToDay(routineA.id, dayB.id, catalogItemId, {
+      recommendedRir: '2-3',
+      repRange: '10-12',
+      targetSets: 2,
+    })
+
+    const catalogItem = await db.exerciseCatalog.get(catalogItemId)
+    const recipes = await db.routineExercises.where('sourceExerciseId').equals(catalogItemId).sortBy('dayId')
+
+    expect(catalogItem).toMatchObject({
+      defaultRecommendedRir: '1-2',
+      defaultRepRange: '8-10',
+      defaultTargetSets: 3,
+      mainMuscle: 'Pecho',
+      name: 'Press inclinado',
+    })
+    expect(recipes).toHaveLength(2)
+    expect(recipes[0]).toMatchObject({ dayId: dayA.id, recommendedRir: '1-2', repRange: '8-10', targetSets: 3 })
+    expect(recipes[1]).toMatchObject({ dayId: dayB.id, recommendedRir: '2-3', repRange: '10-12', targetSets: 2 })
+  })
+
   it('exports chronological progress with routines, graph points and drop set volume', async () => {
     const routineA = routine('routine-a', 'Rutina A')
     const routineB = routine('routine-b', 'Rutina B')
@@ -165,9 +207,14 @@ describe('IndexedDB integration', () => {
     expect(exported.timeline.map((row) => row.date)).toEqual(['2026-07-20', '2026-07-27'])
     expect(exported.timeline[0]).toMatchObject({
       canonicalName: 'press-inclinado',
+      dayId: 'day-a',
       dayName: 'Dia A',
+      exerciseLogId: expect.any(String),
       exerciseName: 'Press inclinado',
+      routineExerciseId: 'exercise-a',
+      routineId: 'routine-a',
       routineName: 'Rutina A',
+      setLogId: expect.any(String),
       volume: 880,
     })
     expect(exported.graphPoints).toEqual([
@@ -191,6 +238,66 @@ describe('IndexedDB integration', () => {
       sets: 2,
       volume: 1280,
     })
+  })
+
+  it('loads progress edit options without requiring order indexes', async () => {
+    const routineA = routine('routine-a', 'Rutina A')
+    const dayA = routineDay('day-a', routineA.id, 'Dia A')
+    const exerciseA = routineExercise({ dayId: dayA.id, id: 'exercise-a', routineId: routineA.id })
+    await db.routines.put(routineA)
+    await db.routineDays.put(dayA)
+    await db.routineExercises.put(exerciseA)
+
+    const options = await getProgressEditOptions()
+
+    expect(options.routines).toEqual([{ id: 'routine-a', name: 'Rutina A' }])
+    expect(options.days).toEqual([{ id: 'day-a', name: 'Dia A', routineId: 'routine-a', routineName: 'Rutina A' }])
+    expect(options.exercises).toEqual([{ dayId: 'day-a', id: 'exercise-a', name: 'Press inclinado', routineId: 'routine-a' }])
+  })
+
+  it('loads session detail and moves a set to another exercise recipe', async () => {
+    const routineA = routine('routine-a', 'Rutina A')
+    const dayA = routineDay('day-a', routineA.id, 'Dia A')
+    const dayB = routineDay('day-b', routineA.id, 'Dia B')
+    const exerciseA = routineExercise({ dayId: dayA.id, id: 'exercise-a', routineId: routineA.id })
+    const exerciseB = routineExercise({ dayId: dayB.id, id: 'exercise-b', routineId: routineA.id })
+    await db.routines.put(routineA)
+    await db.routineDays.bulkPut([dayA, dayB])
+    await db.routineExercises.bulkPut([exerciseA, exerciseB])
+
+    const registered = await registerMainSetForExercise({
+      date: '2026-07-20',
+      dayId: dayA.id,
+      displayUnit: 'kg',
+      exercise: exerciseA,
+      reps: 10,
+      rir: 2,
+      routineId: routineA.id,
+      weightKg: 60,
+    })
+
+    await updateWorkoutSession(registered.sessionId, {
+      date: '2026-07-21',
+      dayId: dayB.id,
+      routineId: routineA.id,
+    })
+    await moveMainSetToExercise(registered.setLogId, exerciseB.id)
+
+    const detail = await getSessionDetail(registered.sessionId)
+    const movedSet = await db.setLogs.get(registered.setLogId)
+    const movedLog = movedSet ? await db.exerciseLogs.get(movedSet.exerciseLogId) : null
+
+    expect(detail).toMatchObject({
+      date: '2026-07-21',
+      dayId: 'day-b',
+      dayName: 'Dia B',
+      routineId: 'routine-a',
+    })
+    expect(movedLog).toMatchObject({
+      routineExerciseId: 'exercise-b',
+      snapshot: expect.objectContaining({ name: 'Press inclinado' }),
+    })
+    expect(detail?.exercises.some((exercise) => exercise.routineExerciseId === 'exercise-b')).toBe(true)
   })
 })
 

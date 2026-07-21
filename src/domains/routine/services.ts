@@ -1,7 +1,8 @@
-import type { Equipment, Routine, RoutineDay, RoutineExercise } from './types'
+import type { Equipment, ExerciseCatalogItem, Routine, RoutineDay, RoutineExercise } from './types'
 import { db } from '../../db/schema'
 import { createId } from '../../shared/utils/id'
 import { canonicalName } from '../../shared/utils/normalize'
+import { normalizeMuscleGroup } from './utils/muscles'
 
 export type ExerciseInput = {
   name: string
@@ -17,6 +18,13 @@ export type ExerciseInput = {
   progression?: string
   technicalNotes?: string
   currentWeightKg?: number
+}
+
+export type CatalogExerciseInput = {
+  aliases?: string[]
+  equipment?: Equipment
+  mainMuscle: string
+  name: string
 }
 
 export async function createRoutine(name: string) {
@@ -234,6 +242,22 @@ export async function moveDay(dayId: string, direction: 'up' | 'down') {
   })
 }
 
+export async function reorderDays(routineId: string, orderedDayIds: string[]) {
+  const now = new Date().toISOString()
+
+  await db.transaction('rw', db.routineDays, async () => {
+    await Promise.all(
+      orderedDayIds.map((dayId, order) =>
+        db.routineDays.update(dayId, {
+          order,
+          routineId,
+          updatedAt: now,
+        }),
+      ),
+    )
+  })
+}
+
 export async function createExercise(routineId: string, dayId: string, input: ExerciseInput) {
   const now = new Date().toISOString()
   const order = await db.routineExercises.where('dayId').equals(dayId).count()
@@ -245,7 +269,7 @@ export async function createExercise(routineId: string, dayId: string, input: Ex
     sourceExerciseId: null,
     name,
     canonicalName: canonicalName(name),
-    mainMuscle: input.mainMuscle.trim() || 'Sin músculo',
+    mainMuscle: normalizeMuscleGroup(input.mainMuscle),
     equipment: input.equipment ?? 'Otro',
     targetSets: input.targetSets ?? 3,
     repRange: input.repRange ?? '8-10',
@@ -267,7 +291,7 @@ export async function createExercise(routineId: string, dayId: string, input: Ex
   return exercise.id
 }
 
-export async function addCatalogExerciseToDay(routineId: string, dayId: string, catalogItemId: string) {
+export async function addCatalogExerciseToDay(routineId: string, dayId: string, catalogItemId: string, input: Partial<ExerciseInput> = {}) {
   const catalogItem = await db.exerciseCatalog.get(catalogItemId)
   if (!catalogItem) throw new Error('Ejercicio de catalogo no encontrado')
 
@@ -280,18 +304,18 @@ export async function addCatalogExerciseToDay(routineId: string, dayId: string, 
     sourceExerciseId: catalogItem.id,
     name: catalogItem.name,
     canonicalName: catalogItem.canonicalName,
-    mainMuscle: catalogItem.mainMuscle,
-    equipment: catalogItem.equipment,
-    targetSets: catalogItem.defaultTargetSets,
-    repRange: catalogItem.defaultRepRange,
-    recommendedRir: catalogItem.defaultRecommendedRir,
-    rest: `${catalogItem.defaultRestSeconds} seg`,
-    restSeconds: catalogItem.defaultRestSeconds,
-    warmupSets: 0,
-    warmupProtocol: '',
-    progression: '',
-    technicalNotes: '',
-    currentWeightKg: 0,
+    mainMuscle: normalizeMuscleGroup(catalogItem.mainMuscle),
+    equipment: input.equipment ?? catalogItem.equipment,
+    targetSets: input.targetSets ?? 3,
+    repRange: input.repRange ?? '8-10',
+    recommendedRir: input.recommendedRir ?? '1-2',
+    rest: input.rest ?? `${input.restSeconds ?? 90} seg`,
+    restSeconds: input.restSeconds ?? 90,
+    warmupSets: input.warmupSets ?? 0,
+    warmupProtocol: input.warmupProtocol ?? '',
+    progression: input.progression ?? '',
+    technicalNotes: input.technicalNotes ?? '',
+    currentWeightKg: input.currentWeightKg ?? 0,
     order,
     createdAt: now,
     updatedAt: now,
@@ -308,7 +332,7 @@ export async function updateExercise(exerciseId: string, input: ExerciseInput) {
   await db.routineExercises.update(exerciseId, {
     name,
     canonicalName: canonicalName(name),
-    mainMuscle: input.mainMuscle.trim() || 'Sin músculo',
+    mainMuscle: normalizeMuscleGroup(input.mainMuscle),
     equipment: input.equipment ?? 'Otro',
     targetSets: input.targetSets ?? 3,
     repRange: input.repRange ?? '8-10',
@@ -363,4 +387,64 @@ export async function moveExercise(exerciseId: string, direction: 'up' | 'down')
       db.routineExercises.update(swapExercise.id, { order: exercise.order, updatedAt: now }),
     ])
   })
+}
+
+export async function reorderExercises(dayId: string, orderedExerciseIds: string[]) {
+  const now = new Date().toISOString()
+
+  await db.transaction('rw', db.routineExercises, async () => {
+    await Promise.all(
+      orderedExerciseIds.map((exerciseId, order) =>
+        db.routineExercises.update(exerciseId, {
+          dayId,
+          order,
+          updatedAt: now,
+        }),
+      ),
+    )
+  })
+}
+
+export async function createCatalogExercise(input: CatalogExerciseInput) {
+  const now = new Date().toISOString()
+  const name = input.name.trim() || 'Ejercicio nuevo'
+  const mainMuscle = normalizeMuscleGroup(input.mainMuscle)
+  const catalogItem: ExerciseCatalogItem = {
+    aliases: input.aliases ?? [],
+    assetKind: mainMuscle,
+    canonicalName: canonicalName(name),
+    createdAt: now,
+    defaultRecommendedRir: '1-2',
+    defaultRepRange: '8-10',
+    defaultRestSeconds: 90,
+    defaultTargetSets: 3,
+    equipment: input.equipment ?? 'Otro',
+    id: createId('catalog'),
+    mainMuscle,
+    name,
+    updatedAt: now,
+  }
+
+  await db.exerciseCatalog.add(catalogItem)
+
+  return catalogItem.id
+}
+
+export async function updateCatalogExercise(catalogItemId: string, input: CatalogExerciseInput) {
+  const name = input.name.trim() || 'Ejercicio sin nombre'
+  const mainMuscle = normalizeMuscleGroup(input.mainMuscle)
+
+  await db.exerciseCatalog.update(catalogItemId, {
+    aliases: input.aliases ?? [],
+    assetKind: mainMuscle,
+    canonicalName: canonicalName(name),
+    equipment: input.equipment ?? 'Otro',
+    mainMuscle,
+    name,
+    updatedAt: new Date().toISOString(),
+  })
+}
+
+export async function deleteCatalogExercise(catalogItemId: string) {
+  await db.exerciseCatalog.delete(catalogItemId)
 }

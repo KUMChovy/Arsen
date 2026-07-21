@@ -1,14 +1,27 @@
-import { lazy, Suspense, useState, useTransition } from 'react'
-import { ChartLine, ChevronDown, Download, NotebookTabs, Pencil, SlidersHorizontal, Trash2, Trophy } from 'lucide-react'
+import { lazy, Suspense, useEffect, useMemo, useState, useTransition } from 'react'
+import { ChartLine, Check, ChevronDown, Download, NotebookTabs, Pencil, SlidersHorizontal, Trash2, Trophy, X } from 'lucide-react'
 import { Card } from '../../../shared/components/Card'
 import { ExerciseArt } from '../../../shared/components/ExerciseArt'
 import { PageHeader } from '../../../shared/components/PageHeader'
+import { ActionButton } from '../../../shared/components/ActionButton'
+import { confirmDanger } from '../../../shared/utils/alerts'
 import { exportProgressCsv, exportProgressJson } from '../../settings/services'
-import { deleteWorkoutSession, updateMainSet } from '../../workout/services'
-import { useProgressDayOptions, useProgressExerciseOptions, useProgressOverview } from '../hooks'
-import type { RecentSessionSummary } from '../repository'
+import { deleteMainSet, deleteWorkoutSession, moveMainSetToExercise, updateMainSet, updateWorkoutSession } from '../../workout/services'
+import { useProgressDayOptions, useProgressEditOptions, useProgressExerciseOptions, useProgressOverview, useSessionDetail } from '../hooks'
+import type { ProgressEditOptions, RecentSessionSummary, SessionDetail } from '../repository'
 
 type ProgressMode = 'general' | 'day' | 'exercise' | 'global'
+type EditSetState = {
+  dayId: string
+  date: string
+  reps: number
+  rir: number
+  routineExerciseId: string
+  routineId: string
+  sessionId: string
+  setLogId: string
+  weightKg: number
+}
 
 const ProgressChart = lazy(() =>
   import('../components/ProgressChart').then((module) => ({ default: module.ProgressChart })),
@@ -30,6 +43,10 @@ export function ProgressPage() {
   const latestScore = chartData.at(-1)?.score ?? 0
   const [isPending, startTransition] = useTransition()
   const [message, setMessage] = useState<string | null>(null)
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null)
+  const selectedSessionDetail = useSessionDetail(selectedSessionId)
+  const editOptions = useProgressEditOptions()
+  const [editingSet, setEditingSet] = useState<EditSetState | null>(null)
   const metrics = [
     { label: 'Volumen', value: `${Math.round((overview?.volumeKg ?? 0) / 100) / 10}t` },
     { label: 'Peso max.', value: String(overview?.maxWeightKg ?? 0) },
@@ -257,29 +274,11 @@ export function ProgressPage() {
               <SessionRow
                 disabled={isPending}
                 key={session.id}
-                onDelete={() => {
-                  if (!window.confirm('Eliminar esta sesion y sus series?')) return
+                onDelete={async () => {
+                  if (!(await confirmDanger('Eliminar sesion', 'Se borrara esta sesion con sus series y drop sets.'))) return
                   runHistoryAction(() => deleteWorkoutSession(session.id), 'Sesion eliminada')
                 }}
-                onEdit={() => {
-                  if (!session.bestSetId) return
-                  const value = window.prompt('Editar mejor serie: peso kg, reps, RIR', session.bestSetLabel.replace(' kg x ', ',') + ',1')
-                  if (!value) return
-                  const values = value.split(',').map((item) => Number(item.trim()))
-                  const weightKg = values[0]
-                  const reps = values[1]
-                  const rir = values[2]
-                  if (
-                    weightKg === undefined ||
-                    reps === undefined ||
-                    rir === undefined ||
-                    ![weightKg, reps, rir].every(Number.isFinite)
-                  ) {
-                    setMessage('Formato invalido. Usa: 80,8,1')
-                    return
-                  }
-                  runHistoryAction(() => updateMainSet(session.bestSetId!, { reps, rir, weightKg }), 'Serie editada')
-                }}
+                onOpen={() => setSelectedSessionId(session.id)}
                 session={session}
               />
             ))
@@ -288,6 +287,44 @@ export function ProgressPage() {
           )}
         </div>
       </section>
+
+      {selectedSessionId ? (
+        <SessionDetailSheet
+          detail={selectedSessionDetail}
+          disabled={isPending}
+          onClose={() => setSelectedSessionId(null)}
+          onDeleteSet={async (setLogId) => {
+            if (!(await confirmDanger('Eliminar serie', 'Se borrara esta serie desde la sesion.'))) return
+            runHistoryAction(() => deleteMainSet(setLogId), 'Serie eliminada')
+          }}
+          onEditSet={(set) => setEditingSet(set)}
+        />
+      ) : null}
+
+      {editingSet && editOptions ? (
+        <EditSetSheet
+          disabled={isPending}
+          editOptions={editOptions}
+          initial={editingSet}
+          onClose={() => setEditingSet(null)}
+          onSave={(input) => {
+            runHistoryAction(async () => {
+              await updateWorkoutSession(input.sessionId, {
+                date: input.date,
+                dayId: input.dayId,
+                routineId: input.routineId,
+              })
+              await moveMainSetToExercise(input.setLogId, input.routineExerciseId)
+              await updateMainSet(input.setLogId, {
+                reps: input.reps,
+                rir: input.rir,
+                weightKg: input.weightKg,
+              })
+            }, 'Serie actualizada')
+            setEditingSet(null)
+          }}
+        />
+      ) : null}
     </div>
   )
 }
@@ -295,12 +332,12 @@ export function ProgressPage() {
 function SessionRow({
   disabled,
   onDelete,
-  onEdit,
+  onOpen,
   session,
 }: {
   disabled: boolean
   onDelete: () => void
-  onEdit: () => void
+  onOpen: () => void
   session: RecentSessionSummary
 }) {
   return (
@@ -320,7 +357,7 @@ function SessionRow({
         <button
           className="grid size-9 place-items-center rounded-[10px] border border-white/10 text-arsen-purple2 disabled:opacity-40"
           disabled={disabled || !session.bestSetId}
-          onClick={onEdit}
+          onClick={onOpen}
           type="button"
         >
           <Pencil aria-hidden="true" className="size-4" />
@@ -340,8 +377,277 @@ function SessionRow({
   )
 }
 
+function SessionDetailSheet({
+  detail,
+  disabled,
+  onClose,
+  onDeleteSet,
+  onEditSet,
+}: {
+  detail: SessionDetail | null | undefined
+  disabled: boolean
+  onClose: () => void
+  onDeleteSet: (setLogId: string) => void
+  onEditSet: (set: EditSetState) => void
+}) {
+  return (
+    <div className="fixed inset-0 z-50 mx-auto flex max-w-[430px] items-end bg-black/55">
+      <button aria-label="Cerrar detalle" className="absolute inset-0 cursor-default" onClick={onClose} type="button" />
+      <section className="relative max-h-[88vh] w-full overflow-y-auto rounded-t-[22px] border-t border-white/10 bg-arsen-bg2 p-4 shadow-[0_-16px_40px_rgb(0_0_0_/_0.35)]">
+        <div className="mx-auto mb-4 h-1.5 w-14 rounded-full bg-white/25" />
+        <div className="mb-4 flex items-start justify-between gap-3">
+          <div>
+            <h2 className="text-xl font-black">Detalle de sesion</h2>
+            <p className="mt-1 text-xs text-arsen-muted">
+              {detail ? `${formatSessionDate(detail.date)} - ${detail.routineName} - ${detail.dayName}` : 'Cargando...'}
+            </p>
+          </div>
+          <button className="grid size-9 place-items-center rounded-[10px] text-arsen-muted" onClick={onClose} type="button">
+            <X aria-hidden="true" className="size-5" />
+            <span className="sr-only">Cerrar</span>
+          </button>
+        </div>
+
+        <div className="space-y-3">
+          {detail?.exercises.map((exercise) => (
+            <Card className="p-3" key={exercise.exerciseLogId}>
+              <div className="mb-2 flex items-center gap-2">
+                <ExerciseArt alt={exercise.exerciseName} className="size-10" muscle={exercise.mainMuscle} />
+                <div className="min-w-0">
+                  <strong className="block truncate text-sm">{exercise.exerciseName}</strong>
+                  <span className="text-xs text-arsen-muted">{exercise.sets.length} series principales</span>
+                </div>
+              </div>
+              <div className="space-y-2">
+                {exercise.sets.map((set) => (
+                  <div className="rounded-[10px] border border-white/10 bg-arsen-bg/55 p-2" key={set.id}>
+                    <div className="grid grid-cols-[1fr_auto] items-center gap-2">
+                      <div>
+                        <strong className="text-sm">
+                          Serie {set.order + 1}: {set.weightKg} kg x {set.reps}
+                        </strong>
+                        <span className="ml-2 text-xs text-arsen-muted">RIR {set.rir}</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button
+                          className="grid size-8 place-items-center rounded-[9px] border border-white/10 text-arsen-purple2 disabled:opacity-40"
+                          disabled={disabled}
+                          onClick={() =>
+                            onEditSet({
+                              date: detail.date,
+                              dayId: detail.dayId,
+                              reps: set.reps,
+                              rir: set.rir,
+                              routineExerciseId: exercise.routineExerciseId,
+                              routineId: detail.routineId,
+                              sessionId: detail.id,
+                              setLogId: set.id,
+                              weightKg: set.weightKg,
+                            })
+                          }
+                          type="button"
+                        >
+                          <Pencil aria-hidden="true" className="size-4" />
+                          <span className="sr-only">Editar serie</span>
+                        </button>
+                        <button
+                          className="grid size-8 place-items-center rounded-[9px] border border-red-300/25 text-red-300 disabled:opacity-40"
+                          disabled={disabled}
+                          onClick={() => onDeleteSet(set.id)}
+                          type="button"
+                        >
+                          <Trash2 aria-hidden="true" className="size-4" />
+                          <span className="sr-only">Eliminar serie</span>
+                        </button>
+                      </div>
+                    </div>
+                    {set.dropSets.length > 0 ? (
+                      <div className="mt-2 space-y-1 text-xs text-arsen-muted">
+                        {set.dropSets.map((dropSet) => (
+                          <div key={dropSet.id}>
+                            Drop {dropSet.order + 1}: {dropSet.weightKg} kg x {dropSet.reps} - RIR {dropSet.rir}
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            </Card>
+          ))}
+          {detail && detail.exercises.length === 0 ? <Card className="p-4 text-sm text-arsen-muted">Sesion sin series.</Card> : null}
+        </div>
+      </section>
+    </div>
+  )
+}
+
+function EditSetSheet({
+  disabled,
+  editOptions,
+  initial,
+  onClose,
+  onSave,
+}: {
+  disabled: boolean
+  editOptions: ProgressEditOptions
+  initial: EditSetState
+  onClose: () => void
+  onSave: (input: EditSetState) => void
+}) {
+  const [form, setForm] = useState(() => ({
+    date: initial.date,
+    dayId: initial.dayId,
+    reps: String(initial.reps),
+    rir: String(initial.rir),
+    routineExerciseId: initial.routineExerciseId,
+    routineId: initial.routineId,
+    weightKg: String(initial.weightKg),
+  }))
+  const daysForRoutine = useMemo(
+    () => editOptions.days.filter((day) => day.routineId === form.routineId),
+    [editOptions.days, form.routineId],
+  )
+  const exercisesForDay = useMemo(
+    () => editOptions.exercises.filter((exercise) => exercise.dayId === form.dayId),
+    [editOptions.exercises, form.dayId],
+  )
+
+  useEffect(() => {
+    const nextDay = daysForRoutine.find((day) => day.id === form.dayId) ?? daysForRoutine[0]
+    if (nextDay && nextDay.id !== form.dayId) {
+      setForm((current) => ({ ...current, dayId: nextDay.id }))
+    }
+  }, [daysForRoutine, form.dayId])
+
+  useEffect(() => {
+    const nextExercise = exercisesForDay.find((exercise) => exercise.id === form.routineExerciseId) ?? exercisesForDay[0]
+    if (nextExercise && nextExercise.id !== form.routineExerciseId) {
+      setForm((current) => ({ ...current, routineExerciseId: nextExercise.id }))
+    }
+  }, [exercisesForDay, form.routineExerciseId])
+
+  return (
+    <div className="fixed inset-0 z-[60] mx-auto flex max-w-[430px] items-end bg-black/65">
+      <button aria-label="Cerrar editor" className="absolute inset-0 cursor-default" onClick={onClose} type="button" />
+      <section className="relative max-h-[88vh] w-full overflow-y-auto rounded-t-[22px] border-t border-white/10 bg-arsen-bg2 p-4 shadow-[0_-16px_40px_rgb(0_0_0_/_0.35)]">
+        <div className="mx-auto mb-4 h-1.5 w-14 rounded-full bg-white/25" />
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <h2 className="text-xl font-black">Editar serie</h2>
+          <button className="grid size-9 place-items-center rounded-[10px] text-arsen-muted" onClick={onClose} type="button">
+            <X aria-hidden="true" className="size-5" />
+            <span className="sr-only">Cerrar</span>
+          </button>
+        </div>
+
+        <div className="space-y-3">
+          <label className="block">
+            <span className="mb-1 block text-xs font-bold text-arsen-muted">Fecha</span>
+            <input
+              className="min-h-11 w-full rounded-[10px] border border-white/10 bg-arsen-surface px-3 text-sm font-extrabold text-arsen-ink"
+              onChange={(event) => setForm((current) => ({ ...current, date: event.target.value }))}
+              type="date"
+              value={form.date}
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-xs font-bold text-arsen-muted">Rutina</span>
+            <select
+              className="min-h-11 w-full rounded-[10px] border border-white/10 bg-arsen-surface px-3 text-sm font-extrabold text-arsen-ink"
+              onChange={(event) => setForm((current) => ({ ...current, routineId: event.target.value }))}
+              value={form.routineId}
+            >
+              {editOptions.routines.map((routine) => (
+                <option key={routine.id} value={routine.id}>
+                  {routine.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-xs font-bold text-arsen-muted">Dia</span>
+            <select
+              className="min-h-11 w-full rounded-[10px] border border-white/10 bg-arsen-surface px-3 text-sm font-extrabold text-arsen-ink"
+              onChange={(event) => setForm((current) => ({ ...current, dayId: event.target.value }))}
+              value={form.dayId}
+            >
+              {daysForRoutine.map((day) => (
+                <option key={day.id} value={day.id}>
+                  {day.name} - {day.routineName}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-xs font-bold text-arsen-muted">Ejercicio</span>
+            <select
+              className="min-h-11 w-full rounded-[10px] border border-white/10 bg-arsen-surface px-3 text-sm font-extrabold text-arsen-ink"
+              onChange={(event) => setForm((current) => ({ ...current, routineExerciseId: event.target.value }))}
+              value={form.routineExerciseId}
+            >
+              {exercisesForDay.map((exercise) => (
+                <option key={exercise.id} value={exercise.id}>
+                  {exercise.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="grid grid-cols-3 gap-2">
+            <NumberField label="Peso kg" onChange={(value) => setForm((current) => ({ ...current, weightKg: value }))} value={form.weightKg} />
+            <NumberField label="Reps" onChange={(value) => setForm((current) => ({ ...current, reps: value }))} value={form.reps} />
+            <NumberField label="RIR" onChange={(value) => setForm((current) => ({ ...current, rir: value }))} value={form.rir} />
+          </div>
+        </div>
+
+        <ActionButton
+          className="mt-4 w-full"
+          disabled={disabled || !form.dayId || !form.routineExerciseId}
+          onClick={() =>
+            onSave({
+              date: form.date,
+              dayId: form.dayId,
+              reps: numberOrDefault(form.reps, initial.reps),
+              rir: numberOrDefault(form.rir, initial.rir),
+              routineExerciseId: form.routineExerciseId,
+              routineId: form.routineId,
+              sessionId: initial.sessionId,
+              setLogId: initial.setLogId,
+              weightKg: numberOrDefault(form.weightKg, initial.weightKg),
+            })
+          }
+          tone="acid"
+        >
+          <Check aria-hidden="true" className="size-5" />
+          Guardar cambios
+        </ActionButton>
+      </section>
+    </div>
+  )
+}
+
+function NumberField({ label, onChange, value }: { label: string; onChange: (value: string) => void; value: string }) {
+  return (
+    <label className="block">
+      <span className="mb-1 block text-xs font-bold text-arsen-muted">{label}</span>
+      <input
+        className="min-h-11 w-full rounded-[10px] border border-white/10 bg-arsen-surface px-2 text-center text-sm font-extrabold text-arsen-ink"
+        inputMode="decimal"
+        onChange={(event) => onChange(event.target.value)}
+        type="number"
+        value={value}
+      />
+    </label>
+  )
+}
+
 function formatSessionDate(date: string) {
   return new Intl.DateTimeFormat('es-MX', { day: 'numeric', month: 'short', year: 'numeric' }).format(
     new Date(`${date}T12:00:00`),
   )
+}
+
+function numberOrDefault(value: string, fallback: number) {
+  const parsed = Number(value)
+
+  return Number.isFinite(parsed) ? parsed : fallback
 }

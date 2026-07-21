@@ -310,6 +310,52 @@ export async function updateMainSet(
   })
 }
 
+export async function updateWorkoutSession(
+  sessionId: string,
+  input: {
+    date: string
+    dayId: string
+    routineId: string
+  },
+) {
+  await db.workoutSessions.update(sessionId, {
+    date: input.date,
+    dayId: input.dayId,
+    routineId: input.routineId,
+    updatedAt: new Date().toISOString(),
+  })
+}
+
+export async function moveMainSetToExercise(setLogId: string, routineExerciseId: string) {
+  const set = await db.setLogs.get(setLogId)
+  if (!set) throw new Error('Serie no encontrada')
+
+  const currentLog = await db.exerciseLogs.get(set.exerciseLogId)
+  if (!currentLog) throw new Error('Log de ejercicio no encontrado')
+
+  const exercise = await db.routineExercises.get(routineExerciseId)
+  if (!exercise) throw new Error('Ejercicio no encontrado')
+
+  const nextLogId = await ensureExerciseLog(currentLog.sessionId, exercise)
+  if (nextLogId === set.exerciseLogId) return
+
+  const order = await db.setLogs
+    .where('exerciseLogId')
+    .equals(nextLogId)
+    .and((candidate) => candidate.kind === 'main')
+    .count()
+
+  await db.transaction('rw', [db.setLogs, db.exerciseLogs], async () => {
+    await db.setLogs.update(setLogId, {
+      exerciseLogId: nextLogId,
+      order,
+      updatedAt: new Date().toISOString(),
+    })
+    await refreshExerciseState(set.exerciseLogId)
+    await refreshExerciseState(nextLogId)
+  })
+}
+
 export async function deleteMainSet(setLogId: string) {
   const set = await db.setLogs.get(setLogId)
   if (!set) throw new Error('Serie no encontrada')

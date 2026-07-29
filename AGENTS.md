@@ -6,7 +6,7 @@ Arsen is a mobile-first, 100% offline workout tracker. React 19 + TypeScript + V
 
 - `pnpm dev` — Vite dev server (default port 5180; logs in `.run/`).
 - `pnpm build` — Runs `tsc -b` (typecheck), then `vite build`, then `node scripts/generate-sw.mjs`. The last step regenerates `dist/sw.js` with a content-hash cache version; do not skip it for production builds.
-- `pnpm test` — Vitest. Pure unit tests run in node; component/UI tests need `// @vitest-environment jsdom` and `import '@testing-library/jest-dom/vitest'` as the first two lines.
+- `pnpm test` — Vitest (`--passWithNoTests`). Pure unit tests run in node; component/UI tests need `// @vitest-environment jsdom` and `import '@testing-library/jest-dom/vitest'` as the first two lines.
 - `pnpm preview` — serve the built bundle.
 - `pnpm demo:history` — writes `generated/arsen-demo-3-months-backup.json` from `src/db/data/demo-routine.json` for import via Settings.
 
@@ -64,7 +64,7 @@ Domain boundary rule: cross-domain code goes through a domain's `services.ts` or
 - `ignore-scripts=true` in `.npmrc` means postinstall hooks do not run. If a tool seems missing, install it manually rather than blaming the hook.
 - `.superpowers/` and `.run/` are gitignored — they hold spec/agent artifacts and dev server logs; do not commit them.
 - `generated/` is the output dir for `pnpm demo:history`; the file inside is importable into the app, not a test fixture.
-- Specs and implementation plans live in `docs/superpowers/specs/`. The current design is `2026-07-20-arsen-design.md` and the mobile refactor is `2026-07-20-arsen-mobile-refactor-design.md` — read these before large feature work.
+- Specs and implementation plans live in `docs/superpowers/specs/`. Read the relevant `.md` before large feature work. Current specs: `2026-07-20-arsen-design.md`, `2026-07-20-arsen-implementation-plan.md`, `2026-07-20-arsen-mobile-refactor-design.md`, `2026-07-20-arsen-mobile-refactor-implementation-plan.md`, `2026-07-22-arsen-training-routine-progress-upgrade-design.md`.
 - The `imagegen` skill under `.agents/skills/` is the official way to generate bitmap exercise/muscle-group art (see `src/assets/arsen-exercise-sprite.png`); do not call external image APIs directly.
 
 ## Before committing

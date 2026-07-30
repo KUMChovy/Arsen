@@ -226,6 +226,14 @@ export async function getTrainingDates(): Promise<string[]> {
   return [...new Set(sessions.map((session) => session.date))].sort((a, b) => b.localeCompare(a))
 }
 
+export async function getSessionsForDate(date: string): Promise<RecentSessionSummary[]> {
+  if (!date) return []
+
+  const overview = await getProgressOverview()
+
+  return overview.recentSessions.filter((session) => session.date === date)
+}
+
 export async function getProgressExerciseOptions(): Promise<ProgressExerciseOption[]> {
   const exerciseLogs = await db.exerciseLogs.toArray()
   const options = new Map<string, ProgressExerciseOption>()

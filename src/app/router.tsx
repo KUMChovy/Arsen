@@ -6,6 +6,9 @@ import { AppShell } from './AppShell'
 const ProgressPage = lazy(() =>
   import('../domains/progress/pages/ProgressPage').then((module) => ({ default: module.ProgressPage })),
 )
+const ProgressHistoryDatePage = lazy(() =>
+  import('../domains/progress/pages/ProgressHistoryDatePage').then((module) => ({ default: module.ProgressHistoryDatePage })),
+)
 const RoutinePage = lazy(() =>
   import('../domains/routine/pages/RoutinePage').then((module) => ({ default: module.RoutinePage })),
 )
@@ -41,6 +44,7 @@ export const router = createBrowserRouter([
       { path: '/rutina', element: lazyPage(<RoutinePage />) },
       { path: '/rutina/dia/:dayId', element: lazyPage(<RoutineDayDetailPage />) },
       { path: '/progreso', element: lazyPage(<ProgressPage />) },
+      { path: '/progreso/historial/:date', element: lazyPage(<ProgressHistoryDatePage />) },
       { path: '/settings', element: lazyPage(<SettingsPage />) },
     ],
   },

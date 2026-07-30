@@ -1,18 +1,18 @@
 import { lazy, Suspense, useEffect, useMemo, useState, useTransition } from 'react'
 import { ChartLine, Check, ChevronDown, Download, NotebookTabs, Pencil, SlidersHorizontal, Trash2, Trophy, X } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import { Card } from '../../../shared/components/Card'
 import { ExerciseArt } from '../../../shared/components/ExerciseArt'
 import { PageHeader } from '../../../shared/components/PageHeader'
 import { ActionButton } from '../../../shared/components/ActionButton'
-import { confirmDanger } from '../../../shared/utils/alerts'
 import { exportProgressCsv, exportProgressJson } from '../../settings/services'
-import { deleteMainSet, deleteWorkoutSession, moveMainSetToExercise, updateMainSet, updateWorkoutSession } from '../../workout/services'
-import { useProgressDayOptions, useProgressEditOptions, useProgressExerciseOptions, useProgressOverview, useSessionDetail, useTrainingDates } from '../hooks'
+import { TrainingCalendarSheet } from '../components/TrainingCalendarSheet'
+import { useProgressDayOptions, useProgressExerciseOptions, useProgressOverview, useTrainingDates } from '../hooks'
 import type { ProgressBestMark, ProgressEditOptions, RecentSessionSummary, SessionDetail } from '../repository'
 
 type ProgressMode = 'general' | 'day' | 'exercise' | 'global'
-type ProgressPanelMode = 'score' | 'bests' | 'history'
-type EditSetState = {
+type ProgressPanelMode = 'score' | 'bests'
+export type EditSetState = {
   dayId: string
   date: string
   reps: number
@@ -29,32 +29,24 @@ const ProgressChart = lazy(() =>
 )
 
 export function ProgressPage() {
+  const navigate = useNavigate()
   const [mode, setMode] = useState<ProgressMode>('general')
   const [panelMode, setPanelMode] = useState<ProgressPanelMode>('score')
+  const [historySheetOpen, setHistorySheetOpen] = useState(false)
   const [selectedDayId, setSelectedDayId] = useState<string | null>(null)
   const [selectedExercise, setSelectedExercise] = useState<string | null>(null)
   const dayOptions = useProgressDayOptions() ?? []
   const exerciseOptions = useProgressExerciseOptions() ?? []
   const trainingDates = useTrainingDates() ?? []
-  const [selectedTrainingDate, setSelectedTrainingDate] = useState<string | null>(null)
   const selectedDay = dayOptions.find((day) => day.dayId === selectedDayId) ?? dayOptions[0] ?? null
   const overview = useProgressOverview({
     canonicalName: mode === 'exercise' ? selectedExercise : null,
     dayId: mode === 'day' ? selectedDay?.dayId : null,
   })
   const chartData = overview?.chartData ?? []
-  const recentSessions = overview?.recentSessions ?? []
-  const filteredRecentSessions = useMemo(
-    () => (selectedTrainingDate ? recentSessions.filter((session) => session.date === selectedTrainingDate) : recentSessions.slice(0, 8)),
-    [recentSessions, selectedTrainingDate],
-  )
   const latestScore = chartData.at(-1)?.score ?? 0
-  const [isPending, startTransition] = useTransition()
+  const [, startTransition] = useTransition()
   const [message, setMessage] = useState<string | null>(null)
-  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null)
-  const selectedSessionDetail = useSessionDetail(selectedSessionId)
-  const editOptions = useProgressEditOptions()
-  const [editingSet, setEditingSet] = useState<EditSetState | null>(null)
   const metrics = [
     { label: 'Volumen', value: `${Math.round((overview?.volumeKg ?? 0) / 100) / 10}t` },
     { label: 'Peso max.', value: String(overview?.maxWeightKg ?? 0) },
@@ -100,11 +92,6 @@ export function ProgressPage() {
     )
   }
 
-  useEffect(() => {
-    if (selectedTrainingDate && trainingDates.includes(selectedTrainingDate)) return
-    setSelectedTrainingDate(trainingDates[0] ?? null)
-  }, [selectedTrainingDate, trainingDates])
-
   return (
     <div className="space-y-4">
       <PageHeader eyebrow={currentDescription} title="Rendimiento">
@@ -143,18 +130,21 @@ export function ProgressPage() {
         {[
           { icon: ChartLine, label: 'Score', mode: 'score' },
           { icon: Trophy, label: 'Mejores', mode: 'bests' },
-          { icon: NotebookTabs, label: 'Historial', mode: 'history' },
+          { icon: NotebookTabs, label: 'Historial', onClick: () => setHistorySheetOpen(true) },
           { icon: Download, label: 'Exportar', onClick: exportProgress },
         ].map((item) => (
           <button
             className={[
               'grid min-h-[54px] place-items-center gap-1 rounded-[10px] border text-[10px] font-semibold',
-              item.mode === panelMode
+              ('mode' in item && item.mode === panelMode) || (item.label === 'Historial' && historySheetOpen)
                 ? 'border-arsen-purple2 bg-arsen-purple/35 text-white'
                 : 'border-white/10 bg-arsen-surface text-arsen-muted',
             ].join(' ')}
             key={item.label}
-            onClick={item.onClick ?? (() => setPanelMode(item.mode as ProgressPanelMode))}
+            onClick={() => {
+              if ('onClick' in item && item.onClick) item.onClick()
+              else if ('mode' in item) setPanelMode(item.mode as ProgressPanelMode)
+            }}
             type="button"
           >
             <item.icon aria-hidden="true" className="size-5" />
@@ -228,7 +218,6 @@ export function ProgressPage() {
 
       {panelMode === 'score' ? <ScorePanel chartData={chartData} latestScore={latestScore} /> : null}
       {panelMode === 'bests' ? <BestMarksPanel marks={overview?.bestMarks ?? []} /> : null}
-      {panelMode === 'history' ? <HistoryPanel sessions={filteredRecentSessions} trainingDate={selectedTrainingDate} /> : null}
 
       <Card className="p-4">
         <div className="text-xs font-extrabold text-arsen-acid">Ultima sesion</div>
@@ -258,80 +247,13 @@ export function ProgressPage() {
         </div>
       </section>
 
-      <section>
-        <div className="mb-2 flex items-center justify-between gap-3 text-xs font-extrabold">
-          <span className="text-arsen-muted">Sesiones recientes</span>
-          <span className="text-arsen-purple2">{filteredRecentSessions.length}</span>
-        </div>
-        <label className="mb-2 block">
-          <span className="sr-only">Filtrar fecha entrenada</span>
-          <select
-            className="min-h-11 w-full rounded-[10px] border border-white/10 bg-arsen-surface px-3 text-sm font-extrabold text-arsen-ink"
-            onChange={(event) => setSelectedTrainingDate(event.target.value || null)}
-            value={selectedTrainingDate ?? ''}
-          >
-            {trainingDates.length === 0 ? <option value="">Sin fechas entrenadas</option> : null}
-            {trainingDates.map((date) => (
-              <option key={date} value={date}>
-                {formatSessionDate(date)}
-              </option>
-            ))}
-          </select>
-        </label>
-        <div className="space-y-2">
-          {filteredRecentSessions.length > 0 ? (
-            filteredRecentSessions.map((session) => (
-              <SessionRow
-                disabled={isPending}
-                key={session.id}
-                onDelete={async () => {
-                  if (!(await confirmDanger('Eliminar sesion', 'Se borrara esta sesion con sus series y drop sets.'))) return
-                  runHistoryAction(() => deleteWorkoutSession(session.id), 'Sesion eliminada')
-                }}
-                onOpen={() => setSelectedSessionId(session.id)}
-                session={session}
-              />
-            ))
-          ) : (
-            <Card className="p-4 text-sm text-arsen-muted">Sin sesiones todavia.</Card>
-          )}
-        </div>
-      </section>
-
-      {selectedSessionId ? (
-        <SessionDetailSheet
-          detail={selectedSessionDetail}
-          disabled={isPending}
-          onClose={() => setSelectedSessionId(null)}
-          onDeleteSet={async (setLogId) => {
-            if (!(await confirmDanger('Eliminar serie', 'Se borrara esta serie desde la sesion.'))) return
-            runHistoryAction(() => deleteMainSet(setLogId), 'Serie eliminada')
-          }}
-          onEditSet={(set) => setEditingSet(set)}
-        />
-      ) : null}
-
-      {editingSet && editOptions ? (
-        <EditSetSheet
-          disabled={isPending}
-          editOptions={editOptions}
-          initial={editingSet}
-          onClose={() => setEditingSet(null)}
-          onSave={(input) => {
-            runHistoryAction(async () => {
-              await updateWorkoutSession(input.sessionId, {
-                date: input.date,
-                dayId: input.dayId,
-                routineId: input.routineId,
-              })
-              await moveMainSetToExercise(input.setLogId, input.routineExerciseId)
-              await updateMainSet(input.setLogId, {
-                reps: input.reps,
-                rir: input.rir,
-                weightKg: input.weightKg,
-              })
-            }, 'Serie actualizada')
-            setEditingSet(null)
+      {historySheetOpen ? (
+        <TrainingCalendarSheet
+          dates={trainingDates}
+          onClose={() => setHistorySheetOpen(false)}
+          onSelect={(date) => {
+            setHistorySheetOpen(false)
+            navigate(`/progreso/historial/${date}`)
           }}
         />
       ) : null}
@@ -397,7 +319,7 @@ function BestMarksPanel({ marks }: { marks: ProgressBestMark[] }) {
   )
 }
 
-function HistoryPanel({ sessions, trainingDate }: { sessions: RecentSessionSummary[]; trainingDate: string | null }) {
+export function HistoryPanel({ sessions, trainingDate }: { sessions: RecentSessionSummary[]; trainingDate: string | null }) {
   const setCount = sessions.reduce((total, session) => total + session.setCount, 0)
   const volume = sessions.reduce((total, session) => total + session.volumeKg, 0)
 
@@ -420,7 +342,7 @@ function HistoryMetric({ label, value }: { label: string; value: string }) {
   )
 }
 
-function SessionRow({
+export function SessionRow({
   disabled,
   onDelete,
   onOpen,
@@ -471,7 +393,7 @@ function SessionRow({
   )
 }
 
-function SessionDetailSheet({
+export function SessionDetailSheet({
   detail,
   disabled,
   onClose,
@@ -576,7 +498,7 @@ function SessionDetailSheet({
   )
 }
 
-function EditSetSheet({
+export function EditSetSheet({
   disabled,
   editOptions,
   initial,
@@ -734,7 +656,7 @@ function NumberField({ label, onChange, value }: { label: string; onChange: (val
   )
 }
 
-function formatSessionDate(date: string) {
+export function formatSessionDate(date: string) {
   return new Intl.DateTimeFormat('es-MX', { day: 'numeric', month: 'short', year: 'numeric' }).format(
     new Date(`${date}T12:00:00`),
   )

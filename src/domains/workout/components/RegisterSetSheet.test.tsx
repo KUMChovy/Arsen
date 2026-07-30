@@ -3,12 +3,11 @@ import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { RoutineExercise } from '../../routine/types'
-import { registerMainSetForExercise, skipRoutineExerciseForDay } from '../services'
+import { registerMainSetForExercise } from '../services'
 import { RegisterSetSheet } from './RegisterSetSheet'
 
 vi.mock('../services', () => ({
   registerMainSetForExercise: vi.fn(() => Promise.resolve({ exerciseLogId: 'log-1', sessionId: 'session-1', setLogId: 'set-1' })),
-  skipRoutineExerciseForDay: vi.fn(() => Promise.resolve('session-1')),
 }))
 
 describe('RegisterSetSheet', () => {
@@ -50,24 +49,13 @@ describe('RegisterSetSheet', () => {
     })
   })
 
-  it('skips current exercise and closes sheet', async () => {
+  it('cancels and closes sheet', () => {
     const onClose = vi.fn()
     render(<Sheet onClose={onClose} />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Saltar' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }))
 
-    await waitFor(() => {
-      expect(skipRoutineExerciseForDay).toHaveBeenCalledWith(
-        expect.objectContaining({
-          date: '2026-07-20',
-          dayId: 'day-1',
-          displayUnit: 'kg',
-          exercise,
-          routineId: 'routine-1',
-        }),
-      )
-      expect(onClose).toHaveBeenCalled()
-    })
+    expect(onClose).toHaveBeenCalled()
   })
 })
 

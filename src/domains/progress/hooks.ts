@@ -5,6 +5,7 @@ import {
   getProgressExerciseOptions,
   getProgressOverview,
   getSessionDetail,
+  getSessionsForDate,
   getTrainingDates,
   type ProgressOverviewFilters,
 } from './repository'
@@ -27,6 +28,10 @@ export function useTrainingDates() {
 
 export function useSessionDetail(sessionId: string | null) {
   return useLiveQuery(() => (sessionId ? getSessionDetail(sessionId) : Promise.resolve(null)), [sessionId], undefined)
+}
+
+export function useSessionsForDate(date: string | undefined) {
+  return useLiveQuery(() => getSessionsForDate(date ?? ''), [date], undefined)
 }
 
 export function useProgressEditOptions() {

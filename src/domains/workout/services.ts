@@ -184,6 +184,32 @@ export async function addDropSet(input: {
   return dropSet.id
 }
 
+export async function updateDropSet(
+  dropSetId: string,
+  input: {
+    reps: number
+    rir: number
+    weightKg: number
+  },
+) {
+  const dropSet = await db.dropSetLogs.get(dropSetId)
+  if (!dropSet) throw new Error('Drop set no encontrado')
+
+  await db.dropSetLogs.update(dropSetId, {
+    reps: input.reps,
+    rir: input.rir,
+    updatedAt: new Date().toISOString(),
+    weightKg: input.weightKg,
+  })
+}
+
+export async function deleteDropSet(dropSetId: string) {
+  const dropSet = await db.dropSetLogs.get(dropSetId)
+  if (!dropSet) throw new Error('Drop set no encontrado')
+
+  await db.dropSetLogs.delete(dropSetId)
+}
+
 export async function skipExercise(sessionId: string, routineExerciseId: string, reason = '') {
   const now = new Date().toISOString()
   await db.transaction('rw', [db.skipLogs, db.exerciseLogs], async () => {

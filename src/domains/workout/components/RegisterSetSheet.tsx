@@ -4,7 +4,7 @@ import type { RoutineExercise } from '../../routine/types'
 import { ActionButton } from '../../../shared/components/ActionButton'
 import { Card } from '../../../shared/components/Card'
 import { kgToUnit, unitToKg } from '../../../shared/utils/weight'
-import { registerMainSetForExercise, skipRoutineExerciseForDay } from '../services'
+import { registerMainSetForExercise } from '../services'
 import type { WeightUnit } from '../types'
 
 type RegisterSetSheetProps = {
@@ -12,9 +12,7 @@ type RegisterSetSheetProps = {
   dayId: string
   displayUnit: WeightUnit
   exercise: RoutineExercise | null
-  isSkipped?: boolean
   onClose: () => void
-  onRetake?: () => void
   routineId: string
 }
 
@@ -23,9 +21,7 @@ export function RegisterSetSheet({
   dayId,
   displayUnit,
   exercise,
-  isSkipped = false,
   onClose,
-  onRetake,
   routineId,
 }: RegisterSetSheetProps) {
   const [weightValue, setWeightValue] = useState('60')
@@ -71,24 +67,7 @@ export function RegisterSetSheet({
           setMessage('Serie guardada')
           onClose()
         })
-        .catch((error: unknown) => setMessage(error instanceof Error ? error.message : 'No se guardó la serie'))
-    })
-  }
-
-  function skipCurrentExercise() {
-    startTransition(() => {
-      skipRoutineExerciseForDay({
-        date,
-        dayId,
-        displayUnit,
-        exercise: activeExercise,
-        routineId,
-      })
-        .then(() => {
-          setMessage('Ejercicio saltado')
-          onClose()
-        })
-        .catch((error: unknown) => setMessage(error instanceof Error ? error.message : 'No se pudo saltar'))
+        .catch((error: unknown) => setMessage(error instanceof Error ? error.message : 'No se guardo la serie'))
     })
   }
 
@@ -104,7 +83,7 @@ export function RegisterSetSheet({
               Registrar {activeExercise.name}
             </h2>
             <p className="mt-1 text-xs text-arsen-muted">
-              {activeExercise.targetSets} series · {activeExercise.repRange} reps · RIR {activeExercise.recommendedRir}
+              {activeExercise.targetSets} series - {activeExercise.repRange} reps - RIR {activeExercise.recommendedRir}
             </p>
           </div>
           <button className="grid size-9 place-items-center rounded-[10px] text-arsen-muted" onClick={onClose}>
@@ -144,8 +123,8 @@ export function RegisterSetSheet({
         {message ? <p className="mt-3 text-xs text-arsen-purple2">{message}</p> : null}
 
         <div className="mt-4 grid grid-cols-[1fr_1.5fr] gap-2">
-          <ActionButton disabled={isPending} onClick={isSkipped ? onRetake : skipCurrentExercise} tone="ghost">
-            {isSkipped ? 'Retomar' : 'Saltar'}
+          <ActionButton disabled={isPending} onClick={onClose} tone="ghost">
+            Cancelar
           </ActionButton>
           <ActionButton disabled={isPending} onClick={saveSet} tone="acid">
             <Check aria-hidden="true" className="size-5" />

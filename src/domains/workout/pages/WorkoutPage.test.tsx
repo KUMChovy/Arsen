@@ -57,9 +57,12 @@ vi.mock('../hooks', () => ({
 }))
 
 vi.mock('../services', () => ({
+  addDropSet: vi.fn(() => Promise.resolve()),
   completeSessionForDay: vi.fn(() => Promise.resolve('session-1')),
+  deleteDropSet: vi.fn(() => Promise.resolve()),
   deleteMainSet: vi.fn(() => Promise.resolve()),
-  reactivateExercise: vi.fn(() => Promise.resolve()),
+  skipRoutineExerciseForDay: vi.fn(() => Promise.resolve('session-1')),
+  updateDropSet: vi.fn(() => Promise.resolve()),
   updateMainSet: vi.fn(() => Promise.resolve()),
 }))
 

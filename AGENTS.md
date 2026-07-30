@@ -2,6 +2,22 @@
 
 Arsen is a mobile-first, 100% offline workout tracker. React 19 + TypeScript + Vite + Tailwind v4 + Dexie (IndexedDB). All data lives client-side; no backend.
 
+
+## Ponytail
+Lazy senior dev mode active (level: full). Before writing code, stop at the first rung that holds:
+1. Does this need to exist at all? (YAGNI)
+2. Does the standard library do it?
+3. Does a native platform feature cover it?
+4. Does an already-installed dependency solve it?
+5. Can it be one line?
+6. Only then: the minimum code that works.
+Never simplify away: input validation at trust boundaries, error handling that prevents data loss, security, accessibility, or anything explicitly requested. If the user insists on the full version, build it — no re-arguing.
+ 
+Mode switches: `/ponytail lite|full|ultra|off`. Off only on "stop ponytail" / "normal mode".
+ 
+## Priority with Superpowers
+Use the Superpowers process (TDD, planning, structured debugging) to decide *what* to build and *how* to verify it. Apply the Ponytail ladder to decide *how much* code to write in the implementation. On explicit conflict: Ponytail wins on code size/scope; Superpowers wins on process and verification. "Doing TDD" does not mean building a full fixture suite — it means the minimal test Ponytail requires, run within the Superpowers workflow.
+
 ## Commands
 
 - `pnpm dev` — Vite dev server (default port 5180; logs in `.run/`).

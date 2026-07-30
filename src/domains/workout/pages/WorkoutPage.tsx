@@ -1,40 +1,67 @@
 import { Check, ChevronRight, Info, Pencil, Trash2, TrendingUp } from 'lucide-react'
-import { useMemo, useState, useTransition } from 'react'
+import { useEffect, useMemo, useState, useTransition } from 'react'
 import { ActionButton } from '../../../shared/components/ActionButton'
 import { Card } from '../../../shared/components/Card'
 import { ExerciseArt, type ExerciseArtKind } from '../../../shared/components/ExerciseArt'
 import { PageHeader } from '../../../shared/components/PageHeader'
 import type { WeightIncreaseRecommendation } from '../../../shared/calculations/progression'
 import { totalVolume } from '../../../shared/calculations/workout'
+import { buildWarmupSets } from '../../../shared/calculations/warmups'
 import { localDateKey } from '../../../shared/utils/date'
 import { confirmDanger } from '../../../shared/utils/alerts'
 import { formatWeight } from '../../../shared/utils/weight'
-import { useWorkoutDay } from '../../routine/hooks'
+import { useActiveRoutineBundle, useRoutines, useWorkoutDayById } from '../../routine/hooks'
 import type { RoutineExercise } from '../../routine/types'
 import { RegisterSetSheet } from '../components/RegisterSetSheet'
+import { EditSetSheet } from '../components/EditSetSheet'
 import { useWeightIncreaseRecommendations, useWorkoutProgress } from '../hooks'
-import { completeSessionForDay, deleteMainSet, updateMainSet } from '../services'
+import { completeSessionForDay, deleteMainSet, reactivateExercise, updateMainSet } from '../services'
+import { setActiveRoutine } from '../../routine/services'
 import type { ExerciseState, SetLog, WeightUnit } from '../types'
+
+type ExerciseFilter = 'all' | 'pending' | 'in_progress' | 'skipped' | 'done'
 
 export function WorkoutPage() {
   const today = useMemo(() => new Date(), [])
   const dateKey = useMemo(() => localDateKey(today), [today])
   const selectedDate = useMemo(() => new Date(`${dateKey}T12:00:00`), [dateKey])
-  const workoutDay = useWorkoutDay(selectedDate)
+  const bundle = useActiveRoutineBundle()
+  const routines = useRoutines() ?? []
+  const days = bundle?.days ?? []
+  const defaultDayId = days.find((day) => day.weekday === selectedDate.getDay())?.id ?? days[0]?.id ?? null
+  const [selectedDayId, setSelectedDayId] = useState<string | null>(null)
+  const workoutDay = useWorkoutDayById(selectedDayId)
   const dayExercises = workoutDay?.dayExercises ?? []
   const dailyProgress = useWorkoutProgress(dateKey, workoutDay?.day.id, dayExercises)
   const weightIncreaseRecommendations = useWeightIncreaseRecommendations(dayExercises)
   const [selectedExerciseId, setSelectedExerciseId] = useState<string | null>(null)
+  const [exerciseFilter, setExerciseFilter] = useState<ExerciseFilter>('all')
+  const [editingSet, setEditingSet] = useState<{ exercise: RoutineExercise; set: SetLog } | null>(null)
   const [isPending, startTransition] = useTransition()
   const [message, setMessage] = useState<string | null>(null)
-  const currentExercise = dayExercises.find((exercise) => dailyProgress.stateByExerciseId.get(exercise.id) !== 'done') ?? dayExercises[0]
+  const currentExercise =
+    dayExercises.find((exercise) => {
+      const state = dailyProgress.stateByExerciseId.get(exercise.id)
+      return state === 'pending' || state === 'in_progress'
+    }) ??
+    dayExercises.find((exercise) => dailyProgress.stateByExerciseId.get(exercise.id) === 'skipped') ??
+    dayExercises[0]
   const selectedExercise = selectedExerciseId ? dayExercises.find((exercise) => exercise.id === selectedExerciseId) : null
+  const selectedExerciseState = selectedExercise ? dailyProgress.stateByExerciseId.get(selectedExercise.id) ?? 'pending' : 'pending'
   const completedCount = dailyProgress.completedCount
   const totalCount = dayExercises.length
   const preferredUnit = workoutDay?.settings.preferredUnit ?? 'kg'
-  const warmups = buildWarmups(currentExercise, preferredUnit)
+  const warmups = buildWarmupsForExercise(currentExercise, preferredUnit)
   const mainSets = dailyProgress.setLogs.filter((set) => set.kind === 'main')
   const dailyVolume = Math.round(totalVolume(mainSets, dailyProgress.dropSets))
+  const visibleExercises = useMemo(
+    () =>
+      dayExercises.filter((exercise) => {
+        if (exerciseFilter === 'all') return true
+        return (dailyProgress.stateByExerciseId.get(exercise.id) ?? 'pending') === exerciseFilter
+      }),
+    [dailyProgress.stateByExerciseId, dayExercises, exerciseFilter],
+  )
   const loggedSetRows = useMemo(
     () =>
       dayExercises.flatMap((exercise) => {
@@ -54,6 +81,11 @@ export function WorkoutPage() {
     { label: 'Hechos', value: dailyProgress.completedCount, tone: 'text-arsen-acid' },
     { label: 'Saltados', value: dailyProgress.skippedCount, tone: 'text-arsen-dim' },
   ]
+
+  useEffect(() => {
+    if (selectedDayId && days.some((day) => day.id === selectedDayId)) return
+    setSelectedDayId(defaultDayId)
+  }, [days, defaultDayId, selectedDayId])
 
   function runSetAction(action: () => Promise<void>, success: string) {
     startTransition(() => {
@@ -78,43 +110,61 @@ export function WorkoutPage() {
     })
   }
 
-  async function editSet(set: SetLog) {
-    const Swal = await import('sweetalert2')
-    const result = await Swal.default.fire({
-      background: 'oklch(0.155 0.016 280)',
-      color: 'white',
-      confirmButtonColor: '#8b5cf6',
-      confirmButtonText: 'Guardar',
-      input: 'text',
-      inputLabel: 'Peso kg, reps, RIR',
-      inputValue: `${set.weightKg},${set.reps},${set.rir}`,
-      showCancelButton: true,
-      title: 'Editar serie',
-    })
-    const value = typeof result.value === 'string' ? result.value : ''
-    if (!result.isConfirmed || !value) return
-
-    const values = value.split(',').map((item) => Number(item.trim()))
-    const weightKg = values[0]
-    const reps = values[1]
-    const rir = values[2]
-    if (weightKg === undefined || reps === undefined || rir === undefined || ![weightKg, reps, rir].every(Number.isFinite)) {
-      setMessage('Formato invalido. Usa: 80,8,1')
-      return
-    }
-
-    runSetAction(() => updateMainSet(set.id, { reps, rir, weightKg }), 'Serie editada')
-  }
-
   async function deleteSet(set: SetLog) {
     if (!(await confirmDanger('Eliminar serie', 'Se borrara esta serie y sus drop sets.'))) return
 
     runSetAction(() => deleteMainSet(set.id), 'Serie eliminada')
   }
 
+  function changeRoutine(routineId: string) {
+    startTransition(() => {
+      setActiveRoutine(routineId)
+        .then(() => {
+          setSelectedDayId(null)
+          setSelectedExerciseId(null)
+          setMessage('Rutina activa cambiada')
+        })
+        .catch((error: unknown) => setMessage(error instanceof Error ? error.message : 'No se pudo cambiar rutina'))
+    })
+  }
+
+  function retakeExercise() {
+    const sessionId = dailyProgress.progress?.session?.id
+    if (!selectedExercise || !sessionId) return
+
+    startTransition(() => {
+      reactivateExercise(sessionId, selectedExercise.id)
+        .then(() => {
+          setSelectedExerciseId(null)
+          setMessage('Ejercicio retomado')
+        })
+        .catch((error: unknown) => setMessage(error instanceof Error ? error.message : 'No se pudo retomar'))
+    })
+  }
+
   return (
     <div className="space-y-4">
       <PageHeader eyebrow={`${weekdayLabel(selectedDate)} - ${workoutDay?.day.name ?? 'Cargando'} - sesion activa`} title="Entreno de hoy" />
+
+      <Card className="grid grid-cols-2 gap-2 p-3">
+        <SelectField
+          disabled={isPending}
+          label="Rutina"
+          onChange={changeRoutine}
+          options={routines.map((routine) => ({ label: routine.name, value: routine.id }))}
+          value={bundle?.routine.id ?? ''}
+        />
+        <SelectField
+          disabled={isPending || days.length === 0}
+          label="Dia"
+          onChange={(dayId) => {
+            setSelectedDayId(dayId)
+            setSelectedExerciseId(null)
+          }}
+          options={days.map((day) => ({ label: day.name, value: day.id }))}
+          value={workoutDay?.day.id ?? selectedDayId ?? ''}
+        />
+      </Card>
 
       <div>
         <div className="mb-2 text-xs font-extrabold text-arsen-purple2">Ejercicio actual</div>
@@ -247,7 +297,7 @@ export function WorkoutPage() {
                   <button
                     className="grid size-9 place-items-center rounded-[10px] border border-white/10 text-arsen-purple2 disabled:opacity-40"
                     disabled={isPending}
-                    onClick={() => editSet(set)}
+                    onClick={() => setEditingSet({ exercise, set })}
                     type="button"
                   >
                     <Pencil aria-hidden="true" className="size-4" />
@@ -274,10 +324,27 @@ export function WorkoutPage() {
       <section>
         <div className="mb-2 flex items-center justify-between text-xs font-extrabold">
           <span className="text-arsen-muted">Ejercicios del dia</span>
-          <span className="text-arsen-purple2">Estado</span>
+          <span className="text-arsen-purple2">{visibleExercises.length}</span>
+        </div>
+        <div className="mb-2 flex gap-2 overflow-x-auto pb-1 scrollbar-none">
+          {exerciseFilters.map((filter) => (
+            <button
+              className={[
+                'shrink-0 rounded-[10px] border px-3 py-2 text-xs font-extrabold',
+                exerciseFilter === filter.value
+                  ? 'border-arsen-purple2 bg-arsen-purple/40 text-white'
+                  : 'border-white/10 bg-arsen-surface text-arsen-muted',
+              ].join(' ')}
+              key={filter.value}
+              onClick={() => setExerciseFilter(filter.value)}
+              type="button"
+            >
+              {filter.label}
+            </button>
+          ))}
         </div>
         <div className="space-y-2">
-          {dayExercises.slice(0, 8).map((exercise) => {
+          {visibleExercises.map((exercise) => {
             const state = dailyProgress.stateByExerciseId.get(exercise.id) ?? 'pending'
 
             return (
@@ -297,6 +364,7 @@ export function WorkoutPage() {
               </button>
             )
           })}
+          {visibleExercises.length === 0 ? <Card className="p-4 text-sm text-arsen-muted">Sin ejercicios para este filtro.</Card> : null}
         </div>
       </section>
 
@@ -306,27 +374,47 @@ export function WorkoutPage() {
           dayId={workoutDay.day.id}
           displayUnit={workoutDay.settings.preferredUnit}
           exercise={selectedExercise}
+          isSkipped={selectedExerciseState === 'skipped'}
           onClose={() => setSelectedExerciseId(null)}
+          onRetake={retakeExercise}
           routineId={workoutDay.routine.id}
+        />
+      ) : null}
+
+      {editingSet ? (
+        <EditSetSheet
+          disabled={isPending}
+          exerciseName={editingSet.exercise.name}
+          onClose={() => setEditingSet(null)}
+          onDelete={async () => {
+            if (!(await confirmDanger('Eliminar serie', 'Se borrara esta serie y sus drop sets.'))) return false
+            await deleteMainSet(editingSet.set.id)
+            return true
+          }}
+          onSave={(input) => updateMainSet(editingSet.set.id, input)}
+          set={editingSet.set}
+          unit={preferredUnit}
         />
       ) : null}
     </div>
   )
 }
 
-function buildWarmups(exercise: RoutineExercise | undefined, unit: WeightUnit) {
+const exerciseFilters: Array<{ label: string; value: ExerciseFilter }> = [
+  { label: 'Todos', value: 'all' },
+  { label: 'Pendientes', value: 'pending' },
+  { label: 'En progreso', value: 'in_progress' },
+  { label: 'Saltados', value: 'skipped' },
+  { label: 'Hechos', value: 'done' },
+]
+
+function buildWarmupsForExercise(exercise: RoutineExercise | undefined, unit: WeightUnit) {
   if (!exercise) return []
 
-  const workingWeight = exercise.currentWeightKg
-  const warmupCount = exercise.warmupSets || 2
-  if (warmupCount <= 0 || workingWeight <= 0) return []
-
-  const percentages = warmupCount >= 3 ? [0.5, 0.65, 0.8] : [0.55, 0.75]
-  const reps = warmupCount >= 3 ? [10, 6, 3] : [10, 6]
-  return percentages.slice(0, warmupCount).map((percentage, index) => ({
-    reps: reps[index] ?? 5,
-    rir: Math.max(4 - index, 2),
-    weight: formatWeight(Math.round(workingWeight * percentage * 2) / 2, unit),
+  return buildWarmupSets(exercise.currentWeightKg, exercise.warmupProtocol).map((set) => ({
+    reps: set.reps,
+    rir: set.rir,
+    weight: formatWeight(set.weightKg, unit),
   }))
 }
 
@@ -365,6 +453,38 @@ function stateClassName(state: ExerciseState) {
   }
 
   return classes[state]
+}
+
+function SelectField({
+  disabled,
+  label,
+  onChange,
+  options,
+  value,
+}: {
+  disabled?: boolean
+  label: string
+  onChange: (value: string) => void
+  options: Array<{ label: string; value: string }>
+  value: string
+}) {
+  return (
+    <label className="block min-w-0">
+      <span className="mb-1 block text-xs font-bold text-arsen-muted">{label}</span>
+      <select
+        className="min-h-11 w-full rounded-[10px] border border-white/10 bg-arsen-bg px-2 text-sm font-extrabold text-arsen-ink"
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.value)}
+        value={value}
+      >
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    </label>
+  )
 }
 
 function WeightIncreaseCard({

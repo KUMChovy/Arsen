@@ -327,6 +327,7 @@ export async function addCatalogExerciseToDay(routineId: string, dayId: string, 
 }
 
 export async function updateExercise(exerciseId: string, input: ExerciseInput) {
+  const existing = await db.routineExercises.get(exerciseId)
   const name = input.name.trim() || 'Ejercicio sin nombre'
 
   await db.routineExercises.update(exerciseId, {
@@ -343,7 +344,7 @@ export async function updateExercise(exerciseId: string, input: ExerciseInput) {
     warmupProtocol: input.warmupProtocol ?? '',
     progression: input.progression ?? '',
     technicalNotes: input.technicalNotes ?? '',
-    currentWeightKg: input.currentWeightKg ?? 0,
+    currentWeightKg: input.currentWeightKg ?? existing?.currentWeightKg ?? 0,
     updatedAt: new Date().toISOString(),
   })
 }

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, useTransition, type ReactNode } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   DndContext,
   KeyboardSensor,
@@ -35,6 +36,7 @@ import { ActionButton } from '../../../shared/components/ActionButton'
 import { Card } from '../../../shared/components/Card'
 import { ExerciseArt } from '../../../shared/components/ExerciseArt'
 import { PageHeader } from '../../../shared/components/PageHeader'
+import { normalizeWarmupProtocol, warmupProtocolLabel, type WarmupProtocol } from '../../../shared/calculations/warmups'
 import { confirmDanger } from '../../../shared/utils/alerts'
 import type { Equipment, ExerciseCatalogItem, MuscleGroup, Routine, RoutineDay, RoutineExercise } from '../types'
 import { useActiveRoutineBundle, useExerciseCatalog, useRoutines } from '../hooks'
@@ -72,6 +74,7 @@ type RecipeSheetState =
   | null
 
 const equipmentOptions: Equipment[] = ['Barra', 'Mancuerna', 'Maquina', 'Polea', 'Peso corporal', 'Otro']
+const warmupProtocolOptions: WarmupProtocol[] = ['none', 'hypertrophy', 'strength', 'progressive', 'heavy_low_volume']
 const weekdayOptions = [
   { label: 'Sin dia fijo', value: '' },
   { label: 'Domingo', value: '0' },
@@ -84,6 +87,7 @@ const weekdayOptions = [
 ]
 
 export function RoutinePage() {
+  const navigate = useNavigate()
   const bundle = useActiveRoutineBundle()
   const routines = useRoutines() ?? []
   const catalog = useExerciseCatalog() ?? []
@@ -151,8 +155,7 @@ export function RoutinePage() {
         <RoutineView
           bundle={bundle}
           days={days}
-          onSelectDay={setSelectedDayId}
-          selectedDay={selectedDay}
+          onSelectDay={(dayId) => navigate(`/rutina/dia/${dayId}`)}
         />
       ) : null}
 
@@ -352,15 +355,11 @@ function RoutineView({
   bundle,
   days,
   onSelectDay,
-  selectedDay,
 }: {
   bundle: ReturnType<typeof useActiveRoutineBundle>
   days: RoutineDay[]
   onSelectDay: (dayId: string) => void
-  selectedDay: RoutineDay | null
 }) {
-  const selectedExercises = selectedDay ? bundle?.exercisesByDay.get(selectedDay.id) ?? [] : []
-
   return (
     <>
       <Card className="flex items-center justify-between gap-3 p-3">
@@ -400,50 +399,7 @@ function RoutineView({
           })}
         </div>
       </section>
-
-      {selectedDay ? <DayReadOnlyDetail day={selectedDay} exercises={selectedExercises} /> : null}
     </>
-  )
-}
-
-function DayReadOnlyDetail({ day, exercises }: { day: RoutineDay; exercises: RoutineExercise[] }) {
-  const dominantMuscle = dominantMuscleForExercises(exercises)
-
-  return (
-    <section>
-      <div className="mb-2 text-xs font-extrabold text-arsen-muted">Detalle del dia</div>
-      <Card className="p-3">
-        <div className="flex items-center gap-3">
-          <ExerciseArt alt={dominantMuscle} className="size-14" muscle={dominantMuscle} />
-          <div>
-            <h2 className="text-xl font-black">{day.name}</h2>
-            <p className="text-sm font-semibold text-arsen-muted">{day.description || 'Sin descripcion'}</p>
-            <span className="mt-1 inline-flex rounded-full bg-arsen-purple/30 px-2 py-1 text-xs font-bold text-arsen-purple2">
-              Dominante: {dominantMuscle}
-            </span>
-          </div>
-        </div>
-        <div className="mt-3 space-y-2">
-          {exercises.map((exercise) => (
-            <div className="rounded-[10px] border border-white/10 bg-arsen-bg/50 p-2" key={exercise.id}>
-              <div className="flex items-center gap-2">
-                <ExerciseArt alt={exercise.name} className="size-10" muscle={exercise.mainMuscle} />
-                <div className="min-w-0">
-                  <strong className="block truncate text-sm">{exercise.name}</strong>
-                  <span className="text-xs text-arsen-muted">
-                    {exercise.mainMuscle} - {exercise.equipment} - {exercise.targetSets}x{exercise.repRange} - RIR {exercise.recommendedRir}
-                  </span>
-                </div>
-              </div>
-              {exercise.progression || exercise.technicalNotes ? (
-                <p className="mt-2 text-xs text-arsen-muted">{exercise.progression || exercise.technicalNotes}</p>
-              ) : null}
-            </div>
-          ))}
-          {exercises.length === 0 ? <p className="text-sm text-arsen-muted">Este dia aun no tiene ejercicios.</p> : null}
-        </div>
-      </Card>
-    </section>
   )
 }
 
@@ -603,7 +559,7 @@ function DayEditorCard({
   return (
     <Card className="p-3">
       <div className="grid grid-cols-[1fr_118px] gap-2">
-        <TextField label="Dia" onChange={setName} value={name} />
+        <TextField label="Nombre del dia" onChange={setName} value={name} />
         <label className="block">
           <span className="mb-1 block text-xs font-bold text-arsen-muted">Semana</span>
           <select
@@ -839,12 +795,13 @@ function RoutineExerciseRecipeSheet({
           <TextField label="Reps" onChange={(value) => update('repRange', value)} value={form.repRange} />
           <TextField label="RIR" onChange={(value) => update('recommendedRir', value)} value={form.recommendedRir} />
         </div>
-        <div className="grid grid-cols-3 gap-2">
-          <TextField label="Peso kg" onChange={(value) => update('currentWeightKg', value)} type="number" value={form.currentWeightKg} />
+        <div className="grid grid-cols-2 gap-2">
           <TextField label="Descanso s" onChange={(value) => update('restSeconds', value)} type="number" value={form.restSeconds} />
-          <TextField label="Warmups" onChange={(value) => update('warmupSets', value)} type="number" value={form.warmupSets} />
+          <WarmupProtocolSelect
+            onChange={(value) => update('warmupProtocol', value)}
+            value={normalizeWarmupProtocol(form.warmupProtocol)}
+          />
         </div>
-        <TextField label="Protocolo calentamiento" onChange={(value) => update('warmupProtocol', value)} value={form.warmupProtocol} />
         <TextField label="Progresion" onChange={(value) => update('progression', value)} value={form.progression} />
         <label className="block">
           <span className="mb-1 block text-xs font-bold text-arsen-muted">Notas tecnicas</span>
@@ -864,7 +821,6 @@ function RoutineExerciseRecipeSheet({
 }
 
 type ExerciseForm = {
-  currentWeightKg: string
   equipment: Equipment
   mainMuscle: MuscleGroup
   name: string
@@ -875,12 +831,10 @@ type ExerciseForm = {
   targetSets: string
   technicalNotes: string
   warmupProtocol: string
-  warmupSets: string
 }
 
 function exerciseToForm(exercise: RoutineExercise | null, catalogItem: ExerciseCatalogItem | null): ExerciseForm {
   return {
-    currentWeightKg: String(exercise?.currentWeightKg ?? 0),
     equipment: exercise?.equipment ?? catalogItem?.equipment ?? 'Barra',
     mainMuscle: normalizeMuscleGroup(exercise?.mainMuscle ?? catalogItem?.mainMuscle),
     name: exercise?.name ?? catalogItem?.name ?? '',
@@ -890,8 +844,7 @@ function exerciseToForm(exercise: RoutineExercise | null, catalogItem: ExerciseC
     restSeconds: String(exercise?.restSeconds ?? 90),
     targetSets: String(exercise?.targetSets ?? 3),
     technicalNotes: exercise?.technicalNotes ?? '',
-    warmupProtocol: exercise?.warmupProtocol ?? '',
-    warmupSets: String(exercise?.warmupSets ?? 0),
+    warmupProtocol: normalizeWarmupProtocol(exercise?.warmupProtocol ?? ''),
   }
 }
 
@@ -899,7 +852,6 @@ function formToExerciseInput(form: ExerciseForm): ExerciseInput {
   const restSeconds = numberOrDefault(form.restSeconds, 90)
 
   return {
-    currentWeightKg: numberOrDefault(form.currentWeightKg, 0),
     equipment: form.equipment,
     mainMuscle: form.mainMuscle,
     name: form.name,
@@ -910,8 +862,8 @@ function formToExerciseInput(form: ExerciseForm): ExerciseInput {
     restSeconds,
     targetSets: numberOrDefault(form.targetSets, 3),
     technicalNotes: form.technicalNotes,
-    warmupProtocol: form.warmupProtocol,
-    warmupSets: numberOrDefault(form.warmupSets, 0),
+    warmupProtocol: normalizeWarmupProtocol(form.warmupProtocol),
+    warmupSets: 0,
   }
 }
 
@@ -1056,6 +1008,25 @@ function EquipmentSelect({ onChange, value }: { onChange: (value: Equipment) => 
         {equipmentOptions.map((option) => (
           <option key={option} value={option}>
             {option}
+          </option>
+        ))}
+      </select>
+    </label>
+  )
+}
+
+function WarmupProtocolSelect({ onChange, value }: { onChange: (value: WarmupProtocol) => void; value: WarmupProtocol }) {
+  return (
+    <label className="block">
+      <span className="mb-1 block text-xs font-bold text-arsen-muted">Calentamiento</span>
+      <select
+        className="min-h-11 w-full rounded-[10px] border border-white/10 bg-arsen-surface px-3 text-sm font-extrabold text-arsen-ink"
+        onChange={(event) => onChange(event.target.value as WarmupProtocol)}
+        value={value}
+      >
+        {warmupProtocolOptions.map((protocol) => (
+          <option key={protocol} value={protocol}>
+            {warmupProtocolLabel(protocol)}
           </option>
         ))}
       </select>

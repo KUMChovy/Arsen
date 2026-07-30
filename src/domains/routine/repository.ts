@@ -42,6 +42,38 @@ export async function getWorkoutDayForDate(date: Date) {
   }
 }
 
+export async function getWorkoutDayById(dayId: string | null | undefined) {
+  const bundle = await getActiveRoutineBundle()
+  if (!bundle || !dayId) return null
+
+  const day = bundle.days.find((candidate) => candidate.id === dayId)
+  if (!day) return null
+
+  return {
+    ...bundle,
+    day,
+    dayExercises: bundle.exercisesByDay.get(day.id) ?? [],
+  }
+}
+
+export async function getRoutineDayDetail(dayId: string | null | undefined) {
+  if (!dayId) return null
+
+  const day = await db.routineDays.get(dayId)
+  if (!day) return null
+
+  const [routine, exercises] = await Promise.all([
+    db.routines.get(day.routineId),
+    db.routineExercises.where('dayId').equals(day.id).sortBy('order'),
+  ])
+
+  return {
+    day,
+    exercises,
+    routine: routine ?? null,
+  }
+}
+
 export async function getExerciseCatalog() {
   return db.exerciseCatalog.orderBy('canonicalName').toArray()
 }

@@ -9,6 +9,9 @@ const ProgressPage = lazy(() =>
 const RoutinePage = lazy(() =>
   import('../domains/routine/pages/RoutinePage').then((module) => ({ default: module.RoutinePage })),
 )
+const RoutineDayDetailPage = lazy(() =>
+  import('../domains/routine/pages/RoutineDayDetailPage').then((module) => ({ default: module.RoutineDayDetailPage })),
+)
 const SettingsPage = lazy(() =>
   import('../domains/settings/pages/SettingsPage').then((module) => ({ default: module.SettingsPage })),
 )
@@ -36,6 +39,7 @@ export const router = createBrowserRouter([
     children: [
       { path: '/', element: lazyPage(<WorkoutPage />) },
       { path: '/rutina', element: lazyPage(<RoutinePage />) },
+      { path: '/rutina/dia/:dayId', element: lazyPage(<RoutineDayDetailPage />) },
       { path: '/progreso', element: lazyPage(<ProgressPage />) },
       { path: '/settings', element: lazyPage(<SettingsPage />) },
     ],

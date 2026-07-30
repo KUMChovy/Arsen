@@ -8,7 +8,16 @@ import type { ExerciseLog, SetLog } from '../types'
 import { completeSessionForDay } from '../services'
 
 vi.mock('../../routine/hooks', () => ({
-  useWorkoutDay: () => ({
+  useActiveRoutineBundle: () => ({
+    days: [day],
+    exercisesByDay: new Map([[day.id, [exercise]]]),
+    routine,
+    settings: {
+      preferredUnit: 'kg',
+    },
+  }),
+  useRoutines: () => [routine],
+  useWorkoutDayById: () => ({
     day: {
       description: 'Upper',
       id: 'day-1',
@@ -35,6 +44,7 @@ vi.mock('../hooks', () => ({
     pendingCount: 0,
     progress: {
       session: {
+        id: 'session-1',
         notes: 'Sesion inicial',
         status: 'draft',
       },
@@ -49,7 +59,12 @@ vi.mock('../hooks', () => ({
 vi.mock('../services', () => ({
   completeSessionForDay: vi.fn(() => Promise.resolve('session-1')),
   deleteMainSet: vi.fn(() => Promise.resolve()),
+  reactivateExercise: vi.fn(() => Promise.resolve()),
   updateMainSet: vi.fn(() => Promise.resolve()),
+}))
+
+vi.mock('../../routine/services', () => ({
+  setActiveRoutine: vi.fn(() => Promise.resolve()),
 }))
 
 describe('WorkoutPage', () => {
@@ -110,6 +125,25 @@ const exercise: RoutineExercise = {
   updatedAt: '2026-07-20T00:00:00.000Z',
   warmupProtocol: '',
   warmupSets: 2,
+}
+
+const day = {
+  createdAt: '2026-07-20T00:00:00.000Z',
+  description: 'Upper',
+  id: 'day-1',
+  name: 'Dia 1',
+  order: 0,
+  routineId: 'routine-1',
+  updatedAt: '2026-07-20T00:00:00.000Z',
+  weekday: 1,
+} as const
+
+const routine = {
+  createdAt: '2026-07-20T00:00:00.000Z',
+  id: 'routine-1',
+  isActive: true,
+  name: 'Mi rutina actual',
+  updatedAt: '2026-07-20T00:00:00.000Z',
 }
 
 const exerciseLog: ExerciseLog = {

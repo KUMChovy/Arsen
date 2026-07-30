@@ -1,5 +1,6 @@
 import { db } from '../../db/schema'
 import { bestSet, performanceScore, totalVolume } from '../../shared/calculations/workout'
+import type { DropSetLog } from '../workout/types'
 
 export type ProgressPoint = {
   date: string
@@ -8,6 +9,7 @@ export type ProgressPoint = {
 
 export type ProgressOverview = {
   bestSetLabel: string
+  bestMarks: ProgressBestMark[]
   chartData: ProgressPoint[]
   exerciseName: string
   lastSessionDate: string | null
@@ -35,10 +37,21 @@ export type RecentSessionSummary = {
   bestSetId: string | null
   bestSetLabel: string
   date: string
+  dayName: string
   exerciseCount: number
   id: string
+  routineName: string
   setCount: number
   volumeKg: number
+}
+
+export type ProgressBestMark = {
+  date: string
+  exerciseName: string
+  id: string
+  label: string
+  score: number
+  weightKg: number
 }
 
 export type SessionExerciseDetail = {
@@ -85,11 +98,13 @@ export type ProgressOverviewFilters = {
 }
 
 export async function getProgressOverview(filters: ProgressOverviewFilters = {}): Promise<ProgressOverview> {
-  const [allSessions, exerciseLogs, setLogs, dropSetLogs] = await Promise.all([
+  const [allSessions, exerciseLogs, setLogs, dropSetLogs, routines, days] = await Promise.all([
     db.workoutSessions.orderBy('date').toArray(),
     db.exerciseLogs.toArray(),
     db.setLogs.toArray(),
     db.dropSetLogs.toArray(),
+    db.routines.toArray(),
+    db.routineDays.toArray(),
   ])
   const sessions = filters.dayId ? allSessions.filter((session) => session.dayId === filters.dayId) : allSessions
   const sessionIds = new Set(sessions.map((session) => session.id))
@@ -104,9 +119,17 @@ export async function getProgressOverview(filters: ProgressOverviewFilters = {})
   const best = bestSet(mainSets)
   const bestSetLabel = best ? `${best.weightKg} kg x ${best.reps}` : 'Sin series'
   const maxWeightKg = mainSets.reduce((max, set) => Math.max(max, set.weightKg), 0)
-  const volumeKg = totalVolume(mainSets, dropSetLogs)
+  const dropSetBySetId = new Map<string, typeof dropSetLogs>()
+  for (const dropSet of dropSetLogs) {
+    const current = dropSetBySetId.get(dropSet.setLogId)
+    if (current) current.push(dropSet)
+    else dropSetBySetId.set(dropSet.setLogId, [dropSet])
+  }
+  const volumeKg = totalVolume(mainSets, dropSetsForSets(mainSets, dropSetBySetId))
   const sessionById = new Map(sessions.map((session) => [session.id, session]))
   const logById = new Map(filteredExerciseLogs.map((log) => [log.id, log]))
+  const routineById = new Map(routines.map((routine) => [routine.id, routine.name]))
+  const dayById = new Map(days.map((day) => [day.id, day.name]))
   const logsBySessionId = new Map<string, typeof filteredExerciseLogs>()
   const setsByExerciseLogId = new Map<string, typeof setLogs>()
   const bestScoreByDate = new Map<string, number>()
@@ -136,6 +159,27 @@ export async function getProgressOverview(filters: ProgressOverviewFilters = {})
     }
   }
 
+  const bestMarks = mainSets
+    .map((set): ProgressBestMark | null => {
+      const log = logById.get(set.exerciseLogId)
+      if (!log) return null
+      const session = sessionById.get(log.sessionId)
+      if (!session) return null
+      const score = Math.round(performanceScore(set) * 100) / 100
+
+      return {
+        date: session.date,
+        exerciseName: log.snapshot.name,
+        id: set.id,
+        label: `${set.weightKg} kg x ${set.reps}`,
+        score,
+        weightKg: set.weightKg,
+      }
+    })
+    .filter((mark): mark is ProgressBestMark => mark !== null)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 5)
+
   const chartData = [...bestScoreByDate.entries()]
     .sort(([dateA], [dateB]) => dateA.localeCompare(dateB))
     .map(([date, score]) => ({
@@ -152,16 +196,18 @@ export async function getProgressOverview(filters: ProgressOverviewFilters = {})
         bestSetId: bestSessionSet?.id ?? null,
         bestSetLabel: bestSessionSet ? `${bestSessionSet.weightKg} kg x ${bestSessionSet.reps}` : 'Sin series',
         date: session.date,
+        dayName: dayById.get(session.dayId) ?? 'Dia eliminado',
         exerciseCount: logs.length,
         id: session.id,
+        routineName: routineById.get(session.routineId) ?? 'Rutina eliminada',
         setCount: sessionSets.length,
-        volumeKg: totalVolume(sessionSets, dropSetLogs),
+        volumeKg: totalVolume(sessionSets, dropSetsForSets(sessionSets, dropSetBySetId)),
       }
     })
     .sort((a, b) => b.date.localeCompare(a.date))
-    .slice(0, 8)
 
   return {
+    bestMarks,
     bestSetLabel,
     chartData,
     exerciseName,
@@ -172,6 +218,12 @@ export async function getProgressOverview(filters: ProgressOverviewFilters = {})
     totalSets: mainSets.length,
     volumeKg,
   }
+}
+
+export async function getTrainingDates(): Promise<string[]> {
+  const sessions = await db.workoutSessions.orderBy('date').toArray()
+
+  return [...new Set(sessions.map((session) => session.date))].sort((a, b) => b.localeCompare(a))
 }
 
 export async function getProgressExerciseOptions(): Promise<ProgressExerciseOption[]> {
@@ -306,4 +358,8 @@ export async function getProgressEditOptions(): Promise<ProgressEditOptions> {
 
 function formatShortDate(date: string) {
   return new Intl.DateTimeFormat('es-MX', { day: 'numeric', month: 'short' }).format(new Date(`${date}T12:00:00`))
+}
+
+function dropSetsForSets<TSet extends { id: string }>(sets: TSet[], dropSetBySetId: Map<string, DropSetLog[]>) {
+  return sets.flatMap((set) => dropSetBySetId.get(set.id) ?? [])
 }

@@ -12,7 +12,9 @@ type RegisterSetSheetProps = {
   dayId: string
   displayUnit: WeightUnit
   exercise: RoutineExercise | null
+  isSkipped?: boolean
   onClose: () => void
+  onRetake?: () => void
   routineId: string
 }
 
@@ -21,7 +23,9 @@ export function RegisterSetSheet({
   dayId,
   displayUnit,
   exercise,
+  isSkipped = false,
   onClose,
+  onRetake,
   routineId,
 }: RegisterSetSheetProps) {
   const [weightValue, setWeightValue] = useState('60')
@@ -140,8 +144,8 @@ export function RegisterSetSheet({
         {message ? <p className="mt-3 text-xs text-arsen-purple2">{message}</p> : null}
 
         <div className="mt-4 grid grid-cols-[1fr_1.5fr] gap-2">
-          <ActionButton disabled={isPending} onClick={skipCurrentExercise} tone="ghost">
-            Saltar
+          <ActionButton disabled={isPending} onClick={isSkipped ? onRetake : skipCurrentExercise} tone="ghost">
+            {isSkipped ? 'Retomar' : 'Saltar'}
           </ActionButton>
           <ActionButton disabled={isPending} onClick={saveSet} tone="acid">
             <Check aria-hidden="true" className="size-5" />

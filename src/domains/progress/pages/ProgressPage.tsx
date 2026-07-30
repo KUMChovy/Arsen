@@ -7,10 +7,11 @@ import { ActionButton } from '../../../shared/components/ActionButton'
 import { confirmDanger } from '../../../shared/utils/alerts'
 import { exportProgressCsv, exportProgressJson } from '../../settings/services'
 import { deleteMainSet, deleteWorkoutSession, moveMainSetToExercise, updateMainSet, updateWorkoutSession } from '../../workout/services'
-import { useProgressDayOptions, useProgressEditOptions, useProgressExerciseOptions, useProgressOverview, useSessionDetail } from '../hooks'
-import type { ProgressEditOptions, RecentSessionSummary, SessionDetail } from '../repository'
+import { useProgressDayOptions, useProgressEditOptions, useProgressExerciseOptions, useProgressOverview, useSessionDetail, useTrainingDates } from '../hooks'
+import type { ProgressBestMark, ProgressEditOptions, RecentSessionSummary, SessionDetail } from '../repository'
 
 type ProgressMode = 'general' | 'day' | 'exercise' | 'global'
+type ProgressPanelMode = 'score' | 'bests' | 'history'
 type EditSetState = {
   dayId: string
   date: string
@@ -29,10 +30,13 @@ const ProgressChart = lazy(() =>
 
 export function ProgressPage() {
   const [mode, setMode] = useState<ProgressMode>('general')
+  const [panelMode, setPanelMode] = useState<ProgressPanelMode>('score')
   const [selectedDayId, setSelectedDayId] = useState<string | null>(null)
   const [selectedExercise, setSelectedExercise] = useState<string | null>(null)
   const dayOptions = useProgressDayOptions() ?? []
   const exerciseOptions = useProgressExerciseOptions() ?? []
+  const trainingDates = useTrainingDates() ?? []
+  const [selectedTrainingDate, setSelectedTrainingDate] = useState<string | null>(null)
   const selectedDay = dayOptions.find((day) => day.dayId === selectedDayId) ?? dayOptions[0] ?? null
   const overview = useProgressOverview({
     canonicalName: mode === 'exercise' ? selectedExercise : null,
@@ -40,6 +44,10 @@ export function ProgressPage() {
   })
   const chartData = overview?.chartData ?? []
   const recentSessions = overview?.recentSessions ?? []
+  const filteredRecentSessions = useMemo(
+    () => (selectedTrainingDate ? recentSessions.filter((session) => session.date === selectedTrainingDate) : recentSessions.slice(0, 8)),
+    [recentSessions, selectedTrainingDate],
+  )
   const latestScore = chartData.at(-1)?.score ?? 0
   const [isPending, startTransition] = useTransition()
   const [message, setMessage] = useState<string | null>(null)
@@ -92,6 +100,11 @@ export function ProgressPage() {
     )
   }
 
+  useEffect(() => {
+    if (selectedTrainingDate && trainingDates.includes(selectedTrainingDate)) return
+    setSelectedTrainingDate(trainingDates[0] ?? null)
+  }, [selectedTrainingDate, trainingDates])
+
   return (
     <div className="space-y-4">
       <PageHeader eyebrow={currentDescription} title="Rendimiento">
@@ -128,20 +141,20 @@ export function ProgressPage() {
 
       <section className="grid grid-cols-4 gap-2">
         {[
-          { icon: ChartLine, label: 'Score', active: true },
-          { icon: Trophy, label: 'Mejores' },
-          { icon: NotebookTabs, label: 'Historial' },
+          { icon: ChartLine, label: 'Score', mode: 'score' },
+          { icon: Trophy, label: 'Mejores', mode: 'bests' },
+          { icon: NotebookTabs, label: 'Historial', mode: 'history' },
           { icon: Download, label: 'Exportar', onClick: exportProgress },
         ].map((item) => (
           <button
             className={[
               'grid min-h-[54px] place-items-center gap-1 rounded-[10px] border text-[10px] font-semibold',
-              item.active
+              item.mode === panelMode
                 ? 'border-arsen-purple2 bg-arsen-purple/35 text-white'
                 : 'border-white/10 bg-arsen-surface text-arsen-muted',
             ].join(' ')}
             key={item.label}
-            onClick={item.onClick}
+            onClick={item.onClick ?? (() => setPanelMode(item.mode as ProgressPanelMode))}
             type="button"
           >
             <item.icon aria-hidden="true" className="size-5" />
@@ -213,30 +226,9 @@ export function ProgressPage() {
         <ChevronDown aria-hidden="true" className="size-5 text-arsen-muted" />
       </Card>
 
-      <Card className="p-4">
-        <div className="mb-4 flex items-end justify-between gap-3">
-          <div>
-            <span className="text-sm text-arsen-muted">Puntaje de rendimiento</span>
-            <div className="mt-1 flex items-end gap-1">
-              <strong className="text-[44px] leading-none text-arsen-acid">{latestScore}</strong>
-              <span className="pb-1 text-arsen-muted">/100</span>
-            </div>
-          </div>
-          <span className="text-sm font-extrabold text-arsen-acid">{chartData.length} puntos</span>
-        </div>
-
-        <div className="h-48 rounded-[10px] border border-white/10 bg-arsen-bg/50 p-2">
-          {chartData.length > 0 ? (
-            <Suspense fallback={<div className="h-full animate-pulse rounded-[10px] bg-white/5" />}>
-              <ProgressChart data={chartData} />
-            </Suspense>
-          ) : (
-            <div className="grid h-full place-items-center text-center text-sm text-arsen-muted">
-              Registra una serie para crear tu primera grafica.
-            </div>
-          )}
-        </div>
-      </Card>
+      {panelMode === 'score' ? <ScorePanel chartData={chartData} latestScore={latestScore} /> : null}
+      {panelMode === 'bests' ? <BestMarksPanel marks={overview?.bestMarks ?? []} /> : null}
+      {panelMode === 'history' ? <HistoryPanel sessions={filteredRecentSessions} trainingDate={selectedTrainingDate} /> : null}
 
       <Card className="p-4">
         <div className="text-xs font-extrabold text-arsen-acid">Ultima sesion</div>
@@ -267,10 +259,28 @@ export function ProgressPage() {
       </section>
 
       <section>
-        <div className="mb-2 text-xs font-extrabold text-arsen-muted">Sesiones recientes</div>
+        <div className="mb-2 flex items-center justify-between gap-3 text-xs font-extrabold">
+          <span className="text-arsen-muted">Sesiones recientes</span>
+          <span className="text-arsen-purple2">{filteredRecentSessions.length}</span>
+        </div>
+        <label className="mb-2 block">
+          <span className="sr-only">Filtrar fecha entrenada</span>
+          <select
+            className="min-h-11 w-full rounded-[10px] border border-white/10 bg-arsen-surface px-3 text-sm font-extrabold text-arsen-ink"
+            onChange={(event) => setSelectedTrainingDate(event.target.value || null)}
+            value={selectedTrainingDate ?? ''}
+          >
+            {trainingDates.length === 0 ? <option value="">Sin fechas entrenadas</option> : null}
+            {trainingDates.map((date) => (
+              <option key={date} value={date}>
+                {formatSessionDate(date)}
+              </option>
+            ))}
+          </select>
+        </label>
         <div className="space-y-2">
-          {recentSessions.length > 0 ? (
-            recentSessions.map((session) => (
+          {filteredRecentSessions.length > 0 ? (
+            filteredRecentSessions.map((session) => (
               <SessionRow
                 disabled={isPending}
                 key={session.id}
@@ -329,6 +339,87 @@ export function ProgressPage() {
   )
 }
 
+function ScorePanel({ chartData, latestScore }: { chartData: Array<{ date: string; score: number }>; latestScore: number }) {
+  return (
+    <Card className="p-4">
+      <div className="mb-4 flex items-end justify-between gap-3">
+        <div>
+          <span className="text-sm text-arsen-muted">Puntaje de rendimiento</span>
+          <div className="mt-1 flex items-end gap-1">
+            <strong className="text-[44px] leading-none text-arsen-acid">{latestScore}</strong>
+            <span className="pb-1 text-arsen-muted">/100</span>
+          </div>
+        </div>
+        <span className="text-sm font-extrabold text-arsen-acid">{chartData.length} puntos</span>
+      </div>
+
+      <div className="h-48 rounded-[10px] border border-white/10 bg-arsen-bg/50 p-2">
+        {chartData.length > 0 ? (
+          <Suspense fallback={<div className="h-full animate-pulse rounded-[10px] bg-white/5" />}>
+            <ProgressChart data={chartData} />
+          </Suspense>
+        ) : (
+          <div className="grid h-full place-items-center text-center text-sm text-arsen-muted">
+            Registra una serie para crear tu primera grafica.
+          </div>
+        )}
+      </div>
+    </Card>
+  )
+}
+
+function BestMarksPanel({ marks }: { marks: ProgressBestMark[] }) {
+  return (
+    <Card className="p-4">
+      <div className="mb-3 flex items-center gap-2">
+        <Trophy aria-hidden="true" className="size-5 text-arsen-acid" />
+        <strong>Mejores marcas</strong>
+      </div>
+      <div className="space-y-2">
+        {marks.map((mark, index) => (
+          <div className="grid grid-cols-[32px_1fr_auto] items-center gap-2 rounded-[10px] border border-white/10 bg-arsen-bg/55 p-2" key={mark.id}>
+            <span className="grid size-7 place-items-center rounded-full bg-arsen-purple/30 text-xs font-black text-arsen-purple2">
+              {index + 1}
+            </span>
+            <div className="min-w-0">
+              <strong className="block truncate text-sm">{mark.exerciseName}</strong>
+              <span className="text-xs text-arsen-muted">{formatSessionDate(mark.date)}</span>
+            </div>
+            <div className="text-right">
+              <strong className="block text-sm text-arsen-acid">{mark.label}</strong>
+              <span className="text-xs text-arsen-muted">Score {mark.score}</span>
+            </div>
+          </div>
+        ))}
+        {marks.length === 0 ? <p className="text-sm text-arsen-muted">Sin marcas todavia.</p> : null}
+      </div>
+    </Card>
+  )
+}
+
+function HistoryPanel({ sessions, trainingDate }: { sessions: RecentSessionSummary[]; trainingDate: string | null }) {
+  const setCount = sessions.reduce((total, session) => total + session.setCount, 0)
+  const volume = sessions.reduce((total, session) => total + session.volumeKg, 0)
+
+  return (
+    <Card className="grid grid-cols-3 gap-2 p-3 text-center">
+      <HistoryMetric label="Fecha" value={trainingDate ? formatSessionDate(trainingDate) : 'Sin fecha'} />
+      <HistoryMetric label="Sesiones" value={String(sessions.length)} />
+      <HistoryMetric label="Volumen" value={`${Math.round(volume)} kg`} />
+      <div className="col-span-3 text-xs text-arsen-muted">{setCount} series registradas en la fecha seleccionada</div>
+    </Card>
+  )
+}
+
+function HistoryMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-[10px] border border-white/10 bg-arsen-bg/55 p-2">
+      <strong className="block text-sm text-arsen-ink">{value}</strong>
+      <span className="mt-1 block text-[10px] text-arsen-muted">{label}</span>
+    </div>
+  )
+}
+
 function SessionRow({
   disabled,
   onDelete,
@@ -350,7 +441,10 @@ function SessionRow({
           </span>
         </div>
         <p className="mt-1 text-xs text-arsen-muted">
-          Mejor {session.bestSetLabel} · {Math.round(session.volumeKg)} kg volumen · {session.exerciseCount} ejercicios
+          {session.routineName} - {session.dayName}
+        </p>
+        <p className="mt-1 text-xs text-arsen-muted">
+          Mejor {session.bestSetLabel} - {Math.round(session.volumeKg)} kg volumen - {session.exerciseCount} ejercicios
         </p>
       </div>
       <div className="flex items-center gap-1">

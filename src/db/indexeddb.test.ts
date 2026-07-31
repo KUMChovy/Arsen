@@ -144,13 +144,13 @@ describe('IndexedDB integration', () => {
       name: 'Press inclinado',
     })
     await addCatalogExerciseToDay(routineA.id, dayA.id, catalogItemId, {
-      recommendedRir: '1-2',
+      recommendedRir: 2,
       repsMax: 10,
       repsMin: 8,
       targetSets: 3,
     })
     await addCatalogExerciseToDay(routineA.id, dayB.id, catalogItemId, {
-      recommendedRir: '2-3',
+      recommendedRir: 3,
       repsMax: 12,
       repsMin: 10,
       targetSets: 2,
@@ -160,7 +160,7 @@ describe('IndexedDB integration', () => {
     const recipes = await db.routineExercises.where('sourceExerciseId').equals(catalogItemId).sortBy('dayId')
 
     expect(catalogItem).toMatchObject({
-      defaultRecommendedRir: '1-2',
+      defaultRecommendedRir: 2,
       defaultRepsMax: 10,
       defaultRepsMin: 8,
       defaultTargetSets: 3,
@@ -168,8 +168,8 @@ describe('IndexedDB integration', () => {
       name: 'Press inclinado',
     })
     expect(recipes).toHaveLength(2)
-    expect(recipes[0]).toMatchObject({ dayId: dayA.id, recommendedRir: '1-2', repsMax: 10, repsMin: 8, targetSets: 3 })
-    expect(recipes[1]).toMatchObject({ dayId: dayB.id, recommendedRir: '2-3', repsMax: 12, repsMin: 10, targetSets: 2 })
+    expect(recipes[0]).toMatchObject({ dayId: dayA.id, recommendedRir: 2, repsMax: 10, repsMin: 8, targetSets: 3 })
+    expect(recipes[1]).toMatchObject({ dayId: dayB.id, recommendedRir: 3, repsMax: 12, repsMin: 10, targetSets: 2 })
   })
 
   it('exports chronological progress with routines, graph points and drop set volume', async () => {
@@ -377,7 +377,7 @@ function routineExercise(
     name: 'Press inclinado',
     order: 0,
     progression: '',
-    recommendedRir: '1-2',
+    recommendedRir: 2,
     repsMax: 10,
     repsMin: 8,
     rest: '90 seg',

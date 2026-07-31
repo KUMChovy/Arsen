@@ -11,7 +11,7 @@ export type ExerciseInput = {
   targetSets?: number
   repsMin?: number
   repsMax?: number
-  recommendedRir?: string
+  recommendedRir?: number
   rest?: string
   restSeconds?: number
   warmupSets?: number
@@ -264,6 +264,7 @@ export async function createExercise(routineId: string, dayId: string, input: Ex
   const order = await db.routineExercises.where('dayId').equals(dayId).count()
   const name = input.name.trim() || 'Ejercicio nuevo'
   const reps = normalizeReps(input.repsMin, input.repsMax)
+  const recommendedRir = normalizeRir(input.recommendedRir)
   const exercise: RoutineExercise = {
     id: createId('exercise'),
     routineId,
@@ -276,7 +277,7 @@ export async function createExercise(routineId: string, dayId: string, input: Ex
     targetSets: input.targetSets ?? 3,
     repsMin: reps.min,
     repsMax: reps.max,
-    recommendedRir: input.recommendedRir ?? '1-2',
+    recommendedRir,
     rest: input.rest ?? '60-90 seg',
     restSeconds: input.restSeconds ?? 90,
     warmupSets: input.warmupSets ?? 0,
@@ -301,6 +302,7 @@ export async function addCatalogExerciseToDay(routineId: string, dayId: string, 
   const now = new Date().toISOString()
   const order = await db.routineExercises.where('dayId').equals(dayId).count()
   const reps = normalizeReps(input.repsMin ?? catalogItem.defaultRepsMin, input.repsMax ?? catalogItem.defaultRepsMax)
+  const recommendedRir = normalizeRir(input.recommendedRir ?? catalogItem.defaultRecommendedRir)
   const exercise: RoutineExercise = {
     id: createId('exercise'),
     routineId,
@@ -313,7 +315,7 @@ export async function addCatalogExerciseToDay(routineId: string, dayId: string, 
     targetSets: input.targetSets ?? catalogItem.defaultTargetSets,
     repsMin: reps.min,
     repsMax: reps.max,
-    recommendedRir: input.recommendedRir ?? catalogItem.defaultRecommendedRir,
+    recommendedRir,
     rest: input.rest ?? `${input.restSeconds ?? catalogItem.defaultRestSeconds} seg`,
     restSeconds: input.restSeconds ?? catalogItem.defaultRestSeconds,
     warmupSets: input.warmupSets ?? 0,
@@ -335,6 +337,7 @@ export async function updateExercise(exerciseId: string, input: ExerciseInput) {
   const existing = await db.routineExercises.get(exerciseId)
   const name = input.name.trim() || 'Ejercicio sin nombre'
   const reps = normalizeReps(input.repsMin, input.repsMax)
+  const recommendedRir = normalizeRir(input.recommendedRir)
 
   await db.routineExercises.update(exerciseId, {
     name,
@@ -344,7 +347,7 @@ export async function updateExercise(exerciseId: string, input: ExerciseInput) {
     targetSets: input.targetSets ?? 3,
     repsMin: reps.min,
     repsMax: reps.max,
-    recommendedRir: input.recommendedRir ?? '1-2',
+    recommendedRir,
     rest: input.rest ?? '60-90 seg',
     restSeconds: input.restSeconds ?? 90,
     warmupSets: input.warmupSets ?? 0,
@@ -422,7 +425,7 @@ export async function createCatalogExercise(input: CatalogExerciseInput) {
     assetKind: mainMuscle,
     canonicalName: canonicalName(name),
     createdAt: now,
-    defaultRecommendedRir: '1-2',
+    defaultRecommendedRir: 2,
     defaultRepsMax: 10,
     defaultRepsMin: 8,
     defaultRestSeconds: 90,
@@ -464,4 +467,12 @@ function normalizeReps(repsMin = 8, repsMax = 10) {
   }
 
   return { max: repsMax, min: repsMin }
+}
+
+function normalizeRir(recommendedRir = 2) {
+  if (!Number.isFinite(recommendedRir) || recommendedRir < 0) {
+    throw new Error('El RIR debe ser mayor o igual a 0')
+  }
+
+  return recommendedRir
 }

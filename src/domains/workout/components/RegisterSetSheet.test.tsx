@@ -83,7 +83,7 @@ const exercise: RoutineExercise = {
   name: 'Press inclinado',
   order: 0,
   progression: '',
-  recommendedRir: '1-2',
+  recommendedRir: 2,
   repsMax: 10,
   repsMin: 8,
   rest: '90 seg',

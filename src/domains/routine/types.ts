@@ -34,7 +34,7 @@ export type RoutineExercise = {
   targetSets: number
   repsMin: number
   repsMax: number
-  recommendedRir: string
+  recommendedRir: number
   rest: string
   restSeconds: number
   warmupSets: number
@@ -57,7 +57,7 @@ export type ExerciseCatalogItem = {
   defaultTargetSets: number
   defaultRepsMin: number
   defaultRepsMax: number
-  defaultRecommendedRir: string
+  defaultRecommendedRir: number
   defaultRestSeconds: number
   assetKind: string | null
   createdAt: string

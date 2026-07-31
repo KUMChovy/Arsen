@@ -22,7 +22,7 @@ export type ExerciseSnapshot = {
   targetSets: number
   repsMin: number
   repsMax: number
-  recommendedRir: string
+  recommendedRir: number
   restSeconds: number
 }
 

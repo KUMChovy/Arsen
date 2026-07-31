@@ -801,7 +801,7 @@ function RoutineExerciseRecipeSheet({
           <TextField label="Reps max" onChange={(value) => update('repsMax', value)} type="number" value={form.repsMax} />
         </div>
         <div className="grid grid-cols-2 gap-2">
-          <TextField label="RIR" onChange={(value) => update('recommendedRir', value)} value={form.recommendedRir} />
+          <TextField label="RIR" onChange={(value) => update('recommendedRir', value)} type="number" value={form.recommendedRir} />
           <TextField label="Descanso s" onChange={(value) => update('restSeconds', value)} type="number" value={form.restSeconds} />
         </div>
         <div className="grid grid-cols-[1fr_42px] items-end gap-2">
@@ -832,7 +832,7 @@ function RoutineExerciseRecipeSheet({
         onClick={() => {
           const input = formToExerciseInput(form)
           if (!input) {
-            setMessage('Revisa reps minimas y maximas')
+            setMessage('Revisa reps y RIR')
             return
           }
           onSave(input)
@@ -916,7 +916,7 @@ function exerciseToForm(exercise: RoutineExercise | null, catalogItem: ExerciseC
     mainMuscle: normalizeMuscleGroup(exercise?.mainMuscle ?? catalogItem?.mainMuscle),
     name: exercise?.name ?? catalogItem?.name ?? '',
     progression: exercise?.progression ?? '',
-    recommendedRir: exercise?.recommendedRir ?? catalogItem?.defaultRecommendedRir ?? '1-2',
+    recommendedRir: String(exercise?.recommendedRir ?? catalogItem?.defaultRecommendedRir ?? 2),
     repsMax: String(exercise?.repsMax ?? catalogItem?.defaultRepsMax ?? 10),
     repsMin: String(exercise?.repsMin ?? catalogItem?.defaultRepsMin ?? 8),
     restSeconds: String(exercise?.restSeconds ?? catalogItem?.defaultRestSeconds ?? 90),
@@ -930,14 +930,15 @@ function formToExerciseInput(form: ExerciseForm): ExerciseInput | null {
   const restSeconds = numberOrDefault(form.restSeconds, 90)
   const repsMin = numberOrDefault(form.repsMin, 8)
   const repsMax = numberOrDefault(form.repsMax, 10)
-  if (repsMin <= 0 || repsMax <= 0 || repsMin > repsMax) return null
+  const recommendedRir = numberOrDefault(form.recommendedRir, 2)
+  if (repsMin <= 0 || repsMax <= 0 || repsMin > repsMax || recommendedRir < 0) return null
 
   return {
     equipment: form.equipment,
     mainMuscle: form.mainMuscle,
     name: form.name,
     progression: form.progression,
-    recommendedRir: form.recommendedRir,
+    recommendedRir,
     repsMax,
     repsMin,
     rest: `${restSeconds} seg`,

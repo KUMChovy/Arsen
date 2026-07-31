@@ -10,7 +10,7 @@ export type DemoRoutineExerciseSource = {
   targetSets: number
   repsMin: number
   repsMax: number
-  recommendedRir: string
+  recommendedRir: number
   rest: string
   restSeconds: number
   progression: string

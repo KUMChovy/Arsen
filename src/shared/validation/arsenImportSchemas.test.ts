@@ -31,7 +31,7 @@ const exercise = {
   name: 'Press inclinado',
   order: 0,
   progression: '',
-  recommendedRir: '1-2',
+  recommendedRir: 2,
   repsMax: 10,
   repsMin: 8,
   rest: '120 seg',
@@ -87,7 +87,7 @@ describe('Arsen import schemas', () => {
               assetKind: null,
               canonicalName: 'press-inclinado',
               createdAt: '2026-01-01T00:00:00.000Z',
-              defaultRecommendedRir: '1-2',
+              defaultRecommendedRir: 2,
               defaultRepsMax: 8,
               defaultRepsMin: 12,
               defaultRestSeconds: 120,
@@ -100,6 +100,16 @@ describe('Arsen import schemas', () => {
             },
           ],
         },
+      }).success,
+    ).toBe(false)
+  })
+
+  it('rejects invalid RIR values', () => {
+    expect(
+      routineExportSchema.safeParse({
+        days: [day],
+        exercises: [{ ...exercise, recommendedRir: -1 }],
+        routine,
       }).success,
     ).toBe(false)
   })

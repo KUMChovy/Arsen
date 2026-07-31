@@ -358,7 +358,7 @@ function repsForSet(range, order, progression, seed) {
 }
 
 function rirForSet(rirRange, order, setCount, sessionIndex) {
-  const min = Number(rirRange.match(/\d+/)?.[0] ?? 1)
+  const min = Number.isFinite(rirRange) ? rirRange : 2
   const hardSet = order >= setCount - 2
   const tired = sessionIndex % 11 === 0
 

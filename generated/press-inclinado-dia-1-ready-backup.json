@@ -1,0 +1,174 @@
+{
+  "exportedAt": "2026-07-31T12:00:00.000Z",
+  "schemaVersion": 1,
+  "tables": {
+    "routineExercises": [
+      {
+        "canonicalName": "press-inclinado",
+        "createdAt": "2026-07-20T00:00:00.000Z",
+        "currentWeightKg": 40,
+        "dayId": "day-demo-dia-1",
+        "equipment": "Barra",
+        "id": "dia-1-press-inclinado",
+        "mainMuscle": "Pecho",
+        "name": "Press inclinado",
+        "order": 0,
+        "progression": "Progresion doble: llega al tope del rango en todas las series; luego sube peso minimo.",
+        "recommendedRir": 2,
+        "repsMax": 8,
+        "repsMin": 6,
+        "rest": "2-3 min",
+        "restSeconds": 150,
+        "routineId": "routine-demo-current",
+        "sourceExerciseId": "catalog-press-inclinado",
+        "targetSets": 3,
+        "technicalNotes": "Primer press del dia: 2 aproximaciones maximo; prepara sin cansarte.",
+        "updatedAt": "2026-07-31T12:00:00.000Z",
+        "warmupProtocol": "50%x8-10 / 75-80%x3-5",
+        "warmupSets": 2
+      }
+    ],
+    "workoutSessions": [
+      {
+        "createdAt": "2026-07-20T18:10:00.000Z",
+        "date": "2026-07-20",
+        "dayId": "day-demo-dia-1",
+        "displayUnit": "kg",
+        "id": "session-ready-press-inclinado-2026-07-20-dia-1",
+        "notes": "Press inclinado listo para progresar: reps maximas y RIR objetivo en todas las series.",
+        "routineId": "routine-demo-current",
+        "status": "completed",
+        "updatedAt": "2026-07-20T18:40:00.000Z"
+      },
+      {
+        "createdAt": "2026-07-27T18:10:00.000Z",
+        "date": "2026-07-27",
+        "dayId": "day-demo-dia-1",
+        "displayUnit": "kg",
+        "id": "session-ready-press-inclinado-2026-07-27-dia-1",
+        "notes": "Segunda sesion valida para subir peso en Press inclinado.",
+        "routineId": "routine-demo-current",
+        "status": "completed",
+        "updatedAt": "2026-07-27T18:40:00.000Z"
+      }
+    ],
+    "exerciseLogs": [
+      {
+        "createdAt": "2026-07-20T18:10:00.000Z",
+        "id": "elog-ready-press-inclinado-2026-07-20",
+        "notes": "Todas las series principales cumplen peso, 8 reps y RIR 2.",
+        "routineExerciseId": "dia-1-press-inclinado",
+        "sessionId": "session-ready-press-inclinado-2026-07-20-dia-1",
+        "snapshot": {
+          "canonicalName": "press-inclinado",
+          "equipment": "Barra",
+          "mainMuscle": "Pecho",
+          "name": "Press inclinado",
+          "recommendedRir": 2,
+          "repsMax": 8,
+          "repsMin": 6,
+          "restSeconds": 150,
+          "targetSets": 3
+        },
+        "state": "done",
+        "updatedAt": "2026-07-20T18:40:00.000Z"
+      },
+      {
+        "createdAt": "2026-07-27T18:10:00.000Z",
+        "id": "elog-ready-press-inclinado-2026-07-27",
+        "notes": "Todas las series principales cumplen peso, 8 reps y RIR 2.",
+        "routineExerciseId": "dia-1-press-inclinado",
+        "sessionId": "session-ready-press-inclinado-2026-07-27-dia-1",
+        "snapshot": {
+          "canonicalName": "press-inclinado",
+          "equipment": "Barra",
+          "mainMuscle": "Pecho",
+          "name": "Press inclinado",
+          "recommendedRir": 2,
+          "repsMax": 8,
+          "repsMin": 6,
+          "restSeconds": 150,
+          "targetSets": 3
+        },
+        "state": "done",
+        "updatedAt": "2026-07-27T18:40:00.000Z"
+      }
+    ],
+    "setLogs": [
+      {
+        "createdAt": "2026-07-20T18:12:00.000Z",
+        "displayUnit": "kg",
+        "exerciseLogId": "elog-ready-press-inclinado-2026-07-20",
+        "id": "set-ready-press-inclinado-2026-07-20-1",
+        "kind": "main",
+        "order": 0,
+        "reps": 8,
+        "rir": 2,
+        "updatedAt": "2026-07-20T18:12:00.000Z",
+        "weightKg": 40
+      },
+      {
+        "createdAt": "2026-07-20T18:18:00.000Z",
+        "displayUnit": "kg",
+        "exerciseLogId": "elog-ready-press-inclinado-2026-07-20",
+        "id": "set-ready-press-inclinado-2026-07-20-2",
+        "kind": "main",
+        "order": 1,
+        "reps": 8,
+        "rir": 2,
+        "updatedAt": "2026-07-20T18:18:00.000Z",
+        "weightKg": 40
+      },
+      {
+        "createdAt": "2026-07-20T18:24:00.000Z",
+        "displayUnit": "kg",
+        "exerciseLogId": "elog-ready-press-inclinado-2026-07-20",
+        "id": "set-ready-press-inclinado-2026-07-20-3",
+        "kind": "main",
+        "order": 2,
+        "reps": 8,
+        "rir": 2,
+        "updatedAt": "2026-07-20T18:24:00.000Z",
+        "weightKg": 40
+      },
+      {
+        "createdAt": "2026-07-27T18:12:00.000Z",
+        "displayUnit": "kg",
+        "exerciseLogId": "elog-ready-press-inclinado-2026-07-27",
+        "id": "set-ready-press-inclinado-2026-07-27-1",
+        "kind": "main",
+        "order": 0,
+        "reps": 8,
+        "rir": 2,
+        "updatedAt": "2026-07-27T18:12:00.000Z",
+        "weightKg": 40
+      },
+      {
+        "createdAt": "2026-07-27T18:18:00.000Z",
+        "displayUnit": "kg",
+        "exerciseLogId": "elog-ready-press-inclinado-2026-07-27",
+        "id": "set-ready-press-inclinado-2026-07-27-2",
+        "kind": "main",
+        "order": 1,
+        "reps": 8,
+        "rir": 2,
+        "updatedAt": "2026-07-27T18:18:00.000Z",
+        "weightKg": 40
+      },
+      {
+        "createdAt": "2026-07-27T18:24:00.000Z",
+        "displayUnit": "kg",
+        "exerciseLogId": "elog-ready-press-inclinado-2026-07-27",
+        "id": "set-ready-press-inclinado-2026-07-27-3",
+        "kind": "main",
+        "order": 2,
+        "reps": 8,
+        "rir": 2,
+        "updatedAt": "2026-07-27T18:24:00.000Z",
+        "weightKg": 40
+      }
+    ],
+    "dropSetLogs": [],
+    "skipLogs": []
+  }
+}

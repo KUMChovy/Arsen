@@ -1,12 +1,14 @@
-import { ArrowLeft, ChevronDown } from 'lucide-react'
+import { ArrowLeft, ChevronDown, TrendingUp } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
+import type { WeightIncreaseRecommendation } from '../../../shared/calculations/progression'
 import { Card } from '../../../shared/components/Card'
 import { ExerciseArt } from '../../../shared/components/ExerciseArt'
 import { PageHeader } from '../../../shared/components/PageHeader'
 import { formatRepRange } from '../../../shared/utils/reps'
 import { formatWeight } from '../../../shared/utils/weight'
 import { normalizeWarmupProtocol, warmupProtocolLabel } from '../../../shared/calculations/warmups'
+import { useWeightIncreaseRecommendations } from '../../workout/hooks'
 import { useRoutineDayDetail } from '../hooks'
 import type { RoutineExercise } from '../types'
 import { dominantMuscleForExercises } from '../utils/dominantMuscle'
@@ -16,6 +18,7 @@ export function RoutineDayDetailPage() {
   const detail = useRoutineDayDetail(dayId ?? null)
   const [expandedExerciseId, setExpandedExerciseId] = useState<string | null>(null)
   const exercises = detail?.exercises ?? []
+  const recommendationByExerciseId = new Map(useWeightIncreaseRecommendations(exercises).map((recommendation) => [recommendation.exerciseId, recommendation]))
   const dominantMuscle = dominantMuscleForExercises(exercises)
 
   return (
@@ -49,6 +52,7 @@ export function RoutineDayDetailPage() {
             exercise={exercise}
             key={exercise.id}
             onToggle={() => setExpandedExerciseId((current) => (current === exercise.id ? null : exercise.id))}
+            recommendation={recommendationByExerciseId.get(exercise.id) ?? null}
           />
         ))}
         {detail && exercises.length === 0 ? <Card className="p-4 text-sm text-arsen-muted">Este dia aun no tiene ejercicios.</Card> : null}
@@ -61,10 +65,12 @@ function ExerciseDetailCard({
   expanded,
   exercise,
   onToggle,
+  recommendation,
 }: {
   expanded: boolean
   exercise: RoutineExercise
   onToggle: () => void
+  recommendation: WeightIncreaseRecommendation | null
 }) {
   const protocol = normalizeWarmupProtocol(exercise.warmupProtocol)
 
@@ -78,6 +84,12 @@ function ExerciseDetailCard({
             <span className="mt-1 block truncate text-xs text-arsen-muted">
               {exercise.mainMuscle} - {exercise.equipment} - {exercise.targetSets}x{formatRepRange(exercise.repsMin, exercise.repsMax)} - RIR {exercise.recommendedRir}
             </span>
+            {recommendation ? (
+              <span className="mt-2 inline-flex max-w-full items-center gap-1 rounded-full bg-arsen-acid/15 px-2 py-1 text-[10px] font-extrabold text-arsen-acid">
+                <TrendingUp aria-hidden="true" className="size-3 shrink-0" />
+                <span className="truncate">Listo para subir peso: {recommendation.suggestedIncreaseLabel}</span>
+              </span>
+            ) : null}
           </div>
           <ChevronDown
             aria-hidden="true"

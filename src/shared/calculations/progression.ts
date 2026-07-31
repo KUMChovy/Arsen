@@ -39,7 +39,7 @@ export function getWeightIncreaseRecommendation(
     .slice(0, 2)
 
   if (recent.length < 2) return null
-  if (!recent.every((session) => session.sets.every((set) => set.reps >= repTarget && set.rir >= rirTarget))) return null
+  if (!recent.every((session) => session.sets.every((set) => isProgressionSetReady(set, repTarget, rirTarget)))) return null
 
   const latestWeight = Math.max(...recent[0]!.sets.map((set) => set.weightKg))
 
@@ -54,6 +54,17 @@ export function getWeightIncreaseRecommendation(
     reason: `Ultimas 2 sesiones con ${repTarget}+ reps y RIR ${rirTarget}+`,
     suggestedIncreaseLabel: suggestedIncreaseLabel(exercise.equipment),
   }
+}
+
+function isProgressionSetReady(set: ProgressionSession['sets'][number], repTarget: number, rirTarget: number) {
+  return (
+    Number.isFinite(set.weightKg) &&
+    set.weightKg > 0 &&
+    Number.isFinite(set.reps) &&
+    set.reps >= repTarget &&
+    Number.isFinite(set.rir) &&
+    set.rir >= rirTarget
+  )
 }
 
 function bestProgressionSetLabel(sets: ProgressionSession['sets']) {

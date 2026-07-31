@@ -49,6 +49,38 @@ describe('progression calculations', () => {
       ]),
     ).toBeNull()
   })
+
+  it('does not recommend with missing or invalid weight data', () => {
+    expect(
+      getWeightIncreaseRecommendation(exercise, [
+        session('2026-07-18', [set(0, 60, 10, 2), set(1, 0, 10, 2), set(2, 60, 10, 2)]),
+        session('2026-07-20', [set(0, 60, 10, 2), set(1, 60, 10, 2), set(2, 60, 10, 2)]),
+      ]),
+    ).toBeNull()
+
+    expect(
+      getWeightIncreaseRecommendation(exercise, [
+        session('2026-07-18', [set(0, 60, 10, 2), set(1, Number.NaN, 10, 2), set(2, 60, 10, 2)]),
+        session('2026-07-20', [set(0, 60, 10, 2), set(1, 60, 10, 2), set(2, 60, 10, 2)]),
+      ]),
+    ).toBeNull()
+  })
+
+  it('does not recommend when reps max or set values are incomplete', () => {
+    expect(
+      getWeightIncreaseRecommendation({ ...exercise, repsMax: Number.NaN }, [
+        session('2026-07-18', [set(0, 60, 10, 2), set(1, 60, 10, 2), set(2, 60, 10, 2)]),
+        session('2026-07-20', [set(0, 60, 10, 2), set(1, 60, 10, 2), set(2, 60, 10, 2)]),
+      ]),
+    ).toBeNull()
+
+    expect(
+      getWeightIncreaseRecommendation(exercise, [
+        session('2026-07-18', [set(0, 60, Number.NaN, 2), set(1, 60, 10, 2), set(2, 60, 10, 2)]),
+        session('2026-07-20', [set(0, 60, 10, 2), set(1, 60, 10, 2), set(2, 60, 10, 2)]),
+      ]),
+    ).toBeNull()
+  })
 })
 
 const exercise: RoutineExercise = {

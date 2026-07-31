@@ -30,6 +30,7 @@ import {
   PlusCircle,
   Search,
   Trash2,
+  TrendingUp,
   UploadCloud,
   X,
 } from 'lucide-react'
@@ -37,9 +38,11 @@ import { ActionButton } from '../../../shared/components/ActionButton'
 import { Card } from '../../../shared/components/Card'
 import { ExerciseArt } from '../../../shared/components/ExerciseArt'
 import { PageHeader } from '../../../shared/components/PageHeader'
+import type { WeightIncreaseRecommendation } from '../../../shared/calculations/progression'
 import { buildWarmupSets, normalizeWarmupProtocol, warmupProtocolLabel, type WarmupProtocol } from '../../../shared/calculations/warmups'
 import { confirmDanger } from '../../../shared/utils/alerts'
 import { formatRepRange } from '../../../shared/utils/reps'
+import { useWeightIncreaseRecommendations } from '../../workout/hooks'
 import type { Equipment, ExerciseCatalogItem, MuscleGroup, Routine, RoutineDay, RoutineExercise } from '../types'
 import { useActiveRoutineBundle, useExerciseCatalog, useRoutines } from '../hooks'
 import { exportRoutineJson, importRoutineJson } from '../importExport'
@@ -105,6 +108,7 @@ export function RoutinePage() {
 
   const selectedDay = days.find((day) => day.id === selectedDayId) ?? days[0] ?? null
   const selectedExercises = selectedDay ? bundle?.exercisesByDay.get(selectedDay.id) ?? [] : []
+  const recommendationByExerciseId = new Map(useWeightIncreaseRecommendations(selectedExercises).map((recommendation) => [recommendation.exerciseId, recommendation]))
 
   useEffect(() => {
     if (!selectedDayId && days[0]) setSelectedDayId(days[0].id)
@@ -192,6 +196,7 @@ export function RoutinePage() {
           }}
           onSelectDay={setSelectedDayId}
           onUpdateDay={(dayId, input) => runRoutineAction(() => updateDay(dayId, input), 'Dia guardado')}
+          recommendationByExerciseId={recommendationByExerciseId}
           routine={bundle.routine}
           selectedDay={selectedDay}
         />
@@ -423,6 +428,7 @@ function RoutineEditor({
   onReorderExercises,
   onSelectDay,
   onUpdateDay,
+  recommendationByExerciseId,
   routine,
   selectedDay,
 }: {
@@ -443,6 +449,7 @@ function RoutineEditor({
   onReorderExercises: (orderedIds: string[]) => void
   onSelectDay: (dayId: string) => void
   onUpdateDay: (dayId: string, input: { description: string; name: string; weekday: RoutineDay['weekday'] }) => void
+  recommendationByExerciseId: Map<string, WeightIncreaseRecommendation>
   routine: Routine
   selectedDay: RoutineDay | null
 }) {
@@ -524,6 +531,7 @@ function RoutineEditor({
                   onDelete={() => onDeleteExercise(exercise.id)}
                   onDuplicate={() => onDuplicateExercise(exercise.id)}
                   onEdit={() => onEditExercise(exercise)}
+                  recommendation={recommendationByExerciseId.get(exercise.id) ?? null}
                 />
               </SortableRow>
             ))}
@@ -593,12 +601,14 @@ function ExerciseEditRow({
   onDelete,
   onDuplicate,
   onEdit,
+  recommendation,
 }: {
   disabled: boolean
   exercise: RoutineExercise
   onDelete: () => void
   onDuplicate: () => void
   onEdit: () => void
+  recommendation: WeightIncreaseRecommendation | null
 }) {
   return (
     <Card className="grid grid-cols-[28px_52px_1fr_auto] items-center gap-2 p-2">
@@ -609,6 +619,12 @@ function ExerciseEditRow({
         <span className="mt-1 block truncate text-xs text-arsen-muted">
           {exercise.mainMuscle} - {exercise.targetSets}x{formatRepRange(exercise.repsMin, exercise.repsMax)} - RIR {exercise.recommendedRir}
         </span>
+        {recommendation ? (
+          <span className="mt-2 inline-flex max-w-full items-center gap-1 rounded-full bg-arsen-acid/15 px-2 py-1 text-[10px] font-extrabold text-arsen-acid">
+            <TrendingUp aria-hidden="true" className="size-3 shrink-0" />
+            <span className="truncate">Listo para subir peso: {recommendation.suggestedIncreaseLabel}</span>
+          </span>
+        ) : null}
       </div>
       <div className="grid grid-cols-3 gap-1">
         <IconOnly disabled={disabled} icon={Pencil} label="Editar receta" onClick={onEdit} />

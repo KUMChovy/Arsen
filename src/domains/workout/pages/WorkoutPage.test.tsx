@@ -2,10 +2,15 @@
 import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { WeightIncreaseRecommendation } from '../../../shared/calculations/progression'
 import { WorkoutPage } from './WorkoutPage'
 import type { RoutineExercise } from '../../routine/types'
 import type { ExerciseLog, SetLog } from '../types'
 import { completeSessionForDay } from '../services'
+
+const workoutMocks = vi.hoisted(() => ({
+  weightIncreaseRecommendations: [] as WeightIncreaseRecommendation[],
+}))
 
 vi.mock('../../routine/hooks', () => ({
   useActiveRoutineBundle: () => ({
@@ -35,7 +40,7 @@ vi.mock('../../routine/hooks', () => ({
 }))
 
 vi.mock('../hooks', () => ({
-  useWeightIncreaseRecommendations: () => [],
+  useWeightIncreaseRecommendations: () => workoutMocks.weightIncreaseRecommendations,
   useWorkoutProgress: () => ({
     completedCount: 0,
     dropSets: [],
@@ -77,6 +82,7 @@ describe('WorkoutPage', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    workoutMocks.weightIncreaseRecommendations = []
   })
 
   it('renders clean daily workout without date, notes or rest controls', () => {
@@ -103,6 +109,16 @@ describe('WorkoutPage', () => {
         }),
       )
     })
+  })
+
+  it('shows active weight increase recommendation', () => {
+    workoutMocks.weightIncreaseRecommendations = [weightIncreaseRecommendation]
+
+    render(<WorkoutPage />)
+
+    expect(screen.getByText('Listo para subir peso')).toBeInTheDocument()
+    expect(screen.getAllByText('Press inclinado').length).toBeGreaterThan(0)
+    expect(screen.getByText('+2.5 kg')).toBeInTheDocument()
   })
 })
 
@@ -182,4 +198,16 @@ const setLog: SetLog = {
   rir: 1,
   updatedAt: '2026-07-20T00:00:00.000Z',
   weightKg: 60,
+}
+
+const weightIncreaseRecommendation: WeightIncreaseRecommendation = {
+  currentWeightKg: 62.5,
+  evidence: [
+    { date: '2026-07-18', topSetLabel: '62.5 kg x 10 reps, RIR 2' },
+    { date: '2026-07-20', topSetLabel: '62.5 kg x 10 reps, RIR 2' },
+  ],
+  exerciseId: exercise.id,
+  exerciseName: exercise.name,
+  reason: 'Ultimas 2 sesiones con 10+ reps y RIR 2+',
+  suggestedIncreaseLabel: '+2.5 kg',
 }

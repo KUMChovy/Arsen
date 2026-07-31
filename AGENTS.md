@@ -2,21 +2,38 @@
 
 Arsen is a mobile-first, 100% offline workout tracker. React 19 + TypeScript + Vite + Tailwind v4 + Dexie (IndexedDB). All data lives client-side; no backend.
 
+## every new task
 
-## Ponytail
-Lazy senior dev mode active (level: full). Before writing code, stop at the first rung that holds:
-1. Does this need to exist at all? (YAGNI)
-2. Does the standard library do it?
-3. Does a native platform feature cover it?
-4. Does an already-installed dependency solve it?
-5. Can it be one line?
-6. Only then: the minimum code that works.
-Never simplify away: input validation at trust boundaries, error handling that prevents data loss, security, accessibility, or anything explicitly requested. If the user insists on the full version, build it — no re-arguing.
+For **every new task** you're asked to do (a feature, a fix, a refactor, anything), follow
+this workflow without needing to be asked again:
  
-Mode switches: `/ponytail lite|full|ultra|off`. Off only on "stop ponytail" / "normal mode".
- 
-## Priority with Superpowers
-Use the Superpowers process (TDD, planning, structured debugging) to decide *what* to build and *how* to verify it. Apply the Ponytail ladder to decide *how much* code to write in the implementation. On explicit conflict: Ponytail wins on code size/scope; Superpowers wins on process and verification. "Doing TDD" does not mean building a full fixture suite — it means the minimal test Ponytail requires, run within the Superpowers workflow.
+1. **The brainstorm skill (superpowers) and the ponytail skill are mandatory, always, no
+   exceptions.** They are not "just another skill" among the ones available — they are the
+   base workflow for every task. Never skip them, never assume "this task is too simple for
+   brainstorm" or "this task doesn't need ponytail." They run on every new task, without
+   asking and without needing to be reminded.
+2. **In addition, find and use other relevant skills.** Before planning or coding, check
+   which other available skills (from superpowers or other installed sources) apply to the
+   task and use them — don't skip this or assume none apply. If a skill exists for the type
+   of problem (debugging, testing, a specific pattern, a library), load it and follow it
+   instead of improvising from scratch. These do depend on whether they apply to the case;
+   brainstorm and ponytail depend on nothing — they always run.
+3. **Brainstorm (Superpowers).** With relevant skills already identified, use the superpowers
+   brainstorming flow to explore the problem and define a short plan (what will be built, how
+   it will be verified). Don't jump straight to coding.
+4. **Implement with Ponytail.** Once the plan is clear, invoke the ponytail skill and follow
+   its own decision ladder exactly as defined in it.
+5. **Priority on conflict:** Skills and superpowers govern *process* (which technique/pattern
+   to use, how to plan, how to verify). Ponytail governs *code size and scope* (short plans,
+   minimal tests, no unrequested abstractions or frameworks). "Doing TDD" means the minimal
+   test ponytail requires, not a full fixture suite — but if a specific skill calls for a
+   different testing technique, that technique is respected and applied at ponytail's minimal
+   scope.
+6. **Never simplify away** input validation at trust boundaries, error handling that prevents
+   data loss, security, accessibility, or anything explicitly requested.
+This is not optional and does not depend on being repeated in the message: apply this
+workflow by default on every task, starting from the first message of each new task. If no
+skill was used for a task, say so explicitly and justify why none applied.
 
 ## Commands
 

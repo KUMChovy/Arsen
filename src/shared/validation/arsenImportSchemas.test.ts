@@ -32,7 +32,8 @@ const exercise = {
   order: 0,
   progression: '',
   recommendedRir: '1-2',
-  repRange: '8-10',
+  repsMax: 10,
+  repsMin: 8,
   rest: '120 seg',
   restSeconds: 120,
   routineId: 'routine-1',
@@ -64,6 +65,41 @@ describe('Arsen import schemas', () => {
         days: [{ ...day, weekday: 9 }],
         exercises: [exercise],
         routine,
+      }).success,
+    ).toBe(false)
+  })
+
+  it('rejects invalid rep ranges', () => {
+    expect(
+      routineExportSchema.safeParse({
+        days: [day],
+        exercises: [{ ...exercise, repsMax: 8, repsMin: 12 }],
+        routine,
+      }).success,
+    ).toBe(false)
+
+    expect(
+      backupSchema.safeParse({
+        tables: {
+          exerciseCatalog: [
+            {
+              aliases: [],
+              assetKind: null,
+              canonicalName: 'press-inclinado',
+              createdAt: '2026-01-01T00:00:00.000Z',
+              defaultRecommendedRir: '1-2',
+              defaultRepsMax: 8,
+              defaultRepsMin: 12,
+              defaultRestSeconds: 120,
+              defaultTargetSets: 4,
+              equipment: 'Barra',
+              id: 'catalog-1',
+              mainMuscle: 'Pecho',
+              name: 'Press inclinado',
+              updatedAt: '2026-01-01T00:00:00.000Z',
+            },
+          ],
+        },
       }).success,
     ).toBe(false)
   })

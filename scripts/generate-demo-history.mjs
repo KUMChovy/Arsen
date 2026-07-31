@@ -61,7 +61,8 @@ function buildBackup(demoRoutineSource, { endDate, startDate }) {
       order: index,
       progression: exercise.progression,
       recommendedRir: exercise.recommendedRir,
-      repRange: exercise.repRange,
+      repsMax: exercise.repsMax,
+      repsMin: exercise.repsMin,
       rest: exercise.rest,
       restSeconds: exercise.restSeconds,
       routineId,
@@ -83,7 +84,8 @@ function buildBackup(demoRoutineSource, { endDate, startDate }) {
         canonicalName: exercise.canonicalName,
         createdAt: now,
         defaultRecommendedRir: exercise.recommendedRir,
-        defaultRepRange: exercise.repRange,
+        defaultRepsMax: exercise.repsMax,
+        defaultRepsMin: exercise.repsMin,
         defaultRestSeconds: exercise.restSeconds,
         defaultTargetSets: exercise.targetSets,
         equipment: exercise.equipment,
@@ -150,14 +152,14 @@ function buildBackup(demoRoutineSource, { endDate, startDate }) {
         continue
       }
 
-      const repRange = parseRepRange(exercise.repRange)
+      const repsRange = { max: exercise.repsMax, min: exercise.repsMin }
       const setCount = Math.max(1, exercise.targetSets)
       const baseWeight = projectedWeight(exercise.currentWeightKg, progression, weekNumber, exercise.id)
 
       for (let order = 0; order < setCount; order += 1) {
         const fatigue = 1 - order * 0.025
         const weightKg = roundToHalf(baseWeight * fatigue)
-        const reps = repsForSet(repRange, order, progression, exercise.id)
+        const reps = repsForSet(repsRange, order, progression, exercise.id)
         const rir = rirForSet(exercise.recommendedRir, order, setCount, sessionIndex)
         const setId = `set-demo-${date}-${exercise.id}-${order + 1}`
 
@@ -180,7 +182,7 @@ function buildBackup(demoRoutineSource, { endDate, startDate }) {
             displayUnit: 'kg',
             id: `drop-demo-${date}-${exercise.id}-1`,
             order: 0,
-            reps: Math.min(repRange.max + 4, reps + 4),
+            reps: Math.min(repsRange.max + 4, reps + 4),
             rir: Math.min(4, rir + 1),
             setLogId: setId,
             updatedAt: timestamp,
@@ -340,18 +342,11 @@ function snapshotForExercise(exercise) {
     mainMuscle: exercise.mainMuscle,
     name: exercise.name,
     recommendedRir: exercise.recommendedRir,
-    repRange: exercise.repRange,
+    repsMax: exercise.repsMax,
+    repsMin: exercise.repsMin,
     restSeconds: exercise.restSeconds,
     targetSets: exercise.targetSets,
   }
-}
-
-function parseRepRange(repRange) {
-  const values = repRange.match(/\d+/g)?.map(Number) ?? [8, 10]
-  const min = values[0] ?? 8
-  const max = values[1] ?? min
-
-  return { max: Math.max(min, max), min: Math.min(min, max) }
 }
 
 function repsForSet(range, order, progression, seed) {

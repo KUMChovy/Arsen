@@ -21,13 +21,14 @@
       "warmupSets": 2,
       "warmupProtocol": "50%x8-10 / 75-80%x3-5",
       "targetSets": 3,
-      "repRange": "6-8",
       "recommendedRir": "1-2",
       "rest": "2-3 min",
       "restSeconds": 150,
       "progression": "Progresion doble: llega al tope del rango en todas las series; luego sube peso minimo.",
       "technicalNotes": "Primer press del dia: 2 aproximaciones maximo; prepara sin cansarte.",
-      "currentWeight": 0
+      "currentWeight": 0,
+      "repsMin": 6,
+      "repsMax": 8
     },
     {
       "id": "dia-1-pec-deck-o-cruces-de-polea",
@@ -37,13 +38,14 @@
       "warmupSets": 1,
       "warmupProtocol": "1 serie ligera x12-15 si el pecho no se siente listo",
       "targetSets": 2,
-      "repRange": "8-10",
       "recommendedRir": "0-1 ultima serie",
       "rest": "60-90 seg",
       "restSeconds": 90,
       "progression": "Progresion doble: llega al tope del rango en todas las series; luego sube peso minimo.",
       "technicalNotes": "Controla la contraccion; no rebotes el estiramiento.",
-      "currentWeight": 0
+      "currentWeight": 0,
+      "repsMin": 8,
+      "repsMax": 10
     },
     {
       "id": "dia-1-remo-t",
@@ -53,13 +55,14 @@
       "warmupSets": 2,
       "warmupProtocol": "50%x8-10 / 70%x4-6",
       "targetSets": 3,
-      "repRange": "6-8",
       "recommendedRir": "1-2",
       "rest": "2-3 min",
       "restSeconds": 150,
       "progression": "Progresion doble: llega al tope del rango en todas las series; luego sube peso minimo.",
       "technicalNotes": "Se mantiene en Upper, pero con 2 series para que el Dia 5 pueda abrir con Remo T sin subir demasiado el volumen total.",
-      "currentWeight": 0
+      "currentWeight": 0,
+      "repsMin": 6,
+      "repsMax": 8
     },
     {
       "id": "dia-1-jalon-al-pecho",
@@ -69,13 +72,14 @@
       "warmupSets": 1,
       "warmupProtocol": "1 serie ligera x8-10",
       "targetSets": 3,
-      "repRange": "8-10",
       "recommendedRir": "1-2",
       "rest": "2 min",
       "restSeconds": 120,
       "progression": "Progresion doble: llega al tope del rango en todas las series; luego sube peso minimo.",
       "technicalNotes": "Vertical pull de apoyo en Upper; volumen controlado para conservar calidad y recuperacion.",
-      "currentWeight": 0
+      "currentWeight": 0,
+      "repsMin": 8,
+      "repsMax": 10
     },
     {
       "id": "dia-1-pullover-unilateral-en-polea",
@@ -85,13 +89,14 @@
       "warmupSets": 1,
       "warmupProtocol": "1 serie ligera por lado x10-12",
       "targetSets": 3,
-      "repRange": "8-10",
       "recommendedRir": "1-2",
       "rest": "60-90 seg",
       "restSeconds": 90,
       "progression": "Progresion doble: llega al tope del rango en todas las series por lado; luego sube peso minimo.",
       "technicalNotes": "Hazlo unilateral para sentir mejor el dorsal: cadera estable, brazo casi estirado, codo ligeramente flexionado y recorrido alto a bajo. No lo conviertas en jalon de triceps.",
-      "currentWeight": 0
+      "currentWeight": 0,
+      "repsMin": 8,
+      "repsMax": 10
     },
     {
       "id": "dia-1-press-militar-maquina",
@@ -101,13 +106,14 @@
       "warmupSets": 1,
       "warmupProtocol": "1 ligera x8-10; 2a opcional solo si el hombro se siente frio",
       "targetSets": 3,
-      "repRange": "6-8",
       "recommendedRir": "1-2",
       "rest": "2 min",
       "restSeconds": 120,
       "progression": "Progresion doble: llega al tope del rango en todas las series; luego sube peso minimo.",
       "technicalNotes": "Volumen controlado porque el hombro frontal ya trabaja en presses.",
-      "currentWeight": 0
+      "currentWeight": 0,
+      "repsMin": 6,
+      "repsMax": 8
     },
     {
       "id": "dia-1-face-pull",
@@ -117,13 +123,14 @@
       "warmupSets": 1,
       "warmupProtocol": "1 serie muy ligera x15-20",
       "targetSets": 2,
-      "repRange": "8-10",
       "recommendedRir": "1-2",
       "rest": "60-90 seg",
       "restSeconds": 90,
       "progression": "Progresion doble: llega al tope del rango en todas las series; luego sube peso minimo.",
       "technicalNotes": "Se deja en 8-10 por tu preferencia; si pierdes tecnica o jalas con trapecio, usa 10-15/12-15.",
-      "currentWeight": 0
+      "currentWeight": 0,
+      "repsMin": 8,
+      "repsMax": 10
     },
     {
       "id": "dia-1-elevaciones-laterales-mancuerna",
@@ -133,13 +140,14 @@
       "warmupSets": 1,
       "warmupProtocol": "1 serie ligera x15",
       "targetSets": 2,
-      "repRange": "8-10",
       "recommendedRir": "0-1 ultima serie",
       "rest": "60-90 seg",
       "restSeconds": 90,
       "progression": "Progresion doble: llega al tope del rango en todas las series; luego sube peso minimo.",
       "technicalNotes": "8-10 solo si la tecnica queda limpia: sin balanceo y sin trapecio. Si no, sube a 12-15.",
-      "currentWeight": 0
+      "currentWeight": 0,
+      "repsMin": 8,
+      "repsMax": 10
     },
     {
       "id": "dia-1-curl-predicador",
@@ -149,13 +157,14 @@
       "warmupSets": 1,
       "warmupProtocol": "1 serie ligera x12-15",
       "targetSets": 3,
-      "repRange": "8-10",
       "recommendedRir": "1-2",
       "rest": "60-90 seg",
       "restSeconds": 90,
       "progression": "Progresion doble: llega al tope del rango en todas las series; luego sube peso minimo.",
       "technicalNotes": "Se queda aqui para hacerlo con mas calidad antes de fatiga de espalda.",
-      "currentWeight": 0
+      "currentWeight": 0,
+      "repsMin": 8,
+      "repsMax": 10
     },
     {
       "id": "dia-1-extension-triceps",
@@ -165,13 +174,14 @@
       "warmupSets": 1,
       "warmupProtocol": "1 serie ligera x12-15",
       "targetSets": 3,
-      "repRange": "8-10",
       "recommendedRir": "0-1 ultima serie",
       "rest": "60-90 seg",
       "restSeconds": 90,
       "progression": "Progresion doble: llega al tope del rango en todas las series; luego sube peso minimo.",
       "technicalNotes": "Codos fijos; busca tension constante.",
-      "currentWeight": 0
+      "currentWeight": 0,
+      "repsMin": 8,
+      "repsMax": 10
     },
     {
       "id": "dia-1-curl-martillo",
@@ -181,13 +191,14 @@
       "warmupSets": 0,
       "warmupProtocol": "Opcional: 1 ligera si sientes codo/muneca fria",
       "targetSets": 3,
-      "repRange": "8-10",
       "recommendedRir": "0-1 ultima serie",
       "rest": "60-90 seg",
       "restSeconds": 90,
       "progression": "Progresion doble: llega al tope del rango en todas las series; luego sube peso minimo.",
       "technicalNotes": "Braquial/braquiorradial; evita columpiar el peso.",
-      "currentWeight": 0
+      "currentWeight": 0,
+      "repsMin": 8,
+      "repsMax": 10
     },
     {
       "id": "dia-1-curl-de-muneca-flexores",
@@ -197,13 +208,14 @@
       "warmupSets": 0,
       "warmupProtocol": "No necesario si ya vienes caliente; 1 ligera opcional",
       "targetSets": 3,
-      "repRange": "8-10",
       "recommendedRir": "1-2",
       "rest": "45-60 seg",
       "restSeconds": 60,
       "progression": "Progresion doble: llega al tope del rango en todas las series; luego sube peso minimo.",
       "technicalNotes": "8-10 por preferencia; controla muneca y recorrido. Si molesta, vuelve a 12-15.",
-      "currentWeight": 0
+      "currentWeight": 0,
+      "repsMin": 8,
+      "repsMax": 10
     },
     {
       "id": "dia-1-curl-invertido-extensores",
@@ -213,13 +225,14 @@
       "warmupSets": 0,
       "warmupProtocol": "No necesario; 1 ligera opcional",
       "targetSets": 3,
-      "repRange": "8-10",
       "recommendedRir": "1-2",
       "rest": "60 seg",
       "restSeconds": 60,
       "progression": "Progresion doble: llega al tope del rango en todas las series; luego sube peso minimo.",
       "technicalNotes": "8-10 con tecnica limpia; si hay molestia de codo/muneca, usa 10-12 o 12-15.",
-      "currentWeight": 0
+      "currentWeight": 0,
+      "repsMin": 8,
+      "repsMax": 10
     },
     {
       "id": "dia-1-curl-braquiorradial",
@@ -229,13 +242,14 @@
       "warmupSets": 0,
       "warmupProtocol": "No necesario; 1 ligera opcional",
       "targetSets": 3,
-      "repRange": "8-10",
       "recommendedRir": "1-2",
       "rest": "60 seg",
       "restSeconds": 60,
       "progression": "Progresion doble: llega al tope del rango en todas las series; luego sube peso minimo.",
       "technicalNotes": "Rango minimo por redundancia con martillo/invertido. 8-10 solo si no afecta agarre/codo.",
-      "currentWeight": 0
+      "currentWeight": 0,
+      "repsMin": 8,
+      "repsMax": 10
     },
     {
       "id": "dia-3-hack-squat",
@@ -245,13 +259,14 @@
       "warmupSets": 2,
       "warmupProtocol": "50%x8-10 / 75-80%x3-5",
       "targetSets": 3,
-      "repRange": "6-8",
       "recommendedRir": "1-2",
       "rest": "2-4 min",
       "restSeconds": 180,
       "progression": "Progresion doble: llega al tope del rango en todas las series; luego sube peso minimo.",
       "technicalNotes": "Primer patron pesado de rodilla: 2 aproximaciones maximo; profundidad controlada.",
-      "currentWeight": 0
+      "currentWeight": 0,
+      "repsMin": 6,
+      "repsMax": 8
     },
     {
       "id": "dia-3-peso-muerto-rumano",
@@ -261,13 +276,14 @@
       "warmupSets": 2,
       "warmupProtocol": "50%x8 / 70%x4-6",
       "targetSets": 3,
-      "repRange": "8-10",
       "recommendedRir": "2-3",
       "rest": "2-3 min",
       "restSeconds": 150,
       "progression": "Progresion doble: llega al tope del rango en todas las series; luego sube peso minimo.",
       "technicalNotes": "Va temprano porque requiere tecnica y estabilidad. No al fallo; espalda neutra y tension en femoral.",
-      "currentWeight": 0
+      "currentWeight": 0,
+      "repsMin": 8,
+      "repsMax": 10
     },
     {
       "id": "dia-3-prensa",
@@ -277,13 +293,14 @@
       "warmupSets": 1,
       "warmupProtocol": "1 aproximacion media x6-8",
       "targetSets": 3,
-      "repRange": "8-10",
       "recommendedRir": "1-2",
       "rest": "2-3 min",
       "restSeconds": 150,
       "progression": "Progresion doble: llega al tope del rango en todas las series; luego sube peso minimo.",
       "technicalNotes": "Despues de los patrones principales; no bloquees rodillas y controla la bajada.",
-      "currentWeight": 0
+      "currentWeight": 0,
+      "repsMin": 8,
+      "repsMax": 10
     },
     {
       "id": "dia-3-curl-femoral",
@@ -293,13 +310,14 @@
       "warmupSets": 1,
       "warmupProtocol": "1 serie ligera x12",
       "targetSets": 3,
-      "repRange": "8-10",
       "recommendedRir": "0-1 ultima serie",
       "rest": "60-90 seg",
       "restSeconds": 90,
       "progression": "Progresion doble: llega al tope del rango en todas las series; luego sube peso minimo.",
       "technicalNotes": "Controla excentrica; no levantes cadera del asiento.",
-      "currentWeight": 0
+      "currentWeight": 0,
+      "repsMin": 8,
+      "repsMax": 10
     },
     {
       "id": "dia-3-extension-de-cuadriceps",
@@ -309,13 +327,14 @@
       "warmupSets": 1,
       "warmupProtocol": "1 serie ligera x12-15",
       "targetSets": 3,
-      "repRange": "8-10",
       "recommendedRir": "0-1 ultima serie",
       "rest": "60-90 seg",
       "restSeconds": 90,
       "progression": "Progresion doble: llega al tope del rango en todas las series; luego sube peso minimo.",
       "technicalNotes": "Accesorio final de cuadriceps; pausa corta arriba y baja controlado.",
-      "currentWeight": 0
+      "currentWeight": 0,
+      "repsMin": 8,
+      "repsMax": 10
     },
     {
       "id": "dia-3-abductores-y-aductores-maquina",
@@ -325,13 +344,14 @@
       "warmupSets": 1,
       "warmupProtocol": "1 ligera x15 por movimiento si lo necesitas",
       "targetSets": 4,
-      "repRange": "8-10",
       "recommendedRir": "1-2",
       "rest": "60-90 seg",
       "restSeconds": 90,
       "progression": "Progresion doble: llega al tope del rango en todas las series; luego sube peso minimo.",
       "technicalNotes": "8-10 por preferencia; controla cadera. Si sientes tiron o tecnica corta, mejor 12-15.",
-      "currentWeight": 0
+      "currentWeight": 0,
+      "repsMin": 8,
+      "repsMax": 10
     },
     {
       "id": "dia-3-gemelo",
@@ -341,13 +361,14 @@
       "warmupSets": 1,
       "warmupProtocol": "1 serie ligera x12-15",
       "targetSets": 4,
-      "repRange": "8-10",
       "recommendedRir": "0-1 ultima serie",
       "rest": "60-90 seg",
       "restSeconds": 90,
       "progression": "Progresion doble: llega al tope del rango en todas las series; luego sube peso minimo.",
       "technicalNotes": "8-10 puede funcionar si haces pausa abajo y arriba. No rebotes.",
-      "currentWeight": 0
+      "currentWeight": 0,
+      "repsMin": 8,
+      "repsMax": 10
     },
     {
       "id": "dia-3-crunch-en-polea-o-maquina",
@@ -357,13 +378,14 @@
       "warmupSets": 1,
       "warmupProtocol": "1 serie ligera x12-15",
       "targetSets": 3,
-      "repRange": "8-10",
       "recommendedRir": "0-1 ultima serie",
       "rest": "45-90 seg",
       "restSeconds": 75,
       "progression": "Progresion doble: llega al tope del rango en todas las series; luego sube peso minimo.",
       "technicalNotes": "8-10 con carga progresiva. Si no sientes abdomen, baja peso y usa 10-15.",
-      "currentWeight": 0
+      "currentWeight": 0,
+      "repsMin": 8,
+      "repsMax": 10
     },
     {
       "id": "dia-5-remo-t",
@@ -373,13 +395,14 @@
       "warmupSets": 2,
       "warmupProtocol": "50%x8-10 / 75-80%x3-5",
       "targetSets": 3,
-      "repRange": "6-8",
       "recommendedRir": "1-2",
       "rest": "2-3 min",
       "restSeconds": 150,
       "progression": "Progresion doble: llega al tope del rango en todas las series; luego sube peso minimo.",
       "technicalNotes": "Empieza el dia de espalda con el remo mas fuerte para rendir mejor en grosor/densidad.",
-      "currentWeight": 0
+      "currentWeight": 0,
+      "repsMin": 6,
+      "repsMax": 8
     },
     {
       "id": "dia-5-jalon-al-pecho",
@@ -389,13 +412,14 @@
       "warmupSets": 1,
       "warmupProtocol": "1 serie ligera x8-10",
       "targetSets": 3,
-      "repRange": "8-10",
       "recommendedRir": "1-2",
       "rest": "2 min",
       "restSeconds": 120,
       "progression": "Progresion doble: llega al tope del rango en todas las series; luego sube peso minimo.",
       "technicalNotes": "Va despues del remo T; prioriza dorsal y no conviertas el jalon en curl.",
-      "currentWeight": 0
+      "currentWeight": 0,
+      "repsMin": 8,
+      "repsMax": 10
     },
     {
       "id": "dia-5-pullover-unilateral-en-polea",
@@ -405,13 +429,14 @@
       "warmupSets": 1,
       "warmupProtocol": "1 serie ligera por lado x8-10",
       "targetSets": 3,
-      "repRange": "8-10",
       "recommendedRir": "1-2",
       "rest": "60-90 seg",
       "restSeconds": 90,
       "progression": "Progresion doble: llega al tope del rango en todas las series por lado; luego sube peso minimo.",
       "technicalNotes": "Sustituye al remo sentado. Enfocate en dorsal: hombro abajo, torso fijo, baja la mano hacia la cadera y controla la subida.",
-      "currentWeight": 0
+      "currentWeight": 0,
+      "repsMin": 8,
+      "repsMax": 10
     },
     {
       "id": "dia-5-curl-barra-z",
@@ -421,13 +446,14 @@
       "warmupSets": 1,
       "warmupProtocol": "1 serie ligera x10-12",
       "targetSets": 3,
-      "repRange": "8-10",
       "recommendedRir": "1-2",
       "rest": "90-120 seg",
       "restSeconds": 120,
       "progression": "Progresion doble: llega al tope del rango en todas las series; luego sube peso minimo.",
       "technicalNotes": "Pesado/moderado; no balancees torso.",
-      "currentWeight": 0
+      "currentWeight": 0,
+      "repsMin": 8,
+      "repsMax": 10
     },
     {
       "id": "dia-5-curl-bayesian",
@@ -437,13 +463,14 @@
       "warmupSets": 1,
       "warmupProtocol": "1 serie ligera x12",
       "targetSets": 3,
-      "repRange": "8-10",
       "recommendedRir": "0-1 ultima serie",
       "rest": "60-90 seg",
       "restSeconds": 90,
       "progression": "Progresion doble: llega al tope del rango en todas las series; luego sube peso minimo.",
       "technicalNotes": "Excelente con biceps fatigado; prioriza estiramiento.",
-      "currentWeight": 0
+      "currentWeight": 0,
+      "repsMin": 8,
+      "repsMax": 10
     },
     {
       "id": "dia-6-press-inclinado",
@@ -453,13 +480,14 @@
       "warmupSets": 2,
       "warmupProtocol": "50%x8-10 / 75-80%x3-5",
       "targetSets": 3,
-      "repRange": "6-8",
       "recommendedRir": "1-2",
       "rest": "2-4 min",
       "restSeconds": 180,
       "progression": "Progresion doble: llega al tope del rango en todas las series; luego sube peso minimo.",
       "technicalNotes": "Ahora abre el dia de pecho: prioridad a pecho superior y mejor rendimiento en este press.",
-      "currentWeight": 0
+      "currentWeight": 0,
+      "repsMin": 6,
+      "repsMax": 8
     },
     {
       "id": "dia-6-press-plano",
@@ -469,13 +497,14 @@
       "warmupSets": 1,
       "warmupProtocol": "1 aproximacion media x6-8",
       "targetSets": 3,
-      "repRange": "8-10",
       "recommendedRir": "1-2",
       "rest": "2-4 min",
       "restSeconds": 180,
       "progression": "Progresion doble: llega al tope del rango en todas las series; luego sube peso minimo.",
       "technicalNotes": "Va segundo porque ya vienes caliente; manten tecnica y no falles en todas las series.",
-      "currentWeight": 0
+      "currentWeight": 0,
+      "repsMin": 8,
+      "repsMax": 10
     },
     {
       "id": "dia-6-pec-deck-o-cruces-de-polea",
@@ -485,13 +514,14 @@
       "warmupSets": 0,
       "warmupProtocol": "No necesario; 1 ligera si sientes hombro frio",
       "targetSets": 3,
-      "repRange": "8-10",
       "recommendedRir": "0-1 ultima serie",
       "rest": "60-90 seg",
       "restSeconds": 90,
       "progression": "Progresion doble: llega al tope del rango en todas las series; luego sube peso minimo.",
       "technicalNotes": "Evita hacerlo demasiado pesado; busca tension.",
-      "currentWeight": 0
+      "currentWeight": 0,
+      "repsMin": 8,
+      "repsMax": 10
     },
     {
       "id": "dia-6-press-militar-maquina",
@@ -501,13 +531,14 @@
       "warmupSets": 1,
       "warmupProtocol": "1 ligera x8-10; 2a opcional solo si el hombro se siente frio",
       "targetSets": 3,
-      "repRange": "6-8",
       "recommendedRir": "1-2",
       "rest": "2 min",
       "restSeconds": 120,
       "progression": "Progresion doble: llega al tope del rango en todas las series; luego sube peso minimo.",
       "technicalNotes": "Volumen controlado; suficiente junto con presses de pecho.",
-      "currentWeight": 0
+      "currentWeight": 0,
+      "repsMin": 6,
+      "repsMax": 8
     },
     {
       "id": "dia-6-face-pull",
@@ -517,13 +548,14 @@
       "warmupSets": 1,
       "warmupProtocol": "1 serie ligera x15",
       "targetSets": 3,
-      "repRange": "8-10",
       "recommendedRir": "1-2",
       "rest": "60-90 seg",
       "restSeconds": 90,
       "progression": "Progresion doble: llega al tope del rango en todas las series; luego sube peso minimo.",
       "technicalNotes": "8-10 por preferencia; si se vuelve pesado y pierdes control escapular, usa 12-15.",
-      "currentWeight": 0
+      "currentWeight": 0,
+      "repsMin": 8,
+      "repsMax": 10
     },
     {
       "id": "dia-6-rompecraneos",
@@ -533,13 +565,14 @@
       "warmupSets": 1,
       "warmupProtocol": "1-2 series ligeras para codo",
       "targetSets": 3,
-      "repRange": "8-10",
       "recommendedRir": "1-2",
       "rest": "90-120 seg",
       "restSeconds": 120,
       "progression": "Progresion doble: llega al tope del rango en todas las series; luego sube peso minimo.",
       "technicalNotes": "Cuida codo; no fuerces si molesta.",
-      "currentWeight": 0
+      "currentWeight": 0,
+      "repsMin": 8,
+      "repsMax": 10
     },
     {
       "id": "dia-6-elevaciones-con-mancuerna",
@@ -549,13 +582,14 @@
       "warmupSets": 1,
       "warmupProtocol": "1 serie ligera x15",
       "targetSets": 3,
-      "repRange": "8-10",
       "recommendedRir": "0-1 ultima serie",
       "rest": "60-90 seg",
       "restSeconds": 90,
       "progression": "Progresion doble: llega al tope del rango en todas las series; luego sube peso minimo.",
       "technicalNotes": "8-10 solo si no hay balanceo. Para hombro lateral, calidad antes que peso.",
-      "currentWeight": 0
+      "currentWeight": 0,
+      "repsMin": 8,
+      "repsMax": 10
     },
     {
       "id": "dia-6-extension-triceps",
@@ -565,13 +599,14 @@
       "warmupSets": 0,
       "warmupProtocol": "1 ligera para codo; 2a opcional si hay molestia o rigidez",
       "targetSets": 3,
-      "repRange": "8-10",
       "recommendedRir": "0-1 ultima serie",
       "rest": "60-90 seg",
       "restSeconds": 90,
       "progression": "Progresion doble: llega al tope del rango en todas las series; luego sube peso minimo.",
       "technicalNotes": "Ultima serie puede ir cerca del fallo tecnico.",
-      "currentWeight": 0
+      "currentWeight": 0,
+      "repsMin": 8,
+      "repsMax": 10
     }
   ],
   "weeklyVolumeTargets": [

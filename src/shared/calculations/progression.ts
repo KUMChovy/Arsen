@@ -22,9 +22,9 @@ export function getWeightIncreaseRecommendation(
   exercise: RoutineExercise,
   sessions: ProgressionSession[],
 ): WeightIncreaseRecommendation | null {
-  const repTarget = parseTopRepTarget(exercise.repRange)
+  const repTarget = exercise.repsMax
   const rirTarget = parseRirTarget(exercise.recommendedRir)
-  if (repTarget === null || rirTarget === null || exercise.targetSets <= 0) return null
+  if (!Number.isFinite(repTarget) || repTarget <= 0 || rirTarget === null || exercise.targetSets <= 0) return null
 
   const recent = sessions
     .map((session) => ({
@@ -54,13 +54,6 @@ export function getWeightIncreaseRecommendation(
     reason: `Ultimas 2 sesiones con ${repTarget}+ reps y RIR ${rirTarget}+`,
     suggestedIncreaseLabel: suggestedIncreaseLabel(exercise.equipment),
   }
-}
-
-function parseTopRepTarget(repRange: string) {
-  const numbers = repRange.match(/\d+/g)?.map(Number).filter(Number.isFinite) ?? []
-  if (numbers.length === 0) return null
-
-  return Math.max(...numbers)
 }
 
 function parseRirTarget(recommendedRir: string) {

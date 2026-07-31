@@ -4,6 +4,7 @@ import { Link, useParams } from 'react-router-dom'
 import { Card } from '../../../shared/components/Card'
 import { ExerciseArt } from '../../../shared/components/ExerciseArt'
 import { PageHeader } from '../../../shared/components/PageHeader'
+import { formatRepRange } from '../../../shared/utils/reps'
 import { formatWeight } from '../../../shared/utils/weight'
 import { normalizeWarmupProtocol, warmupProtocolLabel } from '../../../shared/calculations/warmups'
 import { useRoutineDayDetail } from '../hooks'
@@ -75,7 +76,7 @@ function ExerciseDetailCard({
           <div className="min-w-0">
             <strong className="block truncate text-sm">{exercise.name}</strong>
             <span className="mt-1 block truncate text-xs text-arsen-muted">
-              {exercise.mainMuscle} - {exercise.equipment} - {exercise.targetSets}x{exercise.repRange} - RIR {exercise.recommendedRir}
+              {exercise.mainMuscle} - {exercise.equipment} - {exercise.targetSets}x{formatRepRange(exercise.repsMin, exercise.repsMax)} - RIR {exercise.recommendedRir}
             </span>
           </div>
           <ChevronDown

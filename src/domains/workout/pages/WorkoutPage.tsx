@@ -9,6 +9,7 @@ import { totalVolume } from '../../../shared/calculations/workout'
 import { buildWarmupSets } from '../../../shared/calculations/warmups'
 import { localDateKey } from '../../../shared/utils/date'
 import { confirmDanger } from '../../../shared/utils/alerts'
+import { formatRepRange } from '../../../shared/utils/reps'
 import { formatWeight } from '../../../shared/utils/weight'
 import { useActiveRoutineBundle, useRoutines, useWorkoutDayById } from '../../routine/hooks'
 import type { Routine, RoutineDay, RoutineExercise } from '../../routine/types'
@@ -215,7 +216,7 @@ export function WorkoutPage() {
             {[
               ['Peso anterior', formatWeight(currentExercise?.currentWeightKg ?? 0, preferredUnit), 'text-arsen-acid'],
               ['Series', String(currentExercise?.targetSets ?? 0), 'text-arsen-ink'],
-              ['Reps', currentExercise?.repRange ?? '-', 'text-arsen-ink'],
+              ['Reps', currentExercise ? formatRepRange(currentExercise.repsMin, currentExercise.repsMax) : '-', 'text-arsen-ink'],
               ['RIR', currentExercise?.recommendedRir ?? '-', 'text-arsen-ink'],
             ].map(([label, value, tone]) => (
               <div className="border-r border-white/10 px-1 last:border-r-0" key={label}>
@@ -386,7 +387,7 @@ export function WorkoutPage() {
                   <div className="min-w-0">
                     <h3 className="truncate text-sm font-extrabold">{exercise.name}</h3>
                     <span className="mt-1 block truncate text-xs text-arsen-muted">
-                      {exercise.mainMuscle} - {exercise.targetSets}x{exercise.repRange} - RIR {exercise.recommendedRir}
+                      {exercise.mainMuscle} - {exercise.targetSets}x{formatRepRange(exercise.repsMin, exercise.repsMax)} - RIR {exercise.recommendedRir}
                     </span>
                   </div>
                   <span className={['rounded-full px-2 py-1 text-[10px] font-bold', stateClassName(state)].join(' ')}>

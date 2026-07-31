@@ -39,6 +39,7 @@ import { ExerciseArt } from '../../../shared/components/ExerciseArt'
 import { PageHeader } from '../../../shared/components/PageHeader'
 import { buildWarmupSets, normalizeWarmupProtocol, warmupProtocolLabel, type WarmupProtocol } from '../../../shared/calculations/warmups'
 import { confirmDanger } from '../../../shared/utils/alerts'
+import { formatRepRange } from '../../../shared/utils/reps'
 import type { Equipment, ExerciseCatalogItem, MuscleGroup, Routine, RoutineDay, RoutineExercise } from '../types'
 import { useActiveRoutineBundle, useExerciseCatalog, useRoutines } from '../hooks'
 import { exportRoutineJson, importRoutineJson } from '../importExport'
@@ -606,7 +607,7 @@ function ExerciseEditRow({
       <div className="min-w-0">
         <h3 className="truncate text-sm font-extrabold">{exercise.name}</h3>
         <span className="mt-1 block truncate text-xs text-arsen-muted">
-          {exercise.mainMuscle} - {exercise.targetSets}x{exercise.repRange} - RIR {exercise.recommendedRir}
+          {exercise.mainMuscle} - {exercise.targetSets}x{formatRepRange(exercise.repsMin, exercise.repsMax)} - RIR {exercise.recommendedRir}
         </span>
       </div>
       <div className="grid grid-cols-3 gap-1">
@@ -774,6 +775,7 @@ function RoutineExerciseRecipeSheet({
   onSave: (input: ExerciseInput) => void
 }) {
   const [form, setForm] = useState(() => exerciseToForm(exercise, catalogItem))
+  const [message, setMessage] = useState<string | null>(null)
   const [warmupInfoOpen, setWarmupInfoOpen] = useState(false)
   const selectedWarmupProtocol = normalizeWarmupProtocol(form.warmupProtocol)
 
@@ -795,22 +797,23 @@ function RoutineExerciseRecipeSheet({
         </Card>
         <div className="grid grid-cols-3 gap-2">
           <TextField label="Series" onChange={(value) => update('targetSets', value)} type="number" value={form.targetSets} />
-          <TextField label="Reps" onChange={(value) => update('repRange', value)} value={form.repRange} />
-          <TextField label="RIR" onChange={(value) => update('recommendedRir', value)} value={form.recommendedRir} />
+          <TextField label="Reps min" onChange={(value) => update('repsMin', value)} type="number" value={form.repsMin} />
+          <TextField label="Reps max" onChange={(value) => update('repsMax', value)} type="number" value={form.repsMax} />
         </div>
         <div className="grid grid-cols-2 gap-2">
+          <TextField label="RIR" onChange={(value) => update('recommendedRir', value)} value={form.recommendedRir} />
           <TextField label="Descanso s" onChange={(value) => update('restSeconds', value)} type="number" value={form.restSeconds} />
-          <div className="grid grid-cols-[1fr_42px] items-end gap-2">
-            <WarmupProtocolSelect onChange={(value) => update('warmupProtocol', value)} value={selectedWarmupProtocol} />
-            <button
-              aria-label="Ver descripcion del calentamiento"
-              className="grid min-h-11 place-items-center rounded-[10px] border border-white/10 bg-arsen-surface text-arsen-purple2"
-              onClick={() => setWarmupInfoOpen(true)}
-              type="button"
-            >
-              <Info aria-hidden="true" className="size-5" />
-            </button>
-          </div>
+        </div>
+        <div className="grid grid-cols-[1fr_42px] items-end gap-2">
+          <WarmupProtocolSelect onChange={(value) => update('warmupProtocol', value)} value={selectedWarmupProtocol} />
+          <button
+            aria-label="Ver descripcion del calentamiento"
+            className="grid min-h-11 place-items-center rounded-[10px] border border-white/10 bg-arsen-surface text-arsen-purple2"
+            onClick={() => setWarmupInfoOpen(true)}
+            type="button"
+          >
+            <Info aria-hidden="true" className="size-5" />
+          </button>
         </div>
         <TextField label="Progresion" onChange={(value) => update('progression', value)} value={form.progression} />
         <label className="block">
@@ -821,8 +824,21 @@ function RoutineExerciseRecipeSheet({
             value={form.technicalNotes}
           />
         </label>
+        {message ? <p className="text-xs font-bold text-red-300">{message}</p> : null}
       </div>
-      <ActionButton className="mt-4 w-full" disabled={disabled} onClick={() => onSave(formToExerciseInput(form))} tone="acid">
+      <ActionButton
+        className="mt-4 w-full"
+        disabled={disabled}
+        onClick={() => {
+          const input = formToExerciseInput(form)
+          if (!input) {
+            setMessage('Revisa reps minimas y maximas')
+            return
+          }
+          onSave(input)
+        }}
+        tone="acid"
+      >
         <Check aria-hidden="true" className="size-5" />
         Guardar receta
       </ActionButton>
@@ -886,7 +902,8 @@ type ExerciseForm = {
   name: string
   progression: string
   recommendedRir: string
-  repRange: string
+  repsMax: string
+  repsMin: string
   restSeconds: string
   targetSets: string
   technicalNotes: string
@@ -899,17 +916,21 @@ function exerciseToForm(exercise: RoutineExercise | null, catalogItem: ExerciseC
     mainMuscle: normalizeMuscleGroup(exercise?.mainMuscle ?? catalogItem?.mainMuscle),
     name: exercise?.name ?? catalogItem?.name ?? '',
     progression: exercise?.progression ?? '',
-    recommendedRir: exercise?.recommendedRir ?? '1-2',
-    repRange: exercise?.repRange ?? '8-10',
-    restSeconds: String(exercise?.restSeconds ?? 90),
-    targetSets: String(exercise?.targetSets ?? 3),
+    recommendedRir: exercise?.recommendedRir ?? catalogItem?.defaultRecommendedRir ?? '1-2',
+    repsMax: String(exercise?.repsMax ?? catalogItem?.defaultRepsMax ?? 10),
+    repsMin: String(exercise?.repsMin ?? catalogItem?.defaultRepsMin ?? 8),
+    restSeconds: String(exercise?.restSeconds ?? catalogItem?.defaultRestSeconds ?? 90),
+    targetSets: String(exercise?.targetSets ?? catalogItem?.defaultTargetSets ?? 3),
     technicalNotes: exercise?.technicalNotes ?? '',
     warmupProtocol: normalizeWarmupProtocol(exercise?.warmupProtocol ?? ''),
   }
 }
 
-function formToExerciseInput(form: ExerciseForm): ExerciseInput {
+function formToExerciseInput(form: ExerciseForm): ExerciseInput | null {
   const restSeconds = numberOrDefault(form.restSeconds, 90)
+  const repsMin = numberOrDefault(form.repsMin, 8)
+  const repsMax = numberOrDefault(form.repsMax, 10)
+  if (repsMin <= 0 || repsMax <= 0 || repsMin > repsMax) return null
 
   return {
     equipment: form.equipment,
@@ -917,7 +938,8 @@ function formToExerciseInput(form: ExerciseForm): ExerciseInput {
     name: form.name,
     progression: form.progression,
     recommendedRir: form.recommendedRir,
-    repRange: form.repRange,
+    repsMax,
+    repsMin,
     rest: `${restSeconds} seg`,
     restSeconds,
     targetSets: numberOrDefault(form.targetSets, 3),

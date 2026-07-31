@@ -32,7 +32,8 @@ export type RoutineExercise = {
   mainMuscle: string
   equipment: Equipment
   targetSets: number
-  repRange: string
+  repsMin: number
+  repsMax: number
   recommendedRir: string
   rest: string
   restSeconds: number
@@ -54,7 +55,8 @@ export type ExerciseCatalogItem = {
   equipment: Equipment
   aliases: string[]
   defaultTargetSets: number
-  defaultRepRange: string
+  defaultRepsMin: number
+  defaultRepsMax: number
   defaultRecommendedRir: string
   defaultRestSeconds: number
   assetKind: string | null

@@ -145,12 +145,14 @@ describe('IndexedDB integration', () => {
     })
     await addCatalogExerciseToDay(routineA.id, dayA.id, catalogItemId, {
       recommendedRir: '1-2',
-      repRange: '8-10',
+      repsMax: 10,
+      repsMin: 8,
       targetSets: 3,
     })
     await addCatalogExerciseToDay(routineA.id, dayB.id, catalogItemId, {
       recommendedRir: '2-3',
-      repRange: '10-12',
+      repsMax: 12,
+      repsMin: 10,
       targetSets: 2,
     })
 
@@ -159,14 +161,15 @@ describe('IndexedDB integration', () => {
 
     expect(catalogItem).toMatchObject({
       defaultRecommendedRir: '1-2',
-      defaultRepRange: '8-10',
+      defaultRepsMax: 10,
+      defaultRepsMin: 8,
       defaultTargetSets: 3,
       mainMuscle: 'Pecho',
       name: 'Press inclinado',
     })
     expect(recipes).toHaveLength(2)
-    expect(recipes[0]).toMatchObject({ dayId: dayA.id, recommendedRir: '1-2', repRange: '8-10', targetSets: 3 })
-    expect(recipes[1]).toMatchObject({ dayId: dayB.id, recommendedRir: '2-3', repRange: '10-12', targetSets: 2 })
+    expect(recipes[0]).toMatchObject({ dayId: dayA.id, recommendedRir: '1-2', repsMax: 10, repsMin: 8, targetSets: 3 })
+    expect(recipes[1]).toMatchObject({ dayId: dayB.id, recommendedRir: '2-3', repsMax: 12, repsMin: 10, targetSets: 2 })
   })
 
   it('exports chronological progress with routines, graph points and drop set volume', async () => {
@@ -375,7 +378,8 @@ function routineExercise(
     order: 0,
     progression: '',
     recommendedRir: '1-2',
-    repRange: '8-10',
+    repsMax: 10,
+    repsMin: 8,
     rest: '90 seg',
     restSeconds: 90,
     routineId: overrides.routineId ?? 'routine-1',

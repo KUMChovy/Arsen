@@ -9,7 +9,8 @@ export type ExerciseInput = {
   mainMuscle: string
   equipment?: Equipment
   targetSets?: number
-  repRange?: string
+  repsMin?: number
+  repsMax?: number
   recommendedRir?: string
   rest?: string
   restSeconds?: number
@@ -262,6 +263,7 @@ export async function createExercise(routineId: string, dayId: string, input: Ex
   const now = new Date().toISOString()
   const order = await db.routineExercises.where('dayId').equals(dayId).count()
   const name = input.name.trim() || 'Ejercicio nuevo'
+  const reps = normalizeReps(input.repsMin, input.repsMax)
   const exercise: RoutineExercise = {
     id: createId('exercise'),
     routineId,
@@ -272,7 +274,8 @@ export async function createExercise(routineId: string, dayId: string, input: Ex
     mainMuscle: normalizeMuscleGroup(input.mainMuscle),
     equipment: input.equipment ?? 'Otro',
     targetSets: input.targetSets ?? 3,
-    repRange: input.repRange ?? '8-10',
+    repsMin: reps.min,
+    repsMax: reps.max,
     recommendedRir: input.recommendedRir ?? '1-2',
     rest: input.rest ?? '60-90 seg',
     restSeconds: input.restSeconds ?? 90,
@@ -297,6 +300,7 @@ export async function addCatalogExerciseToDay(routineId: string, dayId: string, 
 
   const now = new Date().toISOString()
   const order = await db.routineExercises.where('dayId').equals(dayId).count()
+  const reps = normalizeReps(input.repsMin ?? catalogItem.defaultRepsMin, input.repsMax ?? catalogItem.defaultRepsMax)
   const exercise: RoutineExercise = {
     id: createId('exercise'),
     routineId,
@@ -306,11 +310,12 @@ export async function addCatalogExerciseToDay(routineId: string, dayId: string, 
     canonicalName: catalogItem.canonicalName,
     mainMuscle: normalizeMuscleGroup(catalogItem.mainMuscle),
     equipment: input.equipment ?? catalogItem.equipment,
-    targetSets: input.targetSets ?? 3,
-    repRange: input.repRange ?? '8-10',
-    recommendedRir: input.recommendedRir ?? '1-2',
-    rest: input.rest ?? `${input.restSeconds ?? 90} seg`,
-    restSeconds: input.restSeconds ?? 90,
+    targetSets: input.targetSets ?? catalogItem.defaultTargetSets,
+    repsMin: reps.min,
+    repsMax: reps.max,
+    recommendedRir: input.recommendedRir ?? catalogItem.defaultRecommendedRir,
+    rest: input.rest ?? `${input.restSeconds ?? catalogItem.defaultRestSeconds} seg`,
+    restSeconds: input.restSeconds ?? catalogItem.defaultRestSeconds,
     warmupSets: input.warmupSets ?? 0,
     warmupProtocol: input.warmupProtocol ?? '',
     progression: input.progression ?? '',
@@ -329,6 +334,7 @@ export async function addCatalogExerciseToDay(routineId: string, dayId: string, 
 export async function updateExercise(exerciseId: string, input: ExerciseInput) {
   const existing = await db.routineExercises.get(exerciseId)
   const name = input.name.trim() || 'Ejercicio sin nombre'
+  const reps = normalizeReps(input.repsMin, input.repsMax)
 
   await db.routineExercises.update(exerciseId, {
     name,
@@ -336,7 +342,8 @@ export async function updateExercise(exerciseId: string, input: ExerciseInput) {
     mainMuscle: normalizeMuscleGroup(input.mainMuscle),
     equipment: input.equipment ?? 'Otro',
     targetSets: input.targetSets ?? 3,
-    repRange: input.repRange ?? '8-10',
+    repsMin: reps.min,
+    repsMax: reps.max,
     recommendedRir: input.recommendedRir ?? '1-2',
     rest: input.rest ?? '60-90 seg',
     restSeconds: input.restSeconds ?? 90,
@@ -416,7 +423,8 @@ export async function createCatalogExercise(input: CatalogExerciseInput) {
     canonicalName: canonicalName(name),
     createdAt: now,
     defaultRecommendedRir: '1-2',
-    defaultRepRange: '8-10',
+    defaultRepsMax: 10,
+    defaultRepsMin: 8,
     defaultRestSeconds: 90,
     defaultTargetSets: 3,
     equipment: input.equipment ?? 'Otro',
@@ -448,4 +456,12 @@ export async function updateCatalogExercise(catalogItemId: string, input: Catalo
 
 export async function deleteCatalogExercise(catalogItemId: string) {
   await db.exerciseCatalog.delete(catalogItemId)
+}
+
+function normalizeReps(repsMin = 8, repsMax = 10) {
+  if (!Number.isFinite(repsMin) || !Number.isFinite(repsMax) || repsMin <= 0 || repsMax <= 0 || repsMin > repsMax) {
+    throw new Error('Las reps minimas no pueden ser mayores que las maximas')
+  }
+
+  return { max: repsMax, min: repsMin }
 }

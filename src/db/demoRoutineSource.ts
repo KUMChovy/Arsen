@@ -8,7 +8,8 @@ export type DemoRoutineExerciseSource = {
   warmupSets: number
   warmupProtocol: string
   targetSets: number
-  repRange: string
+  repsMin: number
+  repsMax: number
   recommendedRir: string
   rest: string
   restSeconds: number

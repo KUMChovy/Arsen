@@ -20,7 +20,8 @@ export type ExerciseSnapshot = {
   mainMuscle: string
   equipment: string
   targetSets: number
-  repRange: string
+  repsMin: number
+  repsMax: number
   recommendedRir: string
   restSeconds: number
 }

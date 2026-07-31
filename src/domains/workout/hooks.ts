@@ -50,7 +50,7 @@ export function useWorkoutProgress(date: string, dayId: string | undefined, exer
 
 export function useWeightIncreaseRecommendations(exercises: RoutineExercise[]) {
   const exerciseKey = exercises
-    .map((exercise) => [exercise.id, exercise.targetSets, exercise.repRange, exercise.recommendedRir, exercise.equipment].join(':'))
+    .map((exercise) => [exercise.id, exercise.targetSets, exercise.repsMin, exercise.repsMax, exercise.recommendedRir, exercise.equipment].join(':'))
     .join('|')
 
   return useLiveQuery(() => getWeightIncreaseRecommendations(exercises), [exerciseKey], undefined) ?? []

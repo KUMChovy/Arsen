@@ -51,7 +51,8 @@ export const routineExerciseSchema = z
     order: z.number(),
     progression: z.string(),
     recommendedRir: z.string(),
-    repRange: z.string(),
+    repsMax: z.number(),
+    repsMin: z.number(),
     rest: z.string(),
     restSeconds: z.number(),
     routineId: z.string().min(1),
@@ -63,6 +64,7 @@ export const routineExerciseSchema = z
     warmupSets: z.number(),
   })
   .passthrough()
+  .refine((exercise) => exercise.repsMin <= exercise.repsMax, { message: 'repsMin no puede ser mayor que repsMax' })
 
 export const weeklyVolumeTargetSchema = z
   .object({
@@ -83,7 +85,8 @@ export const exerciseCatalogItemSchema = z
     canonicalName: z.string(),
     createdAt: z.string(),
     defaultRecommendedRir: z.string(),
-    defaultRepRange: z.string(),
+    defaultRepsMax: z.number(),
+    defaultRepsMin: z.number(),
     defaultRestSeconds: z.number(),
     defaultTargetSets: z.number(),
     equipment: equipmentSchema,
@@ -93,6 +96,7 @@ export const exerciseCatalogItemSchema = z
     updatedAt: z.string(),
   })
   .passthrough()
+  .refine((item) => item.defaultRepsMin <= item.defaultRepsMax, { message: 'defaultRepsMin no puede ser mayor que defaultRepsMax' })
 
 export const appSettingsSchema = z
   .object({
@@ -137,11 +141,13 @@ export const exerciseLogSchema = z
         mainMuscle: z.string(),
         name: z.string(),
         recommendedRir: z.string(),
-        repRange: z.string(),
+        repsMax: z.number(),
+        repsMin: z.number(),
         restSeconds: z.number(),
         targetSets: z.number(),
       })
-      .passthrough(),
+      .passthrough()
+      .refine((snapshot) => snapshot.repsMin <= snapshot.repsMax, { message: 'repsMin no puede ser mayor que repsMax' }),
     state: exerciseStateSchema,
     updatedAt: z.string(),
   })

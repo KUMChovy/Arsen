@@ -1,0 +1,268 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-08-01T15:06:40.3360822-06:00",
+  "title": "Design System: Arsen",
+  "extensions": {
+    "colorMeta": {
+      "arsen-bg": {
+        "role": "neutral",
+        "displayName": "Black Mat",
+        "canonical": "oklch(0.075 0 0)",
+        "tonalRamp": [
+          "oklch(0.075 0 0)",
+          "oklch(0.15 0 0)",
+          "oklch(0.25 0 0)",
+          "oklch(0.36 0 0)",
+          "oklch(0.5 0 0)",
+          "oklch(0.65 0 0)",
+          "oklch(0.8 0 0)",
+          "oklch(0.95 0 0)"
+        ]
+      },
+      "arsen-bg2": {
+        "role": "neutral",
+        "displayName": "Deep Phone Shell",
+        "canonical": "oklch(0.105 0.012 280)",
+        "tonalRamp": [
+          "oklch(0.10 0.012 280)",
+          "oklch(0.20 0.012 280)",
+          "oklch(0.32 0.012 280)",
+          "oklch(0.44 0.012 280)",
+          "oklch(0.56 0.012 280)",
+          "oklch(0.68 0.012 280)",
+          "oklch(0.82 0.012 280)",
+          "oklch(0.95 0.012 280)"
+        ]
+      },
+      "arsen-surface": {
+        "role": "neutral",
+        "displayName": "Charcoal Surface",
+        "canonical": "oklch(0.155 0.016 280)",
+        "tonalRamp": [
+          "oklch(0.15 0.016 280)",
+          "oklch(0.24 0.016 280)",
+          "oklch(0.34 0.016 280)",
+          "oklch(0.46 0.016 280)",
+          "oklch(0.58 0.016 280)",
+          "oklch(0.70 0.016 280)",
+          "oklch(0.84 0.016 280)",
+          "oklch(0.95 0.016 280)"
+        ]
+      },
+      "arsen-purple": {
+        "role": "primary",
+        "displayName": "Training Purple",
+        "canonical": "oklch(0.62 0.16 295)",
+        "tonalRamp": [
+          "oklch(0.16 0.16 295)",
+          "oklch(0.26 0.16 295)",
+          "oklch(0.38 0.16 295)",
+          "oklch(0.50 0.16 295)",
+          "oklch(0.62 0.16 295)",
+          "oklch(0.74 0.16 295)",
+          "oklch(0.86 0.16 295)",
+          "oklch(0.95 0.10 295)"
+        ]
+      },
+      "arsen-acid": {
+        "role": "secondary",
+        "displayName": "Acid Progress",
+        "canonical": "oklch(0.86 0.20 125)",
+        "tonalRamp": [
+          "oklch(0.16 0.20 125)",
+          "oklch(0.28 0.20 125)",
+          "oklch(0.40 0.20 125)",
+          "oklch(0.52 0.20 125)",
+          "oklch(0.64 0.20 125)",
+          "oklch(0.76 0.20 125)",
+          "oklch(0.86 0.20 125)",
+          "oklch(0.95 0.12 125)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Page Display",
+        "purpose": "Page titles in the mobile shell."
+      },
+      "body": {
+        "displayName": "Dense Body",
+        "purpose": "Compact operating copy, rows, and controls."
+      },
+      "label": {
+        "displayName": "Micro Label",
+        "purpose": "Stats, chips, nav labels, and form labels."
+      }
+    },
+    "shadows": [
+      {
+        "name": "shell-hairline",
+        "value": "0 0 0 1px rgb(255 255 255 / 0.05)",
+        "purpose": "Separates the 430px app column from the viewport."
+      },
+      {
+        "name": "card-inset-highlight",
+        "value": "inset 0 1px 0 rgb(255 255 255 / 0.04)",
+        "purpose": "Default card and row depth."
+      },
+      {
+        "name": "sheet-lift",
+        "value": "0 -16px 40px rgb(0 0 0 / 0.35)",
+        "purpose": "Bottom sheet separation over scrims."
+      },
+      {
+        "name": "exercise-glow",
+        "value": "inset 0 0 18px rgb(153 83 255 / 0.18)",
+        "purpose": "Violet containment glow for exercise art."
+      }
+    ],
+    "motion": [
+      {
+        "name": "state-transition",
+        "value": "transition-colors 150ms ease, transform 150ms ease",
+        "purpose": "Small interaction feedback on controls."
+      },
+      {
+        "name": "active-press",
+        "value": "scale(0.99)",
+        "purpose": "Pressed state for action buttons."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "phone-shell-max",
+        "value": "430px"
+      },
+      {
+        "name": "minimum-supported-width",
+        "value": "360px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Purple action button for routine and contextual actions.",
+      "html": "<button class=\"ds-btn-primary\">Guardar</button>",
+      "css": ".ds-btn-primary { min-height: 48px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: 0; border-radius: 10px; padding: 12px 16px; background: linear-gradient(to bottom, var(--color-arsen-purple2, oklch(0.72 0.13 300)), var(--color-arsen-purple, oklch(0.62 0.16 295))); color: white; font: 800 14px/1.2 Inter, ui-sans-serif, system-ui, sans-serif; transition: transform 150ms ease, filter 150ms ease; } .ds-btn-primary:hover { filter: brightness(1.06); } .ds-btn-primary:active { transform: scale(0.99); } .ds-btn-primary:focus-visible { outline: 2px solid var(--color-arsen-acid, oklch(0.86 0.20 125)); outline-offset: 2px; }"
+    },
+    {
+      "name": "Acid Button",
+      "kind": "button",
+      "refersTo": "button-acid",
+      "description": "Positive action button for saving set data or completing work.",
+      "html": "<button class=\"ds-btn-acid\">Guardar serie</button>",
+      "css": ".ds-btn-acid { min-height: 48px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: 0; border-radius: 10px; padding: 12px 16px; background: linear-gradient(to bottom, var(--color-arsen-acid, oklch(0.86 0.20 125)), var(--color-arsen-acid2, oklch(0.77 0.20 122))); color: #142100; font: 800 14px/1.2 Inter, ui-sans-serif, system-ui, sans-serif; transition: transform 150ms ease, filter 150ms ease; } .ds-btn-acid:hover { filter: brightness(1.04); } .ds-btn-acid:active { transform: scale(0.99); } .ds-btn-acid:focus-visible { outline: 2px solid var(--color-arsen-acid, oklch(0.86 0.20 125)); outline-offset: 2px; }"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Secondary button for canceling or lower-risk actions.",
+      "html": "<button class=\"ds-btn-ghost\">Cancelar</button>",
+      "css": ".ds-btn-ghost { min-height: 48px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: 1px solid rgb(255 255 255 / 0.10); border-radius: 10px; padding: 12px 16px; background: transparent; color: var(--color-arsen-ink, oklch(0.96 0.005 280)); font: 800 14px/1.2 Inter, ui-sans-serif, system-ui, sans-serif; transition: background 150ms ease, transform 150ms ease; } .ds-btn-ghost:hover { background: rgb(255 255 255 / 0.05); } .ds-btn-ghost:active { transform: scale(0.99); } .ds-btn-ghost:focus-visible { outline: 2px solid var(--color-arsen-acid, oklch(0.86 0.20 125)); outline-offset: 2px; }"
+    },
+    {
+      "name": "Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "Default compact data container.",
+      "html": "<section class=\"ds-card\"><strong>Press inclinado</strong><span>3 series - 6-8 reps</span></section>",
+      "css": ".ds-card { display: grid; gap: 4px; border: 1px solid rgb(255 255 255 / 0.10); border-radius: 12px; padding: 12px; background: var(--color-arsen-surface, oklch(0.155 0.016 280)); color: var(--color-arsen-ink, oklch(0.96 0.005 280)); box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.04); font-family: Inter, ui-sans-serif, system-ui, sans-serif; } .ds-card strong { font-size: 14px; font-weight: 800; } .ds-card span { color: var(--color-arsen-muted, oklch(0.73 0.012 280)); font-size: 12px; }"
+    },
+    {
+      "name": "Number Field",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Centered numeric input for weights, reps, and RIR.",
+      "html": "<label class=\"ds-number-field\"><span>KG</span><input value=\"60\" inputmode=\"decimal\" /></label>",
+      "css": ".ds-number-field { display: block; color: var(--color-arsen-ink, oklch(0.96 0.005 280)); font-family: Inter, ui-sans-serif, system-ui, sans-serif; } .ds-number-field span { display: block; margin-bottom: 4px; color: var(--color-arsen-muted, oklch(0.73 0.012 280)); font-size: 12px; font-weight: 700; } .ds-number-field input { min-height: 48px; width: 100%; border: 1px solid rgb(255 255 255 / 0.10); border-radius: 10px; background: var(--color-arsen-surface, oklch(0.155 0.016 280)); color: var(--color-arsen-ink, oklch(0.96 0.005 280)); padding: 0 12px; text-align: center; font: 800 16px/1 Inter, ui-sans-serif, system-ui, sans-serif; } .ds-number-field input:focus-visible { outline: 2px solid var(--color-arsen-acid, oklch(0.86 0.20 125)); outline-offset: 2px; }"
+    },
+    {
+      "name": "Status Chip",
+      "kind": "chip",
+      "refersTo": "chip-status",
+      "description": "Compact state marker for exercise progress.",
+      "html": "<span class=\"ds-chip-status\">Hecho</span>",
+      "css": ".ds-chip-status { display: inline-flex; align-items: center; border-radius: 9999px; padding: 4px 8px; background: color-mix(in oklch, var(--color-arsen-acid, oklch(0.86 0.20 125)) 20%, transparent); color: var(--color-arsen-acid, oklch(0.86 0.20 125)); font: 700 10px/1.2 Inter, ui-sans-serif, system-ui, sans-serif; }"
+    },
+    {
+      "name": "Bottom Navigation Item",
+      "kind": "nav",
+      "refersTo": "bottom-nav-item",
+      "description": "Icon-first tab item for the fixed bottom nav.",
+      "html": "<a class=\"ds-nav-item ds-nav-item-active\" href=\"#\"><svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M6 6h12v12H6z\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"/></svg><span>Entreno</span></a>",
+      "css": ".ds-nav-item { display: grid; place-items: center; gap: 4px; border-radius: 8px; color: var(--color-arsen-muted, oklch(0.73 0.012 280)); text-decoration: none; font: 500 11px/1.2 Inter, ui-sans-serif, system-ui, sans-serif; transition: color 150ms ease; } .ds-nav-item svg { width: 24px; height: 24px; } .ds-nav-item:hover, .ds-nav-item-active { color: var(--color-arsen-purple, oklch(0.62 0.16 295)); } .ds-nav-item:focus-visible { outline: 2px solid var(--color-arsen-acid, oklch(0.86 0.20 125)); outline-offset: 2px; }"
+    },
+    {
+      "name": "Bottom Sheet",
+      "kind": "custom",
+      "refersTo": "sheet",
+      "description": "Mobile modal surface for registering and editing workout data.",
+      "html": "<section class=\"ds-sheet\"><div class=\"ds-sheet-handle\"></div><h2>Registrar serie</h2><p>3 series - 6-8 reps - RIR 2</p></section>",
+      "css": ".ds-sheet { width: 100%; border-top: 1px solid rgb(255 255 255 / 0.10); border-radius: 22px 22px 0 0; background: var(--color-arsen-bg2, oklch(0.105 0.012 280)); color: var(--color-arsen-ink, oklch(0.96 0.005 280)); padding: 16px; box-shadow: 0 -16px 40px rgb(0 0 0 / 0.35); font-family: Inter, ui-sans-serif, system-ui, sans-serif; } .ds-sheet-handle { width: 56px; height: 6px; margin: 0 auto 16px; border-radius: 9999px; background: rgb(255 255 255 / 0.25); } .ds-sheet h2 { margin: 0; font-size: 20px; font-weight: 900; line-height: 1.2; } .ds-sheet p { margin: 4px 0 0; color: var(--color-arsen-muted, oklch(0.73 0.012 280)); font-size: 12px; }"
+    },
+    {
+      "name": "Exercise Art Frame",
+      "kind": "custom",
+      "refersTo": "exercise-art",
+      "description": "Framed square image container for exercise or muscle artwork.",
+      "html": "<div class=\"ds-exercise-art\" role=\"img\" aria-label=\"Pecho\"></div>",
+      "css": ".ds-exercise-art { width: 66px; height: 66px; flex: none; border: 1px solid color-mix(in oklch, var(--color-arsen-purple, oklch(0.62 0.16 295)) 40%, transparent); border-radius: 10px; background: radial-gradient(circle at 50% 42%, color-mix(in oklch, var(--color-arsen-purple, oklch(0.62 0.16 295)) 24%, transparent), var(--color-arsen-bg2, oklch(0.105 0.012 280))); box-shadow: inset 0 0 18px rgb(153 83 255 / 0.18); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "Pocket Iron Console",
+    "overview": "Arsen feels like a dense training console carried in one hand: dark, immediate, athletic, and tuned for logging work between sets. The interface is not a lifestyle magazine or a wellness dashboard. It is a compact operating surface where the next action is always close, data stays legible, and visual intensity is reserved for training state.\n\nThe visual system uses a near-black shell, violet-purple orientation cues, and acid green performance cues. Surfaces are layered tonally instead of floated with big shadows. Typography is heavy and compact, with small labels doing a lot of information work.",
+    "keyCharacteristics": [
+      "Mobile-first, app-like, and constrained to a narrow phone column.",
+      "High-density cards, sheets, chips, and rows with clear tap targets.",
+      "Purple marks navigation, selection, and contextual controls.",
+      "Acid green marks completion, saved work, progress, and performance.",
+      "Exercise art is dark, contained, and bordered with violet light."
+    ],
+    "rules": [
+      {
+        "name": "The Two Accent Rule",
+        "body": "Purple answers \"where am I and what can I choose\"; acid green answers \"what improved or was saved.\" Do not swap those roles casually.",
+        "section": "colors"
+      },
+      {
+        "name": "The Dark Surface Rule",
+        "body": "Most screen area must remain neutral dark. Accent color should punctuate state and action, not flood the app.",
+        "section": "colors"
+      },
+      {
+        "name": "The Heavy-Top Rule",
+        "body": "Use weight, not large type, to create hierarchy inside the 430px shell.",
+        "section": "typography"
+      },
+      {
+        "name": "The Zero-Tracking Rule",
+        "body": "Letter spacing is normal across the app. Do not use compressed negative tracking or wide decorative tracking.",
+        "section": "typography"
+      },
+      {
+        "name": "The Tonal-First Rule",
+        "body": "Reach for surface color, borders, and inset highlights before adding drop shadows.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do keep screens dense, thumb-friendly, and optimized for repeated workout use.",
+      "Do use purple for selection, navigation, and contextual controls.",
+      "Do use acid green for progress, saved work, positive completion, and performance.",
+      "Do keep card depth subtle: border plus inset highlight is the default.",
+      "Do truncate long exercise and routine names instead of letting controls shift."
+    ],
+    "donts": [
+      "Don't create wide desktop layouts that break the 430px app-shell discipline.",
+      "Don't use pale wellness colors, beige editorial surfaces, or generic SaaS blue as the dominant identity.",
+      "Don't put decorative gradients or large shadows behind ordinary cards.",
+      "Don't use accent color as broad background decoration; reserve it for state and action.",
+      "Don't make exercise art unframed, full-bleed, or purely atmospheric."
+    ]
+  }
+}

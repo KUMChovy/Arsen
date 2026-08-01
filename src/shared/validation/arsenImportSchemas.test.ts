@@ -127,4 +127,34 @@ describe('Arsen import schemas', () => {
       }).success,
     ).toBe(true)
   })
+
+  it('preserves catalog indication notes and defaults old backups to empty notes', () => {
+    const catalogItem = {
+      aliases: [],
+      assetKind: null,
+      canonicalName: 'press-inclinado',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      defaultRecommendedRir: 2,
+      defaultRepsMax: 10,
+      defaultRepsMin: 8,
+      defaultRestSeconds: 120,
+      defaultTargetSets: 4,
+      equipment: 'Barra',
+      id: 'catalog-1',
+      mainMuscle: 'Pecho',
+      name: 'Press inclinado',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    }
+
+    const result = backupSchema.safeParse({
+      tables: {
+        exerciseCatalog: [{ ...catalogItem, technicalNotes: 'Pausa abajo.' }, catalogItem],
+      },
+    })
+
+    expect(result.success).toBe(true)
+    if (!result.success) return
+    expect(result.data.tables.exerciseCatalog[0]?.technicalNotes).toBe('Pausa abajo.')
+    expect(result.data.tables.exerciseCatalog[1]?.technicalNotes).toBe('')
+  })
 })

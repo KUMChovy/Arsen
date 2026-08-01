@@ -4,36 +4,61 @@ Arsen is a mobile-first, 100% offline workout tracker. React 19 + TypeScript + V
 
 ## every new task
 
+## Skills you must use
+
+This project requires you to actively use these installed skills — not only when you judge
+they "feel" relevant, but as a standing requirement on every task:
+
+- **`using-superpowers`** — the skill router. Governs whether/how the others below trigger.
+- **`superpowers:brainstorming`** / **`superpowers:systematic-debugging`** — process. Always
+  mandatory.
+- **`impeccable`** — UI/visual design quality. Mandatory whenever the task touches UI.
+- **`ponytail`** — implementation sizing/minimalism. Always mandatory.
+
+You must invoke them, not just keep them in mind. Failing to invoke a skill that applies is a
+failure to follow this file, not a judgment call you get to make on your own.
+
+## every new task
+
 For **every new task** you're asked to do (a feature, a fix, a refactor, anything), follow
 this workflow without needing to be asked again:
- 
-1. **The brainstorm skill (superpowers) and the ponytail skill are mandatory, always, no
-   exceptions.** They are not "just another skill" among the ones available — they are the
-   base workflow for every task. Never skip them, never assume "this task is too simple for
-   brainstorm" or "this task doesn't need ponytail." They run on every new task, without
-   asking and without needing to be reminded.
-2. **In addition, find and use other relevant skills.** Before planning or coding, check
-   which other available skills (from superpowers or other installed sources) apply to the
-   task and use them — don't skip this or assume none apply. If a skill exists for the type
-   of problem (debugging, testing, a specific pattern, a library), load it and follow it
-   instead of improvising from scratch. These do depend on whether they apply to the case;
-   brainstorm and ponytail depend on nothing — they always run.
-3. **Brainstorm (Superpowers).** With relevant skills already identified, use the superpowers
-   brainstorming flow to explore the problem and define a short plan (what will be built, how
-   it will be verified). Don't jump straight to coding.
-4. **Implement with Ponytail.** Once the plan is clear, invoke the ponytail skill and follow
-   its own decision ladder exactly as defined in it.
-5. **Priority on conflict:** Skills and superpowers govern *process* (which technique/pattern
-   to use, how to plan, how to verify). Ponytail governs *code size and scope* (short plans,
-   minimal tests, no unrequested abstractions or frameworks). "Doing TDD" means the minimal
-   test ponytail requires, not a full fixture suite — but if a specific skill calls for a
-   different testing technique, that technique is respected and applied at ponytail's minimal
-   scope.
-6. **Never simplify away** input validation at trust boundaries, error handling that prevents
+
+1. **Skill check first, per `using-superpowers`.** Before planning, asking clarifying
+   questions, or coding, check which skills apply — this repo's `AGENTS.md` still overrides
+   any skill on conflict (per `using-superpowers`' own instruction-priority rule: user
+   instructions win). Verify `using-superpowers` is actually installed (`npx skills list`);
+   without it, this whole enforcement chain has no engine behind it.
+2. **Process — mandatory, always, no exceptions:** `superpowers:brainstorming` for a new
+   feature, design change, or refactor; `superpowers:systematic-debugging` for a bug fix.
+   Never skip based on task size, and never default to brainstorming for a bug — debugging is
+   a different process. Refine the idea, explore alternatives, define a short plan (what will
+   be built, how it will be verified) before touching code.
+3. **UI/visual work — mandatory once touched.** If the task involves HTML/CSS, components,
+   layout, or anything rendered to a user, this stops being optional. If the project already documents its design system by hand
+   somewhere (a styleguide section, a tokens file, a design spec doc), fold that into the
+   resulting DESIGN.md afterward so there's one source of truth, not two. During planning:
+   `/impeccable shape` (new UI) or `/impeccable critique` (existing UI being changed). Before
+   closing: `/impeccable audit` + `/impeccable polish`. Purely backend/logic/script tasks with
+   no visual output skip this step entirely.
+4. **Other relevant skills.** Check for and use any other installed skill that fits the
+   problem — debugging, testing, a specific pattern, a project-specific skill. These depend
+   on applicability; steps 2 and 3 don't, once their trigger condition is met.
+5. **Implement with Ponytail.** Once the plan is clear, invoke the ponytail skill and follow
+   its own decision ladder exactly as defined in it — don't rewrite it here.
+6. **Priority on conflict:**
+   - **Superpowers governs process** — how to explore the problem, plan, and verify.
+   - **Impeccable governs visual/design quality**, only when UI is touched — a floor, not
+     something ponytail can trim.
+   - **Ponytail governs code size/scope** — never at the cost of validation, error handling
+     that prevents data loss, security, accessibility, or Impeccable's visual-quality bar
+     when it applies.
+7. **Never simplify away** input validation at trust boundaries, error handling that prevents
    data loss, security, accessibility, or anything explicitly requested.
+
 This is not optional and does not depend on being repeated in the message: apply this
 workflow by default on every task, starting from the first message of each new task. If no
-skill was used for a task, say so explicitly and justify why none applied.
+extra skill (step 4) was used, say so and justify why none applied. If the task touched UI
+and Impeccable wasn't run (or vice versa), say so and justify why.
 
 ## Commands
 

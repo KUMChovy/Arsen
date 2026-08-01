@@ -1,7 +1,7 @@
 import 'fake-indexeddb/auto'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { db } from './schema'
-import type { Routine, RoutineDay, RoutineExercise } from '../domains/routine/types'
+import type { ExerciseCatalogItem, Routine, RoutineDay, RoutineExercise } from '../domains/routine/types'
 import type { AppSettings } from '../domains/settings/types'
 import { addCatalogExerciseToDay, createCatalogExercise } from '../domains/routine/services'
 import { buildProgressExport, importFullBackup } from '../domains/settings/services'
@@ -142,6 +142,7 @@ describe('IndexedDB integration', () => {
       equipment: 'Barra',
       mainMuscle: 'Pectoral mayor',
       name: 'Press inclinado',
+      technicalNotes: 'Baja controlado y pausa al pecho.',
     })
     await addCatalogExerciseToDay(routineA.id, dayA.id, catalogItemId, {
       recommendedRir: 2,
@@ -154,6 +155,7 @@ describe('IndexedDB integration', () => {
       repsMax: 12,
       repsMin: 10,
       targetSets: 2,
+      technicalNotes: 'Version ligera del dia B.',
     })
 
     const catalogItem = await db.exerciseCatalog.get(catalogItemId)
@@ -166,10 +168,24 @@ describe('IndexedDB integration', () => {
       defaultTargetSets: 3,
       mainMuscle: 'Pecho',
       name: 'Press inclinado',
+      technicalNotes: 'Baja controlado y pausa al pecho.',
     })
     expect(recipes).toHaveLength(2)
-    expect(recipes[0]).toMatchObject({ dayId: dayA.id, recommendedRir: 2, repsMax: 10, repsMin: 8, targetSets: 3 })
-    expect(recipes[1]).toMatchObject({ dayId: dayB.id, recommendedRir: 3, repsMax: 12, repsMin: 10, targetSets: 2 })
+    expect(recipes[0]).toMatchObject({ dayId: dayA.id, recommendedRir: 2, repsMax: 10, repsMin: 8, targetSets: 3, technicalNotes: 'Baja controlado y pausa al pecho.' })
+    expect(recipes[1]).toMatchObject({ dayId: dayB.id, recommendedRir: 3, repsMax: 12, repsMin: 10, targetSets: 2, technicalNotes: 'Version ligera del dia B.' })
+  })
+
+  it('preserves indication notes when importing a backup', async () => {
+    await importFullBackup(
+      backupFile({
+        exerciseCatalog: [catalogExercise({ technicalNotes: 'Empuja el piso con todo el pie.' })],
+        routineExercises: [routineExercise({ technicalNotes: 'Rodillas siguen la punta del pie.' })],
+      }),
+      'replace',
+    )
+
+    await expect(db.exerciseCatalog.get('catalog-1')).resolves.toMatchObject({ technicalNotes: 'Empuja el piso con todo el pie.' })
+    await expect(db.routineExercises.get('exercise-1')).resolves.toMatchObject({ technicalNotes: 'Rodillas siguen la punta del pie.' })
   })
 
   it('exports chronological progress with routines, graph points and drop set volume', async () => {
@@ -311,6 +327,8 @@ async function resetDb() {
 }
 
 function backupFile(tables: {
+  exerciseCatalog?: ExerciseCatalogItem[]
+  routineExercises?: RoutineExercise[]
   routines?: Routine[]
   settings?: AppSettings[]
 }) {
@@ -364,7 +382,7 @@ function routineDay(id: string, routineId: string, name: string): RoutineDay {
 }
 
 function routineExercise(
-  overrides: Partial<Pick<RoutineExercise, 'dayId' | 'id' | 'routineId'>> = {},
+  overrides: Partial<Pick<RoutineExercise, 'dayId' | 'id' | 'routineId' | 'technicalNotes'>> = {},
 ): RoutineExercise {
   return {
     canonicalName: 'press-inclinado',
@@ -385,9 +403,29 @@ function routineExercise(
     routineId: overrides.routineId ?? 'routine-1',
     sourceExerciseId: null,
     targetSets: 2,
-    technicalNotes: '',
+    technicalNotes: overrides.technicalNotes ?? '',
     updatedAt: now,
     warmupProtocol: '',
     warmupSets: 0,
+  }
+}
+
+function catalogExercise(overrides: Partial<Pick<ExerciseCatalogItem, 'technicalNotes'>> = {}): ExerciseCatalogItem {
+  return {
+    aliases: [],
+    assetKind: null,
+    canonicalName: 'sentadilla',
+    createdAt: now,
+    defaultRecommendedRir: 2,
+    defaultRepsMax: 10,
+    defaultRepsMin: 8,
+    defaultRestSeconds: 120,
+    defaultTargetSets: 4,
+    equipment: 'Barra',
+    id: 'catalog-1',
+    mainMuscle: 'Piernas',
+    name: 'Sentadilla',
+    technicalNotes: overrides.technicalNotes ?? '',
+    updatedAt: now,
   }
 }

@@ -1,4 +1,4 @@
-import { Check, ChevronLeft, ChevronRight, Dumbbell, Pencil, Trash2, TrendingUp, X } from 'lucide-react'
+import { Check, ChevronLeft, ChevronRight, Dumbbell, Info, Pencil, Trash2, TrendingUp, X } from 'lucide-react'
 import { useEffect, useMemo, useState, useTransition } from 'react'
 import { ActionButton } from '../../../shared/components/ActionButton'
 import { Card } from '../../../shared/components/Card'
@@ -39,6 +39,7 @@ export function WorkoutPage() {
   const [currentExerciseId, setCurrentExerciseId] = useState<string | null>(null)
   const [exerciseFilter, setExerciseFilter] = useState<ExerciseFilter>('all')
   const [editingSet, setEditingSet] = useState<{ exercise: RoutineExercise; set: SetLog } | null>(null)
+  const [noteSheetExercise, setNoteSheetExercise] = useState<RoutineExercise | null>(null)
   const [routineSheetOpen, setRoutineSheetOpen] = useState(false)
   const [isPending, startTransition] = useTransition()
   const [message, setMessage] = useState<string | null>(null)
@@ -197,9 +198,21 @@ export function WorkoutPage() {
             </div>
             <div className="min-w-0">
               <h2 className="truncate text-[22px] font-black leading-tight">{currentExercise?.name ?? 'Sin ejercicio pendiente'}</h2>
-              <span className="mt-1 inline-flex rounded-full bg-arsen-purple/30 px-2 py-1 text-xs font-bold text-arsen-purple2">
-                {currentExercise?.mainMuscle ?? 'Descanso'}
-              </span>
+              <div className="mt-1 flex items-center gap-2">
+                <span className="inline-flex rounded-full bg-arsen-purple/30 px-2 py-1 text-xs font-bold text-arsen-purple2">
+                  {currentExercise?.mainMuscle ?? 'Descanso'}
+                </span>
+                {currentExercise?.technicalNotes.trim() ? (
+                  <button
+                    aria-label={`Ver indicaciones de ${currentExercise.name}`}
+                    className="grid size-8 shrink-0 place-items-center rounded-[9px] border border-white/10 text-arsen-purple2"
+                    onClick={() => setNoteSheetExercise(currentExercise)}
+                    type="button"
+                  >
+                    <Info aria-hidden="true" className="size-4" />
+                  </button>
+                ) : null}
+              </div>
             </div>
             <button
               aria-label="Saltar ejercicio actual"
@@ -379,10 +392,11 @@ export function WorkoutPage() {
         <div className="space-y-2">
           {visibleExercises.map((exercise) => {
             const state = dailyProgress.stateByExerciseId.get(exercise.id) ?? 'pending'
+            const note = exercise.technicalNotes.trim()
 
             return (
-              <button className="block w-full text-left" key={exercise.id} onClick={() => setSelectedExerciseId(exercise.id)} type="button">
-                <Card className="content-auto grid grid-cols-[52px_1fr_auto] items-center gap-3 p-2">
+              <Card className="content-auto grid grid-cols-[1fr_auto_auto] items-center gap-2 p-2" key={exercise.id}>
+                <button className="grid min-w-0 grid-cols-[52px_1fr] items-center gap-3 text-left" onClick={() => setSelectedExerciseId(exercise.id)} type="button">
                   <ExerciseArt alt={exercise.name} className="size-[52px]" kind={artForExercise(exercise)} />
                   <div className="min-w-0">
                     <h3 className="truncate text-sm font-extrabold">{exercise.name}</h3>
@@ -390,11 +404,21 @@ export function WorkoutPage() {
                       {exercise.mainMuscle} - {exercise.targetSets}x{formatRepRange(exercise.repsMin, exercise.repsMax)} - RIR {exercise.recommendedRir}
                     </span>
                   </div>
-                  <span className={['rounded-full px-2 py-1 text-[10px] font-bold', stateClassName(state)].join(' ')}>
-                    {stateLabel(state)}
-                  </span>
-                </Card>
-              </button>
+                </button>
+                <span className={['rounded-full px-2 py-1 text-[10px] font-bold', stateClassName(state)].join(' ')}>
+                  {stateLabel(state)}
+                </span>
+                {note ? (
+                  <button
+                    aria-label={`Ver indicaciones de ${exercise.name}`}
+                    className="grid size-9 place-items-center rounded-[10px] border border-white/10 text-arsen-purple2"
+                    onClick={() => setNoteSheetExercise(exercise)}
+                    type="button"
+                  >
+                    <Info aria-hidden="true" className="size-4" />
+                  </button>
+                ) : null}
+              </Card>
             )
           })}
           {visibleExercises.length === 0 ? <Card className="p-4 text-sm text-arsen-muted">Sin ejercicios para este filtro.</Card> : null}
@@ -464,6 +488,8 @@ export function WorkoutPage() {
           routines={routines}
         />
       ) : null}
+
+      {noteSheetExercise ? <ExerciseNotesSheet exercise={noteSheetExercise} onClose={() => setNoteSheetExercise(null)} /> : null}
     </div>
   )
 }
@@ -609,6 +635,30 @@ function RoutineDaySheet({
             options={days.map((day) => ({ label: day.name, value: day.id }))}
             value={activeDayId}
           />
+        </Card>
+      </section>
+    </div>
+  )
+}
+
+function ExerciseNotesSheet({ exercise, onClose }: { exercise: RoutineExercise; onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-50 mx-auto flex max-w-[430px] items-end bg-black/55">
+      <button aria-label="Cerrar indicaciones" className="absolute inset-0 cursor-default" onClick={onClose} type="button" />
+      <section className="relative max-h-[65vh] w-full overflow-y-auto rounded-t-[22px] border-t border-white/10 bg-arsen-bg2 p-4 shadow-[0_-16px_40px_rgb(0_0_0_/_0.35)]">
+        <div className="mx-auto mb-4 h-1.5 w-14 rounded-full bg-white/25" />
+        <div className="mb-3 flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h2 className="truncate text-xl font-black">Indicaciones</h2>
+            <p className="mt-1 truncate text-xs font-semibold text-arsen-muted">{exercise.name}</p>
+          </div>
+          <button className="grid size-9 shrink-0 place-items-center rounded-[10px] text-arsen-muted" onClick={onClose} type="button">
+            <X aria-hidden="true" className="size-5" />
+            <span className="sr-only">Cerrar</span>
+          </button>
+        </div>
+        <Card className="p-3 text-sm leading-relaxed text-arsen-ink">
+          <p className="whitespace-pre-wrap">{exercise.technicalNotes}</p>
         </Card>
       </section>
     </div>

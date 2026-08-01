@@ -26,6 +26,7 @@ export type CatalogExerciseInput = {
   equipment?: Equipment
   mainMuscle: string
   name: string
+  technicalNotes?: string
 }
 
 export async function createRoutine(name: string) {
@@ -321,7 +322,7 @@ export async function addCatalogExerciseToDay(routineId: string, dayId: string, 
     warmupSets: input.warmupSets ?? 0,
     warmupProtocol: input.warmupProtocol ?? '',
     progression: input.progression ?? '',
-    technicalNotes: input.technicalNotes ?? '',
+    technicalNotes: input.technicalNotes ?? catalogItem.technicalNotes ?? '',
     currentWeightKg: input.currentWeightKg ?? 0,
     order,
     createdAt: now,
@@ -434,6 +435,7 @@ export async function createCatalogExercise(input: CatalogExerciseInput) {
     id: createId('catalog'),
     mainMuscle,
     name,
+    technicalNotes: input.technicalNotes?.trim() ?? '',
     updatedAt: now,
   }
 
@@ -453,6 +455,7 @@ export async function updateCatalogExercise(catalogItemId: string, input: Catalo
     equipment: input.equipment ?? 'Otro',
     mainMuscle,
     name,
+    technicalNotes: input.technicalNotes?.trim() ?? '',
     updatedAt: new Date().toISOString(),
   })
 }

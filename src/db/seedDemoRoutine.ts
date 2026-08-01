@@ -70,6 +70,7 @@ export async function ensureDemoData() {
         mainMuscle: exercise.mainMuscle,
         equipment: exercise.equipment,
         aliases: [],
+        technicalNotes: exercise.technicalNotes,
         defaultTargetSets: exercise.targetSets,
         defaultRepsMin: exercise.repsMin,
         defaultRepsMax: exercise.repsMax,

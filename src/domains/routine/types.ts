@@ -54,6 +54,7 @@ export type ExerciseCatalogItem = {
   mainMuscle: string
   equipment: Equipment
   aliases: string[]
+  technicalNotes: string
   defaultTargetSets: number
   defaultRepsMin: number
   defaultRepsMax: number

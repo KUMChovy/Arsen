@@ -93,6 +93,7 @@ export const exerciseCatalogItemSchema = z
     id: z.string().min(1),
     mainMuscle: z.string(),
     name: z.string(),
+    technicalNotes: z.string().optional().default(''),
     updatedAt: z.string(),
   })
   .passthrough()

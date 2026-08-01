@@ -120,6 +120,17 @@ describe('WorkoutPage', () => {
     expect(screen.getAllByText('Press inclinado').length).toBeGreaterThan(0)
     expect(screen.getByText('+2.5 kg')).toBeInTheDocument()
   })
+
+  it('opens exercise indication notes from the info button', () => {
+    render(<WorkoutPage />)
+
+    expect(screen.queryByText(exercise.technicalNotes)).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getAllByRole('button', { name: /Ver indicaciones de Press inclinado/i })[0]!)
+
+    expect(screen.getByRole('heading', { name: 'Indicaciones' })).toBeInTheDocument()
+    expect(screen.getByText(exercise.technicalNotes)).toBeInTheDocument()
+  })
 })
 
 const exercise: RoutineExercise = {
@@ -141,7 +152,7 @@ const exercise: RoutineExercise = {
   routineId: 'routine-1',
   sourceExerciseId: null,
   targetSets: 4,
-  technicalNotes: '',
+  technicalNotes: 'Mantén escapulas juntas y baja con control.',
   updatedAt: '2026-07-20T00:00:00.000Z',
   warmupProtocol: '',
   warmupSets: 2,

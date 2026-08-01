@@ -745,6 +745,7 @@ function CatalogExerciseEditorSheet({
     equipment: item?.equipment ?? 'Barra',
     mainMuscle: normalizeMuscleGroup(item?.mainMuscle),
     name: item?.name ?? '',
+    technicalNotes: item?.technicalNotes ?? '',
   }))
 
   return (
@@ -756,6 +757,14 @@ function CatalogExerciseEditorSheet({
           <EquipmentSelect onChange={(value) => setForm((current) => ({ ...current, equipment: value }))} value={form.equipment} />
         </div>
         <TextField label="Aliases" onChange={(value) => setForm((current) => ({ ...current, aliases: value }))} value={form.aliases} />
+        <label className="block">
+          <span className="mb-1 block text-xs font-bold text-arsen-muted">Indicaciones</span>
+          <textarea
+            className="min-h-20 w-full rounded-[10px] border border-white/10 bg-arsen-surface px-3 py-2 text-sm font-semibold text-arsen-ink"
+            onChange={(event) => setForm((current) => ({ ...current, technicalNotes: event.target.value }))}
+            value={form.technicalNotes}
+          />
+        </label>
       </div>
       <ActionButton
         className="mt-4 w-full"
@@ -766,6 +775,7 @@ function CatalogExerciseEditorSheet({
             equipment: form.equipment,
             mainMuscle: form.mainMuscle,
             name: form.name,
+            technicalNotes: form.technicalNotes,
           })
         }
         tone="acid"
@@ -937,7 +947,7 @@ function exerciseToForm(exercise: RoutineExercise | null, catalogItem: ExerciseC
     repsMin: String(exercise?.repsMin ?? catalogItem?.defaultRepsMin ?? 8),
     restSeconds: String(exercise?.restSeconds ?? catalogItem?.defaultRestSeconds ?? 90),
     targetSets: String(exercise?.targetSets ?? catalogItem?.defaultTargetSets ?? 3),
-    technicalNotes: exercise?.technicalNotes ?? '',
+    technicalNotes: exercise?.technicalNotes ?? catalogItem?.technicalNotes ?? '',
     warmupProtocol: normalizeWarmupProtocol(exercise?.warmupProtocol ?? ''),
   }
 }

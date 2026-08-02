@@ -1,6 +1,6 @@
 import { useState, useTransition } from 'react'
 import { ArrowLeft, ChevronDown, Pencil, Trash2 } from 'lucide-react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { Card } from '../../../shared/components/Card'
 import { ExerciseArt } from '../../../shared/components/ExerciseArt'
 import { PageHeader } from '../../../shared/components/PageHeader'
@@ -12,9 +12,14 @@ import { EditSetSheet, formatSessionDate, type EditSetState } from './ProgressPa
 
 export function ProgressHistoryDatePage() {
   const { date = '' } = useParams()
-  const sessions = useSessionsForDate(date) ?? []
+  const [searchParams] = useSearchParams()
+  const filters = {
+    canonicalName: searchParams.get('exercise'),
+    dayId: searchParams.get('dayId'),
+  }
+  const sessions = useSessionsForDate(date, filters) ?? []
   const [expandedSessionId, setExpandedSessionId] = useState<string | null>(null)
-  const expandedDetail = useSessionDetail(expandedSessionId)
+  const expandedDetail = useSessionDetail(expandedSessionId, filters)
   const editOptions = useProgressEditOptions()
   const [editingSet, setEditingSet] = useState<EditSetState | null>(null)
   const [isPending, startTransition] = useTransition()
@@ -77,7 +82,7 @@ export function ProgressHistoryDatePage() {
             </div>
           ))
         ) : (
-          <Card className="p-4 text-sm text-arsen-muted">No hay sesiones registradas en esta fecha.</Card>
+          <Card className="p-4 text-sm text-arsen-muted">No hay sesiones para esta fecha con el filtro actual.</Card>
         )}
       </section>
 
@@ -127,7 +132,7 @@ function HistorySessionCard({
       <button className="min-w-0 text-left" disabled={disabled} onClick={onToggle} type="button">
         <div className="flex items-center gap-2">
           <strong className="truncate">{session.routineName}</strong>
-          <span className="rounded-full bg-white/10 px-2 py-1 text-[10px] font-bold text-arsen-muted">{session.setCount} series</span>
+          <span className="rounded-full bg-white/10 px-2 py-1 text-xs font-bold text-arsen-muted">{session.setCount} series</span>
         </div>
         <p className="mt-1 text-xs text-arsen-muted">{session.dayName}</p>
         <p className="mt-1 text-xs text-arsen-muted">

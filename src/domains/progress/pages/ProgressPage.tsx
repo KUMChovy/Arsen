@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useMemo, useState, useTransition } from 'react'
-import { ChartLine, Check, ChevronDown, Download, NotebookTabs, Pencil, SlidersHorizontal, Trash2, Trophy, X } from 'lucide-react'
+import { ChartLine, Check, Download, NotebookTabs, Pencil, Trash2, Trophy, X } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { Card } from '../../../shared/components/Card'
 import { ExerciseArt } from '../../../shared/components/ExerciseArt'
@@ -10,7 +10,6 @@ import { TrainingCalendarSheet } from '../components/TrainingCalendarSheet'
 import { useProgressDayOptions, useProgressExerciseOptions, useProgressOverview, useTrainingDates } from '../hooks'
 import type { ProgressBestMark, ProgressEditOptions, RecentSessionSummary, SessionDetail } from '../repository'
 
-type ProgressMode = 'general' | 'day' | 'exercise' | 'global'
 type ProgressPanelMode = 'score' | 'bests'
 export type EditSetState = {
   dayId: string
@@ -30,49 +29,56 @@ const ProgressChart = lazy(() =>
 
 export function ProgressPage() {
   const navigate = useNavigate()
-  const [mode, setMode] = useState<ProgressMode>('general')
   const [panelMode, setPanelMode] = useState<ProgressPanelMode>('score')
   const [historySheetOpen, setHistorySheetOpen] = useState(false)
   const [selectedDayId, setSelectedDayId] = useState<string | null>(null)
   const [selectedExercise, setSelectedExercise] = useState<string | null>(null)
   const dayOptions = useProgressDayOptions() ?? []
-  const exerciseOptions = useProgressExerciseOptions() ?? []
-  const trainingDates = useTrainingDates() ?? []
   const selectedDay = dayOptions.find((day) => day.dayId === selectedDayId) ?? dayOptions[0] ?? null
-  const overview = useProgressOverview({
-    canonicalName: mode === 'exercise' ? selectedExercise : null,
-    dayId: mode === 'day' ? selectedDay?.dayId : null,
-  })
+  const activeDayId = selectedDay?.dayId ?? null
+  const exerciseOptionsResult = useProgressExerciseOptions({ dayId: activeDayId })
+  const exerciseOptions = exerciseOptionsResult ?? []
+  const selectedExerciseOption = exerciseOptions.find((exercise) => exercise.canonicalName === selectedExercise) ?? null
+  const progressFilters = useMemo(
+    () => ({
+      canonicalName: selectedExercise,
+      dayId: activeDayId,
+    }),
+    [activeDayId, selectedExercise],
+  )
+  const overview = useProgressOverview(progressFilters)
+  const trainingDates = useTrainingDates(progressFilters) ?? []
   const chartData = overview?.chartData ?? []
   const latestScore = chartData.at(-1)?.score ?? 0
   const [, startTransition] = useTransition()
   const [message, setMessage] = useState<string | null>(null)
+  const progressLoaded = overview !== undefined
+  const hasData = (overview?.totalSets ?? 0) > 0
   const metrics = [
     { label: 'Volumen', value: `${Math.round((overview?.volumeKg ?? 0) / 100) / 10}t` },
     { label: 'Peso max.', value: String(overview?.maxWeightKg ?? 0) },
     { label: 'Sesiones', value: String(overview?.sessionCount ?? 0) },
     { label: 'Series', value: String(overview?.totalSets ?? 0) },
   ]
-  const currentTitle =
-    mode === 'day'
-      ? selectedDay
-        ? selectedDay.name
-        : 'Sin dias con registros'
-      : mode === 'exercise'
-        ? overview?.exerciseName ?? 'Ejercicio'
-        : mode === 'global'
-          ? 'Global entre rutinas'
-          : 'General'
-  const currentDescription =
-    mode === 'day'
-      ? selectedDay
-        ? selectedDay.routineName
-        : 'Registra una sesion para activar este filtro'
-      : mode === 'exercise'
-        ? 'Progreso por ejercicio'
-        : mode === 'global'
-          ? 'Progreso unificado por historial'
-          : 'Resumen de todo el entrenamiento'
+  const currentTitle = selectedExerciseOption?.name ?? (selectedExercise ? overview?.exerciseName : null) ?? selectedDay?.name ?? 'Sin registros'
+  const currentDescription = selectedDay
+    ? `${selectedDay.name} - ${selectedExerciseOption?.name ?? 'Todos los ejercicios'}`
+    : 'Registra una sesion para activar los filtros'
+
+  useEffect(() => {
+    if (dayOptions.length === 0) {
+      if (selectedDayId) setSelectedDayId(null)
+      return
+    }
+    if (!selectedDayId || !dayOptions.some((day) => day.dayId === selectedDayId)) {
+      setSelectedDayId(dayOptions[0]?.dayId ?? null)
+    }
+  }, [dayOptions, selectedDayId])
+
+  useEffect(() => {
+    if (!selectedExercise || exerciseOptionsResult === undefined) return
+    if (!exerciseOptions.some((exercise) => exercise.canonicalName === selectedExercise)) setSelectedExercise(null)
+  }, [exerciseOptions, exerciseOptionsResult, selectedExercise])
 
   function runHistoryAction(action: () => Promise<void>, success: string) {
     startTransition(() => {
@@ -95,36 +101,46 @@ export function ProgressPage() {
   return (
     <div className="space-y-4">
       <PageHeader eyebrow={currentDescription} title="Rendimiento">
-        <button className="grid size-10 place-items-center rounded-[10px] text-arsen-muted">
-          <SlidersHorizontal aria-hidden="true" className="size-5" />
-          <span className="sr-only">Filtrar progreso</span>
-        </button>
+        <span className="rounded-full border border-white/10 bg-arsen-surface px-3 py-2 text-xs font-extrabold text-arsen-muted">
+          Progreso
+        </span>
       </PageHeader>
 
-      <div className="grid grid-cols-4 border-b border-white/10">
-        {[
-          { label: 'General', value: 'general' },
-          { label: 'Dia', value: 'day' },
-          { label: 'Ejercicio', value: 'exercise' },
-          { label: 'Global', value: 'global' },
-        ].map((tab) => (
-          <button
-            className={[
-              'min-h-10 border-b-2 text-sm font-semibold',
-              mode === tab.value ? 'border-arsen-purple2 text-arsen-ink' : 'border-transparent text-arsen-muted',
-            ].join(' ')}
-            key={tab.value}
-            onClick={() => {
-              const nextMode = tab.value as ProgressMode
-              setMode(nextMode)
-              if (nextMode === 'day' && !selectedDayId) setSelectedDayId(dayOptions[0]?.dayId ?? null)
-            }}
-            type="button"
+      <Card className="space-y-3 p-3">
+        <label className="block">
+          <span className="sr-only">Dia</span>
+          <select
+            aria-label="Filtrar por dia"
+            className="min-h-11 w-full rounded-[10px] border border-white/10 bg-arsen-bg px-3 text-sm font-extrabold text-arsen-ink"
+            onChange={(event) => setSelectedDayId(event.target.value || null)}
+            value={activeDayId ?? ''}
           >
-            {tab.label}
-          </button>
-        ))}
-      </div>
+            {dayOptions.length === 0 ? <option value="">Sin dias con registros</option> : null}
+            {dayOptions.map((option) => (
+              <option key={option.dayId} value={option.dayId}>
+                {option.name} - {option.routineName} ({option.sessions})
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="block">
+          <span className="sr-only">Ejercicio</span>
+          <select
+            aria-label="Filtrar por ejercicio"
+            className="min-h-11 w-full rounded-[10px] border border-white/10 bg-arsen-bg px-3 text-sm font-extrabold text-arsen-ink"
+            onChange={(event) => setSelectedExercise(event.target.value || null)}
+            value={selectedExercise ?? ''}
+          >
+            <option value="">Todos los ejercicios</option>
+            {exerciseOptions.map((option) => (
+              <option key={option.canonicalName} value={option.canonicalName}>
+                {option.name} ({option.sessions})
+              </option>
+            ))}
+          </select>
+        </label>
+      </Card>
 
       <section className="grid grid-cols-4 gap-2">
         {[
@@ -135,7 +151,7 @@ export function ProgressPage() {
         ].map((item) => (
           <button
             className={[
-              'grid min-h-[54px] place-items-center gap-1 rounded-[10px] border text-[10px] font-semibold',
+              'grid min-h-[54px] place-items-center gap-1 rounded-[10px] border text-xs font-semibold',
               ('mode' in item && item.mode === panelMode) || (item.label === 'Historial' && historySheetOpen)
                 ? 'border-arsen-purple2 bg-arsen-purple/35 text-white'
                 : 'border-white/10 bg-arsen-surface text-arsen-muted',
@@ -163,97 +179,61 @@ export function ProgressPage() {
         <ExerciseArt alt={overview?.exerciseName ?? 'Ejercicio'} kind="press" />
         <div className="min-w-0">
           <strong className="block truncate">{currentTitle}</strong>
-          {mode === 'day' ? (
-            <label className="mt-2 block">
-              <span className="sr-only">Filtrar dia</span>
-              <select
-                className="min-h-10 w-full rounded-[10px] border border-white/10 bg-arsen-bg px-3 text-sm font-extrabold text-arsen-ink"
-                onChange={(event) => setSelectedDayId(event.target.value || null)}
-                value={selectedDay?.dayId ?? ''}
-              >
-                {dayOptions.length === 0 ? <option value="">Sin dias con registros</option> : null}
-                {dayOptions.map((option) => (
-                  <option key={option.dayId} value={option.dayId}>
-                    {option.name} - {option.routineName} ({option.sessions})
-                  </option>
-                ))}
-              </select>
-            </label>
-          ) : null}
-          {mode === 'exercise' ? (
-            <label className="mt-2 block">
-              <span className="sr-only">Filtrar ejercicio</span>
-              <select
-                className="min-h-10 w-full rounded-[10px] border border-white/10 bg-arsen-bg px-3 text-sm font-extrabold text-arsen-ink"
-                onChange={(event) => setSelectedExercise(event.target.value || null)}
-                value={selectedExercise ?? ''}
-              >
-                <option value="">Todos los ejercicios</option>
-                {exerciseOptions.map((option) => (
-                  <option key={option.canonicalName} value={option.canonicalName}>
-                    {option.name} ({option.sessions})
-                  </option>
-                ))}
-              </select>
-            </label>
-          ) : null}
-          {mode === 'general' || mode === 'global' ? (
-            <p className="mt-2 text-sm font-semibold text-arsen-muted">
-              {mode === 'global' ? 'Une sesiones aunque cambies de rutina.' : 'Todas las sesiones registradas.'}
-            </p>
-          ) : null}
+          <p className="mt-2 text-sm font-semibold text-arsen-muted">{selectedDay?.routineName ?? 'Sin rutina'}</p>
         </div>
       </Card>
 
-      <Card className="flex items-center justify-between gap-3 p-3">
-        <div className="flex items-center gap-3">
-          <ExerciseArt alt={overview?.exerciseName ?? 'Ejercicio'} kind="press" />
-          <div>
-            <strong>{currentTitle}</strong>
-            <p className="text-sm text-arsen-muted">{currentDescription}</p>
-          </div>
-        </div>
-        <ChevronDown aria-hidden="true" className="size-5 text-arsen-muted" />
-      </Card>
+      {!progressLoaded ? (
+        <Card className="p-4 text-sm font-semibold text-arsen-muted">Cargando progreso...</Card>
+      ) : hasData ? (
+        <>
+          {panelMode === 'score' ? <ScorePanel chartData={chartData} latestScore={latestScore} /> : null}
+          {panelMode === 'bests' ? <BestMarksPanel marks={overview?.bestMarks ?? []} /> : null}
 
-      {panelMode === 'score' ? <ScorePanel chartData={chartData} latestScore={latestScore} /> : null}
-      {panelMode === 'bests' ? <BestMarksPanel marks={overview?.bestMarks ?? []} /> : null}
+          <Card className="p-4">
+            <div className="text-xs font-extrabold text-arsen-acid">Ultima sesion</div>
+            <div className="mt-3 grid grid-cols-2 gap-4">
+              <div>
+                <span className="text-sm text-arsen-muted">Mejor serie</span>
+                <strong className="mt-1 block text-2xl text-arsen-acid">{overview?.bestSetLabel ?? 'Sin series'}</strong>
+                <span className="text-sm">{overview?.lastSessionDate ?? 'Sin fecha'}</span>
+              </div>
+              <div>
+                <span className="text-sm text-arsen-muted">Puntaje</span>
+                <strong className="mt-1 block text-2xl text-arsen-acid">{latestScore}</strong>
+                <span className="text-sm">/100</span>
+              </div>
+            </div>
+          </Card>
 
-      <Card className="p-4">
-        <div className="text-xs font-extrabold text-arsen-acid">Ultima sesion</div>
-        <div className="mt-3 grid grid-cols-2 gap-4">
-          <div>
-            <span className="text-sm text-arsen-muted">Mejor serie</span>
-            <strong className="mt-1 block text-2xl text-arsen-acid">{overview?.bestSetLabel ?? 'Sin series'}</strong>
-            <span className="text-sm">{overview?.lastSessionDate ?? 'Sin fecha'}</span>
-          </div>
-          <div>
-            <span className="text-sm text-arsen-muted">Puntaje</span>
-            <strong className="mt-1 block text-2xl text-arsen-acid">{latestScore}</strong>
-            <span className="text-sm">/100</span>
-          </div>
-        </div>
-      </Card>
-
-      <section>
-        <div className="mb-2 text-xs font-extrabold text-arsen-muted">Metricas clave</div>
-        <div className="grid grid-cols-4 gap-2">
-          {metrics.map((metric) => (
-            <Card className="p-2 text-center" key={metric.label}>
-              <strong className="block text-base text-arsen-ink">{metric.value}</strong>
-              <span className="mt-1 block text-[10px] text-arsen-muted">{metric.label}</span>
-            </Card>
-          ))}
-        </div>
-      </section>
+          <section>
+            <div className="mb-2 text-xs font-extrabold text-arsen-muted">Metricas clave</div>
+            <div className="grid grid-cols-4 gap-2">
+              {metrics.map((metric) => (
+                <Card className="p-2 text-center" key={metric.label}>
+                  <strong className="block text-base text-arsen-ink">{metric.value}</strong>
+                  <span className="mt-1 block text-xs text-arsen-muted">{metric.label}</span>
+                </Card>
+              ))}
+            </div>
+          </section>
+        </>
+      ) : (
+        <Card className="p-4 text-sm font-semibold text-arsen-muted">
+          No hay series para este dia y ejercicio. Cambia el filtro o registra una sesion.
+        </Card>
+      )}
 
       {historySheetOpen ? (
         <TrainingCalendarSheet
           dates={trainingDates}
           onClose={() => setHistorySheetOpen(false)}
           onSelect={(date) => {
+            const params = new URLSearchParams()
+            if (activeDayId) params.set('dayId', activeDayId)
+            if (selectedExercise) params.set('exercise', selectedExercise)
             setHistorySheetOpen(false)
-            navigate(`/progreso/historial/${date}`)
+            navigate(`/progreso/historial/${date}${params.size ? `?${params.toString()}` : ''}`)
           }}
         />
       ) : null}
@@ -268,7 +248,7 @@ function ScorePanel({ chartData, latestScore }: { chartData: Array<{ date: strin
         <div>
           <span className="text-sm text-arsen-muted">Puntaje de rendimiento</span>
           <div className="mt-1 flex items-end gap-1">
-            <strong className="text-[44px] leading-none text-arsen-acid">{latestScore}</strong>
+            <strong className="text-4xl leading-none text-arsen-acid">{latestScore}</strong>
             <span className="pb-1 text-arsen-muted">/100</span>
           </div>
         </div>
@@ -337,7 +317,7 @@ function HistoryMetric({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-[10px] border border-white/10 bg-arsen-bg/55 p-2">
       <strong className="block text-sm text-arsen-ink">{value}</strong>
-      <span className="mt-1 block text-[10px] text-arsen-muted">{label}</span>
+      <span className="mt-1 block text-xs text-arsen-muted">{label}</span>
     </div>
   )
 }
@@ -358,7 +338,7 @@ export function SessionRow({
       <div>
         <div className="flex items-center gap-2">
           <strong>{formatSessionDate(session.date)}</strong>
-          <span className="rounded-full bg-white/10 px-2 py-1 text-[10px] font-bold text-arsen-muted">
+          <span className="rounded-full bg-white/10 px-2 py-1 text-xs font-bold text-arsen-muted">
             {session.setCount} series
           </span>
         </div>

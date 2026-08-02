@@ -186,7 +186,8 @@ export async function getProgressOverview(filters: ProgressOverviewFilters = {})
       date: formatShortDate(date),
       score,
     }))
-  const recentSessions = sessions
+  const recentSessionSource = filters.canonicalName ? sessions.filter((session) => filteredSessionIds.has(session.id)) : sessions
+  const recentSessions = recentSessionSource
     .map((session): RecentSessionSummary => {
       const logs = logsBySessionId.get(session.id) ?? []
       const sessionSets = logs.flatMap((log) => setsByExerciseLogId.get(log.id) ?? [])
@@ -220,26 +221,29 @@ export async function getProgressOverview(filters: ProgressOverviewFilters = {})
   }
 }
 
-export async function getTrainingDates(): Promise<string[]> {
-  const sessions = await db.workoutSessions.orderBy('date').toArray()
+export async function getTrainingDates(filters: ProgressOverviewFilters = {}): Promise<string[]> {
+  const overview = await getProgressOverview(filters)
 
-  return [...new Set(sessions.map((session) => session.date))].sort((a, b) => b.localeCompare(a))
+  return [...new Set(overview.recentSessions.map((session) => session.date))].sort((a, b) => b.localeCompare(a))
 }
 
-export async function getSessionsForDate(date: string): Promise<RecentSessionSummary[]> {
+export async function getSessionsForDate(date: string, filters: ProgressOverviewFilters = {}): Promise<RecentSessionSummary[]> {
   if (!date) return []
 
-  const overview = await getProgressOverview()
+  const overview = await getProgressOverview(filters)
 
   return overview.recentSessions.filter((session) => session.date === date)
 }
 
-export async function getProgressExerciseOptions(): Promise<ProgressExerciseOption[]> {
-  const exerciseLogs = await db.exerciseLogs.toArray()
+export async function getProgressExerciseOptions(filters: Pick<ProgressOverviewFilters, 'dayId'> = {}): Promise<ProgressExerciseOption[]> {
+  const [sessions, exerciseLogs] = await Promise.all([db.workoutSessions.toArray(), db.exerciseLogs.toArray()])
+  const visibleSessionIds = filters.dayId ? new Set(sessions.filter((session) => session.dayId === filters.dayId).map((session) => session.id)) : null
   const options = new Map<string, ProgressExerciseOption>()
   const sessionsByExercise = new Map<string, Set<string>>()
 
   for (const log of exerciseLogs) {
+    if (visibleSessionIds && !visibleSessionIds.has(log.sessionId)) continue
+
     const key = log.snapshot.canonicalName
     const sessions = sessionsByExercise.get(key) ?? new Set<string>()
     sessions.add(log.sessionId)
@@ -261,33 +265,38 @@ export async function getProgressDayOptions(): Promise<ProgressDayOption[]> {
     db.workoutSessions.toArray(),
   ])
   const routineById = new Map(routines.map((routine) => [routine.id, routine.name]))
-  const sessionsByDay = new Map<string, number>()
+  const dayById = new Map(days.map((day) => [day.id, day]))
+  const optionsByDay = new Map<string, ProgressDayOption>()
 
   for (const session of sessions) {
-    sessionsByDay.set(session.dayId, (sessionsByDay.get(session.dayId) ?? 0) + 1)
+    const day = dayById.get(session.dayId)
+    const current = optionsByDay.get(session.dayId)
+    optionsByDay.set(session.dayId, {
+      dayId: session.dayId,
+      name: current?.name ?? day?.name ?? 'Dia eliminado',
+      routineName: current?.routineName ?? routineById.get(session.routineId) ?? 'Rutina eliminada',
+      sessions: (current?.sessions ?? 0) + 1,
+    })
   }
 
-  return days
-    .map((day) => ({
-      dayId: day.id,
-      name: day.name,
-      routineName: routineById.get(day.routineId) ?? 'Rutina eliminada',
-      sessions: sessionsByDay.get(day.id) ?? 0,
-    }))
-    .filter((option) => option.sessions > 0)
+  return [...optionsByDay.values()]
     .sort((a, b) => a.routineName.localeCompare(b.routineName) || a.name.localeCompare(b.name))
 }
 
-export async function getSessionDetail(sessionId: string): Promise<SessionDetail | null> {
+export async function getSessionDetail(sessionId: string, filters: ProgressOverviewFilters = {}): Promise<SessionDetail | null> {
   const session = await db.workoutSessions.get(sessionId)
   if (!session) return null
+  if (filters.dayId && session.dayId !== filters.dayId) return null
 
   const [routine, day, exerciseLogs] = await Promise.all([
     db.routines.get(session.routineId),
     db.routineDays.get(session.dayId),
     db.exerciseLogs.where('sessionId').equals(session.id).toArray(),
   ])
-  const exerciseLogIds = exerciseLogs.map((log) => log.id)
+  const visibleExerciseLogs = filters.canonicalName
+    ? exerciseLogs.filter((log) => log.snapshot.canonicalName === filters.canonicalName)
+    : exerciseLogs
+  const exerciseLogIds = visibleExerciseLogs.map((log) => log.id)
   const setLogs = exerciseLogIds.length > 0 ? await db.setLogs.where('exerciseLogId').anyOf(exerciseLogIds).toArray() : []
   const setLogIds = setLogs.map((set) => set.id)
   const dropSets = setLogIds.length > 0 ? await db.dropSetLogs.where('setLogId').anyOf(setLogIds).toArray() : []
@@ -303,7 +312,7 @@ export async function getSessionDetail(sessionId: string): Promise<SessionDetail
     date: session.date,
     dayId: session.dayId,
     dayName: day?.name ?? 'Dia eliminado',
-    exercises: exerciseLogs.map((log) => ({
+    exercises: visibleExerciseLogs.map((log) => ({
       exerciseLogId: log.id,
       exerciseName: log.snapshot.name,
       mainMuscle: log.snapshot.mainMuscle,

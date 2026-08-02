@@ -5,7 +5,14 @@ import type { ExerciseCatalogItem, Routine, RoutineDay, RoutineExercise } from '
 import type { AppSettings } from '../domains/settings/types'
 import { addCatalogExerciseToDay, createCatalogExercise } from '../domains/routine/services'
 import { buildProgressExport, importFullBackup } from '../domains/settings/services'
-import { getProgressEditOptions, getSessionDetail } from '../domains/progress/repository'
+import {
+  getProgressDayOptions,
+  getProgressEditOptions,
+  getProgressExerciseOptions,
+  getSessionDetail,
+  getSessionsForDate,
+  getTrainingDates,
+} from '../domains/progress/repository'
 import {
   deleteWorkoutSession,
   moveMainSetToExercise,
@@ -319,6 +326,79 @@ describe('IndexedDB integration', () => {
     expect(options.exercises).toEqual([{ dayId: 'day-a', id: 'exercise-a', name: 'Press inclinado', routineId: 'routine-a' }])
   })
 
+  it('filters progress history dates, sessions and details by day and exercise', async () => {
+    const routineA = routine('routine-a', 'Rutina A')
+    const routineB = routine('routine-b', 'Rutina B')
+    const dayA = routineDay('day-a', routineA.id, 'Dia A')
+    const dayB = routineDay('day-b', routineB.id, 'Dia B')
+    const exerciseA = routineExercise({
+      canonicalName: 'remo-barra',
+      dayId: dayA.id,
+      id: 'exercise-a',
+      name: 'Remo barra',
+      routineId: routineA.id,
+    })
+    const exerciseB = routineExercise({
+      canonicalName: 'press-banca',
+      dayId: dayB.id,
+      id: 'exercise-b',
+      name: 'Press banca',
+      routineId: routineB.id,
+    })
+    await db.routines.bulkPut([routineA, routineB])
+    await db.routineDays.bulkPut([dayA, dayB])
+    await db.routineExercises.bulkPut([exerciseA, exerciseB])
+
+    const sessionA = await registerMainSetForExercise({
+      date: '2026-08-02',
+      dayId: dayA.id,
+      displayUnit: 'kg',
+      exercise: exerciseA,
+      reps: 8,
+      rir: 2,
+      routineId: routineA.id,
+      weightKg: 70,
+    })
+    const sessionB = await registerMainSetForExercise({
+      date: '2026-08-02',
+      dayId: dayB.id,
+      displayUnit: 'kg',
+      exercise: exerciseB,
+      reps: 6,
+      rir: 1,
+      routineId: routineB.id,
+      weightKg: 90,
+    })
+
+    expect((await getSessionsForDate('2026-08-02', { dayId: dayA.id })).map((session) => session.id)).toEqual([
+      sessionA.sessionId,
+    ])
+    expect((await getSessionsForDate('2026-08-02', { canonicalName: 'press-banca' })).map((session) => session.id)).toEqual([
+      sessionB.sessionId,
+    ])
+    expect(await getTrainingDates({ canonicalName: 'press-banca' })).toEqual(['2026-08-02'])
+    expect(await getProgressExerciseOptions({ dayId: dayA.id })).toEqual([
+      {
+        canonicalName: 'remo-barra',
+        name: 'Remo barra',
+        sessions: 1,
+      },
+    ])
+
+    await db.routineDays.delete(dayB.id)
+
+    expect(await getProgressDayOptions()).toContainEqual({
+      dayId: dayB.id,
+      name: 'Dia eliminado',
+      routineName: 'Rutina B',
+      sessions: 1,
+    })
+
+    const detail = await getSessionDetail(sessionB.sessionId, { canonicalName: 'press-banca' })
+
+    expect(detail?.exercises.map((exercise) => exercise.exerciseName)).toEqual(['Press banca'])
+  })
+
   it('loads session detail and moves a set to another exercise recipe', async () => {
     const routineA = routine('routine-a', 'Rutina A')
     const dayA = routineDay('day-a', routineA.id, 'Dia A')
@@ -427,10 +507,12 @@ function routineDay(id: string, routineId: string, name: string): RoutineDay {
 }
 
 function routineExercise(
-  overrides: Partial<Pick<RoutineExercise, 'dayId' | 'id' | 'routineId' | 'sourceExerciseId' | 'technicalNotes'>> = {},
+  overrides: Partial<
+    Pick<RoutineExercise, 'canonicalName' | 'dayId' | 'id' | 'name' | 'routineId' | 'sourceExerciseId' | 'technicalNotes'>
+  > = {},
 ): RoutineExercise {
   return {
-    canonicalName: 'press-inclinado',
+    canonicalName: overrides.canonicalName ?? 'press-inclinado',
     createdAt: now,
     currentWeightKg: 50,
     dayId: overrides.dayId ?? 'day-1',
@@ -439,7 +521,7 @@ function routineExercise(
     barWeightKg: 20,
     id: overrides.id ?? 'exercise-1',
     mainMuscle: 'Pecho',
-    name: 'Press inclinado',
+    name: overrides.name ?? 'Press inclinado',
     order: 0,
     recommendedRir: 2,
     repsMax: 10,

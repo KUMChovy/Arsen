@@ -311,6 +311,78 @@ describe('IndexedDB integration', () => {
     })
   })
 
+  it('filters progress export by day and canonical exercise', async () => {
+    const routineA = routine('routine-a', 'Rutina A')
+    const routineB = routine('routine-b', 'Rutina B')
+    const routineC = routine('routine-c', 'Rutina C')
+    const dayA = routineDay('day-a', routineA.id, 'Dia A')
+    const dayB = routineDay('day-b', routineB.id, 'Dia B')
+    const dayC = routineDay('day-c', routineC.id, 'Dia C')
+    const exerciseA = routineExercise({
+      canonicalName: 'remo-barra',
+      dayId: dayA.id,
+      id: 'exercise-a',
+      name: 'Remo barra',
+      routineId: routineA.id,
+    })
+    const exerciseB = routineExercise({
+      canonicalName: 'press-banca',
+      dayId: dayB.id,
+      id: 'exercise-b',
+      name: 'Press banca',
+      routineId: routineB.id,
+    })
+    const exerciseC = routineExercise({
+      canonicalName: 'press-banca',
+      dayId: dayC.id,
+      id: 'exercise-c',
+      name: 'Press banca pausado',
+      routineId: routineC.id,
+    })
+    await db.routines.bulkPut([routineA, routineB, routineC])
+    await db.routineDays.bulkPut([dayA, dayB, dayC])
+    await db.routineExercises.bulkPut([exerciseA, exerciseB, exerciseC])
+
+    await registerMainSetForExercise({
+      date: '2026-08-01',
+      dayId: dayA.id,
+      displayUnit: 'kg',
+      exercise: exerciseA,
+      reps: 8,
+      rir: 2,
+      routineId: routineA.id,
+      weightKg: 70,
+    })
+    await registerMainSetForExercise({
+      date: '2026-08-02',
+      dayId: dayB.id,
+      displayUnit: 'kg',
+      exercise: exerciseB,
+      reps: 6,
+      rir: 1,
+      routineId: routineB.id,
+      weightKg: 90,
+    })
+    await registerMainSetForExercise({
+      date: '2026-08-03',
+      dayId: dayC.id,
+      displayUnit: 'kg',
+      exercise: exerciseC,
+      reps: 5,
+      rir: 1,
+      routineId: routineC.id,
+      weightKg: 95,
+    })
+
+    const dayExport = await buildProgressExport({ dayId: dayA.id })
+    const exerciseExport = await buildProgressExport({ canonicalName: 'press-banca' })
+
+    expect(dayExport.timeline.map((row) => row.dayId)).toEqual([dayA.id])
+    expect(dayExport.summary).toMatchObject({ exercises: 1, routines: 1, sessions: 1, sets: 1 })
+    expect(exerciseExport.timeline.map((row) => row.routineId)).toEqual([routineB.id, routineC.id])
+    expect(exerciseExport.summary).toMatchObject({ exercises: 1, routines: 2, sessions: 2, sets: 2 })
+  })
+
   it('loads progress edit options without requiring order indexes', async () => {
     const routineA = routine('routine-a', 'Rutina A')
     const dayA = routineDay('day-a', routineA.id, 'Dia A')
@@ -329,8 +401,10 @@ describe('IndexedDB integration', () => {
   it('filters progress history dates, sessions and details by day and exercise', async () => {
     const routineA = routine('routine-a', 'Rutina A')
     const routineB = routine('routine-b', 'Rutina B')
+    const routineC = routine('routine-c', 'Rutina C')
     const dayA = routineDay('day-a', routineA.id, 'Dia A')
     const dayB = routineDay('day-b', routineB.id, 'Dia B')
+    const dayC = routineDay('day-c', routineC.id, 'Dia C')
     const exerciseA = routineExercise({
       canonicalName: 'remo-barra',
       dayId: dayA.id,
@@ -345,9 +419,16 @@ describe('IndexedDB integration', () => {
       name: 'Press banca',
       routineId: routineB.id,
     })
-    await db.routines.bulkPut([routineA, routineB])
-    await db.routineDays.bulkPut([dayA, dayB])
-    await db.routineExercises.bulkPut([exerciseA, exerciseB])
+    const exerciseC = routineExercise({
+      canonicalName: 'press-banca',
+      dayId: dayC.id,
+      id: 'exercise-c',
+      name: 'Press banca pausado',
+      routineId: routineC.id,
+    })
+    await db.routines.bulkPut([routineA, routineB, routineC])
+    await db.routineDays.bulkPut([dayA, dayB, dayC])
+    await db.routineExercises.bulkPut([exerciseA, exerciseB, exerciseC])
 
     const sessionA = await registerMainSetForExercise({
       date: '2026-08-02',
@@ -369,6 +450,16 @@ describe('IndexedDB integration', () => {
       routineId: routineB.id,
       weightKg: 90,
     })
+    const sessionC = await registerMainSetForExercise({
+      date: '2026-08-03',
+      dayId: dayC.id,
+      displayUnit: 'kg',
+      exercise: exerciseC,
+      reps: 5,
+      rir: 1,
+      routineId: routineC.id,
+      weightKg: 95,
+    })
 
     expect((await getSessionsForDate('2026-08-02', { dayId: dayA.id })).map((session) => session.id)).toEqual([
       sessionA.sessionId,
@@ -376,7 +467,10 @@ describe('IndexedDB integration', () => {
     expect((await getSessionsForDate('2026-08-02', { canonicalName: 'press-banca' })).map((session) => session.id)).toEqual([
       sessionB.sessionId,
     ])
-    expect(await getTrainingDates({ canonicalName: 'press-banca' })).toEqual(['2026-08-02'])
+    expect((await getSessionsForDate('2026-08-03', { canonicalName: 'press-banca' })).map((session) => session.id)).toEqual([
+      sessionC.sessionId,
+    ])
+    expect(await getTrainingDates({ canonicalName: 'press-banca' })).toEqual(['2026-08-03', '2026-08-02'])
     expect(await getProgressExerciseOptions({ dayId: dayA.id })).toEqual([
       {
         canonicalName: 'remo-barra',

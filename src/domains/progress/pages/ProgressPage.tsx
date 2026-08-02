@@ -89,12 +89,14 @@ export function ProgressPage() {
   }
 
   function exportProgress() {
+    const exportScope = activeDayId || selectedExercise ? 'filtro actual' : 'todo el progreso'
+
     runHistoryAction(
       async () => {
-        await exportProgressJson()
-        await exportProgressCsv()
+        await exportProgressJson(progressFilters)
+        await exportProgressCsv(progressFilters)
       },
-      'Progreso exportado',
+      `Exportado: ${exportScope}`,
     )
   }
 

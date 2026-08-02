@@ -107,19 +107,24 @@ async function putBackupTables(tables: BackupTables, mode: BackupImportMode) {
   ])
 }
 
+export type ProgressExportFilters = {
+  canonicalName?: string | null
+  dayId?: string | null
+}
+
 /**
  * Exports progress JSON: summary, graph points, and chronological main-set timeline.
  */
-export async function exportProgressJson() {
-  const data = await buildProgressExport()
-  downloadJson(`arsen-progreso-${localDateKey(new Date())}.json`, data)
+export async function exportProgressJson(filters: ProgressExportFilters = {}) {
+  const data = await buildProgressExport(filters)
+  downloadJson(progressExportFilename(filters, 'json'), data)
 }
 
 /**
  * Exports progress CSV from the same timeline as progress JSON, with one row per main set.
  */
-export async function exportProgressCsv() {
-  const data = await buildProgressExport()
+export async function exportProgressCsv(filters: ProgressExportFilters = {}) {
+  const data = await buildProgressExport(filters)
   const rows = [
     [
       'date',
@@ -162,7 +167,7 @@ export async function exportProgressCsv() {
   ]
   const csv = rows.map((row) => row.map(escapeCsvCell).join(',')).join('\n')
 
-  downloadText(`arsen-progreso-${localDateKey(new Date())}.csv`, csv, 'text/csv')
+  downloadText(progressExportFilename(filters, 'csv'), csv, 'text/csv')
 }
 
 export async function getStorageOverview() {
@@ -225,7 +230,7 @@ export async function deleteWorkoutLogsByDateRange(startDate: string, endDate: s
   await Promise.all(sessions.map((session) => deleteWorkoutSession(session.id)))
 }
 
-export async function buildProgressExport() {
+export async function buildProgressExport(filters: ProgressExportFilters = {}) {
   const [routines, days, exercises, sessions, exerciseLogs, setLogs, dropSetLogs] = await Promise.all([
     db.routines.toArray(),
     db.routineDays.toArray(),
@@ -238,7 +243,8 @@ export async function buildProgressExport() {
   const routineById = new Map(routines.map((routine) => [routine.id, routine]))
   const dayById = new Map(days.map((day) => [day.id, day]))
   const exerciseById = new Map(exercises.map((exercise) => [exercise.id, exercise]))
-  const sessionById = new Map(sessions.map((session) => [session.id, session]))
+  const visibleSessions = filters.dayId ? sessions.filter((session) => session.dayId === filters.dayId) : sessions
+  const sessionById = new Map(visibleSessions.map((session) => [session.id, session]))
   const exerciseLogById = new Map(exerciseLogs.map((log) => [log.id, log]))
   const dropSetsBySetId = new Map<string, typeof dropSetLogs>()
 
@@ -257,6 +263,7 @@ export async function buildProgressExport() {
       const log = exerciseLogById.get(set.exerciseLogId)
       const session = log ? sessionById.get(log.sessionId) : undefined
       if (!log || !session) return []
+      if (filters.canonicalName && log.snapshot.canonicalName !== filters.canonicalName) return []
 
       const routine = routineById.get(session.routineId)
       const day = dayById.get(session.dayId)
@@ -297,15 +304,23 @@ export async function buildProgressExport() {
         a.setOrder - b.setOrder,
     )
   const graphPoints = buildGraphPoints(timeline)
+  const timelineSessionIds = new Set(timeline.map((row) => row.sessionId))
+  const timelineRoutineIds = new Set(timeline.map((row) => row.routineId))
+  const isFiltered = Boolean(filters.dayId || filters.canonicalName)
 
   return {
     exportedAt: new Date().toISOString(),
+    filters: {
+      canonicalName: filters.canonicalName ?? null,
+      dayId: filters.dayId ?? null,
+      scope: isFiltered ? 'filtered' : 'all',
+    },
     schemaVersion: CURRENT_SCHEMA_VERSION,
     graphPoints,
     summary: {
       exercises: new Set(timeline.map((row) => row.canonicalName)).size,
-      routines: routines.length,
-      sessions: sessions.length,
+      routines: isFiltered ? timelineRoutineIds.size : routines.length,
+      sessions: filters.canonicalName ? timelineSessionIds.size : visibleSessions.length,
       sets: timeline.length,
       volume: timeline.reduce((total, row) => total + row.volume, 0),
     },
@@ -356,6 +371,12 @@ function escapeCsvCell(value: string) {
   if (!/[",\n]/.test(value)) return value
 
   return `"${value.replaceAll('"', '""')}"`
+}
+
+function progressExportFilename(filters: ProgressExportFilters, extension: 'csv' | 'json') {
+  const suffix = filters.dayId || filters.canonicalName ? '-filtrado' : ''
+
+  return `arsen-progreso${suffix}-${localDateKey(new Date())}.${extension}`
 }
 
 type BackupTables = {

@@ -81,6 +81,15 @@ describe('progression calculations', () => {
       ]),
     ).toBeNull()
   })
+
+  it('uses the renamed pulley equipment for small weight jumps', () => {
+    const recommendation = getWeightIncreaseRecommendation({ ...exercise, equipment: 'Maquina de polea' }, [
+      session('2026-07-18', [set(0, 60, 10, 2), set(1, 60, 10, 2), set(2, 60, 10, 2)]),
+      session('2026-07-20', [set(0, 62.5, 10, 2), set(1, 62.5, 11, 2), set(2, 62.5, 10, 2)]),
+    ])
+
+    expect(recommendation?.suggestedIncreaseLabel).toBe('+1 a +2 kg')
+  })
 })
 
 const exercise: RoutineExercise = {
@@ -89,6 +98,8 @@ const exercise: RoutineExercise = {
   currentWeightKg: 60,
   dayId: 'day-1',
   equipment: 'Barra',
+  loadMode: 'split',
+  barWeightKg: 20,
   id: 'exercise-1',
   mainMuscle: 'Pecho',
   name: 'Press inclinado',

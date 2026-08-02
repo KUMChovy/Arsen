@@ -1,5 +1,6 @@
 import type { Equipment, RoutineExercise } from '../../domains/routine/types'
 import type { SetLog } from '../../domains/workout/types'
+import { normalizeEquipment } from './equipmentLoad'
 
 export type ProgressionSession = {
   date: string
@@ -79,9 +80,10 @@ function bestProgressionSetLabel(sets: ProgressionSession['sets']) {
 }
 
 function suggestedIncreaseLabel(equipment: Equipment) {
-  if (equipment === 'Barra' || equipment === 'Maquina') return '+2.5 kg'
-  if (equipment === 'Mancuerna' || equipment === 'Polea') return '+1 a +2 kg'
-  if (equipment === 'Peso corporal') return 'mas reps, control o carga externa'
+  const normalized = normalizeEquipment(equipment)
+  if (normalized === 'Barra' || normalized === 'Maquina') return '+2.5 kg'
+  if (normalized === 'Mancuerna' || normalized === 'Maquina de polea') return '+1 a +2 kg'
+  if (normalized === 'Peso corporal') return 'mas reps, control o carga externa'
 
   return 'subida pequena controlada'
 }

@@ -1,4 +1,5 @@
 import { CURRENT_SCHEMA_VERSION, db } from '../../db/schema'
+import { loadSettingsForEquipment } from '../../shared/calculations/equipmentLoad'
 import { normalizeWarmupProtocol } from '../../shared/calculations/warmups'
 import { downloadJson } from '../../shared/utils/download'
 import { createId } from '../../shared/utils/id'
@@ -20,7 +21,7 @@ export async function exportRoutineJson(routineId: string) {
 
   const data: RoutineExport = {
     days: await db.routineDays.where('routineId').equals(routineId).sortBy('order'),
-    exercises: (await db.routineExercises.where('routineId').equals(routineId).sortBy('order')).map(stripLegacyProgression),
+    exercises: (await db.routineExercises.where('routineId').equals(routineId).sortBy('order')).map(cleanExerciseForTransfer),
     exportedAt: new Date().toISOString(),
     routine,
     schemaVersion: CURRENT_SCHEMA_VERSION,
@@ -48,7 +49,7 @@ export async function importRoutineJson(file: File) {
     }
   })
   const exercises = parsed.exercises.map((exercise): RoutineExercise =>
-    stripLegacyProgression({
+    cleanExerciseForTransfer({
       ...exercise,
       id: createId('exercise'),
       dayId: dayIdBySource.get(exercise.dayId) ?? exercise.dayId,
@@ -83,10 +84,14 @@ export async function importRoutineJson(file: File) {
   return routineId
 }
 
-function stripLegacyProgression(exercise: RoutineExercise): RoutineExercise {
+function cleanExerciseForTransfer(exercise: RoutineExercise): RoutineExercise {
   const copy = { ...exercise } as RoutineExercise & { progression?: unknown }
   delete copy.progression
   copy.warmupProtocol = normalizeWarmupProtocol(copy.warmupProtocol)
+  const loadSettings = loadSettingsForEquipment(copy)
+  copy.equipment = loadSettings.equipment
+  copy.loadMode = loadSettings.loadMode
+  copy.barWeightKg = loadSettings.barWeightKg
 
   return copy
 }

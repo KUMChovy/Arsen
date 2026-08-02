@@ -1,5 +1,6 @@
-import type { Equipment, ExerciseCatalogItem, Routine, RoutineDay, RoutineExercise } from './types'
+import type { Equipment, ExerciseCatalogItem, LoadMode, Routine, RoutineDay, RoutineExercise } from './types'
 import { db } from '../../db/schema'
+import { loadSettingsForEquipment } from '../../shared/calculations/equipmentLoad'
 import { normalizeWarmupProtocol } from '../../shared/calculations/warmups'
 import { createId } from '../../shared/utils/id'
 import { canonicalName } from '../../shared/utils/normalize'
@@ -9,6 +10,8 @@ export type ExerciseInput = {
   name: string
   mainMuscle: string
   equipment?: Equipment
+  loadMode?: LoadMode
+  barWeightKg?: number
   targetSets?: number
   repsMin?: number
   repsMax?: number
@@ -23,7 +26,9 @@ export type ExerciseInput = {
 
 export type CatalogExerciseInput = {
   aliases?: string[]
+  barWeightKg?: number
   equipment?: Equipment
+  loadMode?: LoadMode
   mainMuscle: string
   name: string
   technicalNotes?: string
@@ -267,6 +272,11 @@ export async function createExercise(routineId: string, dayId: string, input: Ex
   const name = input.name.trim() || 'Ejercicio nuevo'
   const reps = normalizeReps(input.repsMin, input.repsMax)
   const recommendedRir = normalizeRir(input.recommendedRir)
+  const loadSettings = loadSettingsForEquipment({
+    barWeightKg: input.barWeightKg,
+    equipment: input.equipment ?? 'Otro',
+    loadMode: input.loadMode,
+  })
   const exercise: RoutineExercise = {
     id: createId('exercise'),
     routineId,
@@ -275,7 +285,9 @@ export async function createExercise(routineId: string, dayId: string, input: Ex
     name,
     canonicalName: canonicalName(name),
     mainMuscle: normalizeMuscleGroup(input.mainMuscle),
-    equipment: input.equipment ?? 'Otro',
+    equipment: loadSettings.equipment,
+    loadMode: loadSettings.loadMode,
+    barWeightKg: loadSettings.barWeightKg,
     targetSets: input.targetSets ?? 3,
     repsMin: reps.min,
     repsMax: reps.max,
@@ -304,6 +316,11 @@ export async function addCatalogExerciseToDay(routineId: string, dayId: string, 
   const order = await db.routineExercises.where('dayId').equals(dayId).count()
   const reps = normalizeReps(input.repsMin ?? catalogItem.defaultRepsMin, input.repsMax ?? catalogItem.defaultRepsMax)
   const recommendedRir = normalizeRir(input.recommendedRir ?? catalogItem.defaultRecommendedRir)
+  const loadSettings = loadSettingsForEquipment({
+    barWeightKg: input.barWeightKg ?? catalogItem.barWeightKg,
+    equipment: input.equipment ?? catalogItem.equipment,
+    loadMode: input.loadMode ?? catalogItem.loadMode,
+  })
   const exercise: RoutineExercise = {
     id: createId('exercise'),
     routineId,
@@ -312,7 +329,9 @@ export async function addCatalogExerciseToDay(routineId: string, dayId: string, 
     name: catalogItem.name,
     canonicalName: catalogItem.canonicalName,
     mainMuscle: normalizeMuscleGroup(catalogItem.mainMuscle),
-    equipment: input.equipment ?? catalogItem.equipment,
+    equipment: loadSettings.equipment,
+    loadMode: loadSettings.loadMode,
+    barWeightKg: loadSettings.barWeightKg,
     targetSets: input.targetSets ?? catalogItem.defaultTargetSets,
     repsMin: reps.min,
     repsMax: reps.max,
@@ -338,12 +357,19 @@ export async function updateExercise(exerciseId: string, input: ExerciseInput) {
   const name = input.name.trim() || 'Ejercicio sin nombre'
   const reps = normalizeReps(input.repsMin, input.repsMax)
   const recommendedRir = normalizeRir(input.recommendedRir)
+  const loadSettings = loadSettingsForEquipment({
+    barWeightKg: input.barWeightKg ?? existing?.barWeightKg,
+    equipment: input.equipment ?? existing?.equipment ?? 'Otro',
+    loadMode: input.loadMode ?? existing?.loadMode,
+  })
 
   await db.routineExercises.update(exerciseId, {
     name,
     canonicalName: canonicalName(name),
     mainMuscle: normalizeMuscleGroup(input.mainMuscle),
-    equipment: input.equipment ?? 'Otro',
+    equipment: loadSettings.equipment,
+    loadMode: loadSettings.loadMode,
+    barWeightKg: loadSettings.barWeightKg,
     targetSets: input.targetSets ?? 3,
     repsMin: reps.min,
     repsMax: reps.max,
@@ -419,6 +445,11 @@ export async function createCatalogExercise(input: CatalogExerciseInput) {
   const now = new Date().toISOString()
   const name = input.name.trim() || 'Ejercicio nuevo'
   const mainMuscle = normalizeMuscleGroup(input.mainMuscle)
+  const loadSettings = loadSettingsForEquipment({
+    barWeightKg: input.barWeightKg,
+    equipment: input.equipment ?? 'Otro',
+    loadMode: input.loadMode,
+  })
   const catalogItem: ExerciseCatalogItem = {
     aliases: input.aliases ?? [],
     assetKind: mainMuscle,
@@ -429,7 +460,9 @@ export async function createCatalogExercise(input: CatalogExerciseInput) {
     defaultRepsMin: 8,
     defaultRestSeconds: 90,
     defaultTargetSets: 3,
-    equipment: input.equipment ?? 'Otro',
+    equipment: loadSettings.equipment,
+    loadMode: loadSettings.loadMode,
+    barWeightKg: loadSettings.barWeightKg,
     id: createId('catalog'),
     mainMuscle,
     name,
@@ -444,14 +477,22 @@ export async function createCatalogExercise(input: CatalogExerciseInput) {
 }
 
 export async function updateCatalogExercise(catalogItemId: string, input: CatalogExerciseInput) {
+  const existing = await db.exerciseCatalog.get(catalogItemId)
   const name = input.name.trim() || 'Ejercicio sin nombre'
   const mainMuscle = normalizeMuscleGroup(input.mainMuscle)
+  const loadSettings = loadSettingsForEquipment({
+    barWeightKg: input.barWeightKg ?? existing?.barWeightKg,
+    equipment: input.equipment ?? existing?.equipment ?? 'Otro',
+    loadMode: input.loadMode ?? existing?.loadMode,
+  })
 
   await db.exerciseCatalog.update(catalogItemId, {
     aliases: input.aliases ?? [],
     assetKind: mainMuscle,
     canonicalName: canonicalName(name),
-    equipment: input.equipment ?? 'Otro',
+    equipment: loadSettings.equipment,
+    loadMode: loadSettings.loadMode,
+    barWeightKg: loadSettings.barWeightKg,
     mainMuscle,
     name,
     technicalNotes: input.technicalNotes?.trim() ?? '',

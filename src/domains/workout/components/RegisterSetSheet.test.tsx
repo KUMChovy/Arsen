@@ -57,6 +57,16 @@ describe('RegisterSetSheet', () => {
 
     expect(onClose).toHaveBeenCalled()
   })
+
+  it('recalculates the equipment load note from the entered weight', () => {
+    render(<Sheet onClose={vi.fn()} />)
+
+    expect(screen.getByText('Discos por lado: 30 kg · Total con barra: 80 kg')).toBeInTheDocument()
+
+    fireEvent.change(screen.getByLabelText('KG'), { target: { value: '40' } })
+
+    expect(screen.getByText('Discos por lado: 20 kg · Total con barra: 60 kg')).toBeInTheDocument()
+  })
 })
 
 function Sheet({ onClose }: { onClose: () => void }) {
@@ -78,6 +88,8 @@ const exercise: RoutineExercise = {
   currentWeightKg: 60,
   dayId: 'day-1',
   equipment: 'Barra',
+  loadMode: 'split',
+  barWeightKg: 20,
   id: 'exercise-1',
   mainMuscle: 'Pecho',
   name: 'Press inclinado',

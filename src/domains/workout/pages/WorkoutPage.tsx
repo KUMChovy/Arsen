@@ -5,6 +5,7 @@ import { Card } from '../../../shared/components/Card'
 import { ExerciseArt, type ExerciseArtKind } from '../../../shared/components/ExerciseArt'
 import { PageHeader } from '../../../shared/components/PageHeader'
 import type { WeightIncreaseRecommendation } from '../../../shared/calculations/progression'
+import { buildEquipmentLoadNote } from '../../../shared/calculations/equipmentLoad'
 import { totalVolume } from '../../../shared/calculations/workout'
 import { buildWarmupSets } from '../../../shared/calculations/warmups'
 import { localDateKey } from '../../../shared/utils/date'
@@ -57,6 +58,15 @@ export function WorkoutPage() {
   const totalCount = dayExercises.length
   const preferredUnit = workoutDay?.settings.preferredUnit ?? 'kg'
   const warmups = buildWarmupsForExercise(currentExercise, preferredUnit)
+  const currentLoadNote = currentExercise
+    ? buildEquipmentLoadNote({
+        barWeightKg: currentExercise.barWeightKg,
+        equipment: currentExercise.equipment,
+        loadMode: currentExercise.loadMode,
+        unit: preferredUnit,
+        weightKg: currentExercise.currentWeightKg,
+      })
+    : null
   const mainSets = dailyProgress.setLogs.filter((set) => set.kind === 'main')
   const dailyVolume = Math.round(totalVolume(mainSets, dailyProgress.dropSets))
   const visibleExercises = useMemo(
@@ -241,6 +251,12 @@ export function WorkoutPage() {
               </div>
             ))}
           </div>
+
+          {currentLoadNote ? (
+            <div className="mb-3 border-t border-white/10 pt-3 text-center text-xs font-extrabold text-arsen-ink">
+              {currentLoadNote}
+            </div>
+          ) : null}
 
           <ActionButton className="w-full" disabled={!currentExercise} onClick={() => setSelectedExerciseId(currentExercise?.id ?? null)}>
             Registrar

@@ -8,6 +8,7 @@ import type {
 } from '../routine/types'
 import type { AppSettings } from './types'
 import type { DropSetLog, ExerciseLog, SetLog, SkipLog, WeightUnit, WorkoutSession } from '../workout/types'
+import { loadSettingsForEquipment } from '../../shared/calculations/equipmentLoad'
 import { performanceScore, volumeForSet } from '../../shared/calculations/workout'
 import { normalizeWarmupProtocol } from '../../shared/calculations/warmups'
 import { downloadJson, downloadText } from '../../shared/utils/download'
@@ -372,6 +373,10 @@ function stripLegacyProgression(exercise: RoutineExercise): RoutineExercise {
   const copy = { ...exercise } as RoutineExercise & { progression?: unknown }
   delete copy.progression
   copy.warmupProtocol = normalizeWarmupProtocol(copy.warmupProtocol)
+  const loadSettings = loadSettingsForEquipment(copy)
+  copy.equipment = loadSettings.equipment
+  copy.loadMode = loadSettings.loadMode
+  copy.barWeightKg = loadSettings.barWeightKg
 
   return copy
 }
@@ -380,6 +385,10 @@ function stripLegacyCatalogProgression(item: ExerciseCatalogItem): ExerciseCatal
   const copy = { ...item } as ExerciseCatalogItem & { progressionStrategy?: unknown }
   delete copy.progressionStrategy
   copy.warmupProtocol = normalizeWarmupProtocol(copy.warmupProtocol)
+  const loadSettings = loadSettingsForEquipment(copy)
+  copy.equipment = loadSettings.equipment
+  copy.loadMode = loadSettings.loadMode
+  copy.barWeightKg = loadSettings.barWeightKg
 
   return copy
 }

@@ -1,6 +1,7 @@
 export type Weekday = 0 | 1 | 2 | 3 | 4 | 5 | 6
 
-export type Equipment = 'Barra' | 'Mancuerna' | 'Maquina' | 'Polea' | 'Peso corporal' | 'Otro'
+export type Equipment = 'Barra' | 'Mancuerna' | 'Maquina' | 'Maquina de polea' | 'Peso corporal' | 'Otro'
+export type LoadMode = 'single' | 'split'
 export type MuscleGroup = 'Pecho' | 'Espalda' | 'Hombros' | 'Brazos' | 'Abdomen' | 'Piernas'
 
 export type Routine = {
@@ -31,6 +32,8 @@ export type RoutineExercise = {
   canonicalName: string
   mainMuscle: string
   equipment: Equipment
+  loadMode: LoadMode
+  barWeightKg: number
   targetSets: number
   repsMin: number
   repsMax: number
@@ -52,6 +55,8 @@ export type ExerciseCatalogItem = {
   canonicalName: string
   mainMuscle: string
   equipment: Equipment
+  loadMode: LoadMode
+  barWeightKg: number
   warmupProtocol: string
   aliases: string[]
   technicalNotes: string

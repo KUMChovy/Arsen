@@ -2,6 +2,7 @@ import { ArrowLeft, ChevronDown, Info, TrendingUp } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import type { WeightIncreaseRecommendation } from '../../../shared/calculations/progression'
+import { normalizeEquipment } from '../../../shared/calculations/equipmentLoad'
 import { Card } from '../../../shared/components/Card'
 import { ExerciseArt } from '../../../shared/components/ExerciseArt'
 import { PageHeader } from '../../../shared/components/PageHeader'
@@ -84,7 +85,7 @@ function ExerciseDetailCard({
           <div className="min-w-0">
             <strong className="block truncate text-sm">{exercise.name}</strong>
             <span className="mt-1 block truncate text-xs text-arsen-muted">
-              {exercise.mainMuscle} - {exercise.equipment} - {exercise.targetSets}x{formatRepRange(exercise.repsMin, exercise.repsMax)} - RIR {exercise.recommendedRir}
+              {exercise.mainMuscle} - {normalizeEquipment(exercise.equipment)} - {exercise.targetSets}x{formatRepRange(exercise.repsMin, exercise.repsMax)} - RIR {exercise.recommendedRir}
             </span>
             {recommendation ? (
               <span className="mt-2 inline-flex max-w-full items-center gap-1 rounded-full bg-arsen-acid/15 px-2 py-1 text-xs font-extrabold text-arsen-acid">

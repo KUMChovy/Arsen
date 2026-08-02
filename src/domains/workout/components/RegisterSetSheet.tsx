@@ -3,6 +3,7 @@ import { Check, Dumbbell, Flame, X } from 'lucide-react'
 import type { RoutineExercise } from '../../routine/types'
 import { ActionButton } from '../../../shared/components/ActionButton'
 import { Card } from '../../../shared/components/Card'
+import { buildEquipmentLoadNote } from '../../../shared/calculations/equipmentLoad'
 import { formatRepRange } from '../../../shared/utils/reps'
 import { kgToUnit, unitToKg } from '../../../shared/utils/weight'
 import { registerMainSetForExercise } from '../services'
@@ -44,6 +45,13 @@ export function RegisterSetSheet({
 
   if (!exercise) return null
   const activeExercise = exercise
+  const equipmentLoadNote = buildEquipmentLoadNote({
+    barWeightKg: activeExercise.barWeightKg,
+    equipment: activeExercise.equipment,
+    loadMode: activeExercise.loadMode,
+    unit: displayUnit,
+    weightKg: unitToKg(numberOrZero(weightValue), displayUnit),
+  })
 
   function saveSet() {
     startTransition(() => {
@@ -98,6 +106,12 @@ export function RegisterSetSheet({
           <NumberField label="Reps" onChange={setReps} value={reps} />
           <NumberField label="RIR" onChange={setRir} value={rir} />
         </div>
+
+        {equipmentLoadNote ? (
+          <div className="mt-3 border-t border-white/10 pt-3 text-center text-xs font-extrabold text-arsen-ink">
+            {equipmentLoadNote}
+          </div>
+        ) : null}
 
         <Card className="mt-3 p-3">
           <label className="flex items-center justify-between gap-3">

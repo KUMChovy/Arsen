@@ -82,6 +82,8 @@ const exercise: RoutineExercise = {
   currentWeightKg: 60,
   dayId: 'day-1',
   equipment: 'Barra',
+  loadMode: 'split',
+  barWeightKg: 20,
   id: 'exercise-1',
   mainMuscle: 'Pecho',
   name: 'Press inclinado',

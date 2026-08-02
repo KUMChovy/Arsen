@@ -19,6 +19,8 @@ export type ExerciseSnapshot = {
   canonicalName: string
   mainMuscle: string
   equipment: string
+  loadMode?: 'single' | 'split'
+  barWeightKg?: number
   targetSets: number
   repsMin: number
   repsMax: number

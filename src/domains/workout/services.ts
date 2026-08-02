@@ -56,6 +56,8 @@ export async function ensureExerciseLog(sessionId: string, exercise: RoutineExer
       canonicalName: exercise.canonicalName,
       mainMuscle: exercise.mainMuscle,
       equipment: exercise.equipment,
+      loadMode: exercise.loadMode,
+      barWeightKg: exercise.barWeightKg,
       targetSets: exercise.targetSets,
       repsMin: exercise.repsMin,
       repsMax: exercise.repsMax,

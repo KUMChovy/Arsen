@@ -1,5 +1,6 @@
 import type { Equipment, RoutineDay, RoutineExercise } from '../domains/routine/types'
 import type { AppSettings } from '../domains/settings/types'
+import { loadSettingsForEquipment } from '../shared/calculations/equipmentLoad'
 import { createId } from '../shared/utils/id'
 import { canonicalName } from '../shared/utils/normalize'
 import { db } from './schema'
@@ -33,6 +34,7 @@ export async function ensureDemoData() {
   const routineExercises: RoutineExercise[] = demoRoutineSource.routine.map((exercise, index) => {
     const day = dayByName.get(exercise.day)
     if (!day) throw new Error(`Demo routine references missing day: ${exercise.day}`)
+    const loadSettings = loadSettingsForEquipment({ equipment: inferEquipment(exercise.name) })
 
     return {
       id: exercise.id,
@@ -42,7 +44,9 @@ export async function ensureDemoData() {
       name: exercise.name,
       canonicalName: canonicalName(exercise.name),
       mainMuscle: exercise.mainMuscle,
-      equipment: inferEquipment(exercise.name),
+      equipment: loadSettings.equipment,
+      loadMode: loadSettings.loadMode,
+      barWeightKg: loadSettings.barWeightKg,
       targetSets: exercise.targetSets,
       repsMin: exercise.repsMin,
       repsMax: exercise.repsMax,
@@ -68,6 +72,8 @@ export async function ensureDemoData() {
         canonicalName: exercise.canonicalName,
         mainMuscle: exercise.mainMuscle,
         equipment: exercise.equipment,
+        loadMode: exercise.loadMode,
+        barWeightKg: exercise.barWeightKg,
         aliases: [],
         technicalNotes: exercise.technicalNotes,
         warmupProtocol: exercise.warmupProtocol,
@@ -85,7 +91,7 @@ export async function ensureDemoData() {
 
   const appSettings: AppSettings = {
     id: 'app',
-    schemaVersion: 3,
+    schemaVersion: 5,
     activeRoutineId: routineId,
     preferredUnit: 'kg',
     deloadNotifications: true,
@@ -128,7 +134,7 @@ function inferEquipment(name: string): Equipment {
   if (value.includes('maquina') || value.includes('hack') || value.includes('prensa') || value.includes('pec-deck')) {
     return 'Maquina'
   }
-  if (value.includes('polea') || value.includes('jalon') || value.includes('pullover')) return 'Polea'
+  if (value.includes('polea') || value.includes('jalon') || value.includes('pullover')) return 'Maquina de polea'
   if (value.includes('barra') || value.includes('press') || value.includes('remo-t') || value.includes('rompecraneos')) {
     return 'Barra'
   }

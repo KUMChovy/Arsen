@@ -39,12 +39,15 @@ import { Card } from '../../../shared/components/Card'
 import { ExerciseArt } from '../../../shared/components/ExerciseArt'
 import { PageHeader } from '../../../shared/components/PageHeader'
 import type { WeightIncreaseRecommendation } from '../../../shared/calculations/progression'
+import { defaultLoadSettingsForEquipment, loadSettingsForEquipment } from '../../../shared/calculations/equipmentLoad'
 import { normalizeWarmupProtocol, warmupProtocolLabel, type WarmupProtocol } from '../../../shared/calculations/warmups'
 import { confirmDanger } from '../../../shared/utils/alerts'
 import { formatRepRange } from '../../../shared/utils/reps'
+import { kgToUnit, unitToKg } from '../../../shared/utils/weight'
 import { useWeightIncreaseRecommendations } from '../../workout/hooks'
+import type { WeightUnit } from '../../workout/types'
 import { WarmupProtocolInfoSheet } from '../components/WarmupProtocolInfoSheet'
-import type { Equipment, ExerciseCatalogItem, MuscleGroup, Routine, RoutineDay, RoutineExercise } from '../types'
+import type { Equipment, ExerciseCatalogItem, LoadMode, MuscleGroup, Routine, RoutineDay, RoutineExercise } from '../types'
 import { useActiveRoutineBundle, useExerciseCatalog, useRoutines } from '../hooks'
 import { exportRoutineJson, importRoutineJson } from '../importExport'
 import {
@@ -79,7 +82,7 @@ type RecipeSheetState =
   | { catalogItem: null; exercise: RoutineExercise; mode: 'edit' }
   | null
 
-const equipmentOptions: Equipment[] = ['Barra', 'Mancuerna', 'Maquina', 'Polea', 'Peso corporal', 'Otro']
+const equipmentOptions: Equipment[] = ['Barra', 'Mancuerna', 'Maquina', 'Maquina de polea', 'Peso corporal', 'Otro']
 const warmupProtocolOptions: WarmupProtocol[] = ['none', 'hypertrophy', 'strength', 'progressive', 'heavy_low_volume']
 const weekdayOptions = [
   { label: 'Sin dia fijo', value: '' },
@@ -245,6 +248,7 @@ export function RoutinePage() {
       {catalogSheet ? (
         <CatalogExerciseEditorSheet
           disabled={isPending}
+          displayUnit={bundle?.settings.preferredUnit ?? 'kg'}
           item={catalogSheet.item}
           onClose={() => setCatalogSheet(null)}
           onSave={(input) => {
@@ -261,6 +265,7 @@ export function RoutinePage() {
         <RoutineExerciseRecipeSheet
           catalogItem={recipeSheet.catalogItem}
           disabled={isPending}
+          displayUnit={bundle.settings.preferredUnit}
           exercise={recipeSheet.exercise}
           onClose={() => setRecipeSheet(null)}
           onSave={(input) => {
@@ -738,23 +743,18 @@ function CatalogPickerSheet({
 
 function CatalogExerciseEditorSheet({
   disabled,
+  displayUnit,
   item,
   onClose,
   onSave,
 }: {
   disabled: boolean
+  displayUnit: WeightUnit
   item: ExerciseCatalogItem | null
   onClose: () => void
   onSave: (input: CatalogExerciseInput) => void
 }) {
-  const [form, setForm] = useState(() => ({
-    aliases: item?.aliases.join(', ') ?? '',
-    equipment: item?.equipment ?? 'Barra',
-    mainMuscle: normalizeMuscleGroup(item?.mainMuscle),
-    name: item?.name ?? '',
-    technicalNotes: item?.technicalNotes ?? '',
-    warmupProtocol: normalizeWarmupProtocol(item?.warmupProtocol),
-  }))
+  const [form, setForm] = useState(() => catalogItemToForm(item, displayUnit))
   const [progressionInfoOpen, setProgressionInfoOpen] = useState(false)
   const [warmupInfoOpen, setWarmupInfoOpen] = useState(false)
   const selectedWarmupProtocol = normalizeWarmupProtocol(form.warmupProtocol)
@@ -765,8 +765,15 @@ function CatalogExerciseEditorSheet({
         <TextField label="Nombre" onChange={(value) => setForm((current) => ({ ...current, name: value }))} value={form.name} />
         <div className="grid grid-cols-2 gap-2">
           <MuscleSelect onChange={(value) => setForm((current) => ({ ...current, mainMuscle: value }))} value={form.mainMuscle} />
-          <EquipmentSelect onChange={(value) => setForm((current) => ({ ...current, equipment: value }))} value={form.equipment} />
+          <EquipmentSelect onChange={(value) => setForm((current) => applyEquipmentDefaults(current, value, displayUnit))} value={form.equipment} />
         </div>
+        <LoadSettingsFields
+          barWeight={form.barWeight}
+          displayUnit={displayUnit}
+          equipment={form.equipment}
+          loadMode={form.loadMode}
+          onChange={(value) => setForm((current) => ({ ...current, ...value }))}
+        />
         <button
           aria-label="Ver explicacion de progresion doble"
           className="grid min-h-16 w-full grid-cols-[36px_1fr_28px] items-center gap-3 rounded-[12px] border border-arsen-acid/30 bg-arsen-acid/10 p-3 text-left transition hover:border-arsen-acid/60 hover:bg-arsen-acid/15"
@@ -814,7 +821,7 @@ function CatalogExerciseEditorSheet({
         onClick={() =>
           onSave({
             aliases: form.aliases.split(',').map((alias) => alias.trim()).filter(Boolean),
-            equipment: form.equipment,
+            ...loadInputFromForm(form, displayUnit),
             mainMuscle: form.mainMuscle,
             name: form.name,
             technicalNotes: form.technicalNotes,
@@ -879,17 +886,19 @@ function DoubleProgressionInfoSheet({ onClose }: { onClose: () => void }) {
 function RoutineExerciseRecipeSheet({
   catalogItem,
   disabled,
+  displayUnit,
   exercise,
   onClose,
   onSave,
 }: {
   catalogItem: ExerciseCatalogItem | null
   disabled: boolean
+  displayUnit: WeightUnit
   exercise: RoutineExercise | null
   onClose: () => void
   onSave: (input: ExerciseInput) => void
 }) {
-  const [form, setForm] = useState(() => exerciseToForm(exercise, catalogItem))
+  const [form, setForm] = useState(() => exerciseToForm(exercise, catalogItem, displayUnit))
   const [message, setMessage] = useState<string | null>(null)
   const [warmupInfoOpen, setWarmupInfoOpen] = useState(false)
   const selectedWarmupProtocol = normalizeWarmupProtocol(form.warmupProtocol)
@@ -918,6 +927,17 @@ function RoutineExerciseRecipeSheet({
         <div className="grid grid-cols-2 gap-2">
           <TextField label="RIR" onChange={(value) => update('recommendedRir', value)} type="number" value={form.recommendedRir} />
           <TextField label="Descanso s" onChange={(value) => update('restSeconds', value)} type="number" value={form.restSeconds} />
+        </div>
+        <div className="space-y-3 rounded-[12px] border border-white/10 bg-arsen-bg/45 p-3">
+          <div className="text-xs font-extrabold text-arsen-muted">Equipo y carga</div>
+          <EquipmentSelect onChange={(value) => setForm((current) => applyEquipmentDefaults(current, value, displayUnit))} value={form.equipment} />
+          <LoadSettingsFields
+            barWeight={form.barWeight}
+            displayUnit={displayUnit}
+            equipment={form.equipment}
+            loadMode={form.loadMode}
+            onChange={(value) => setForm((current) => ({ ...current, ...value }))}
+          />
         </div>
         <button
           aria-label="Ver descripcion del calentamiento"
@@ -948,7 +968,7 @@ function RoutineExerciseRecipeSheet({
         className="mt-4 w-full"
         disabled={disabled}
         onClick={() => {
-          const input = formToExerciseInput(form)
+          const input = formToExerciseInput(form, displayUnit)
           if (!input) {
             setMessage('Revisa reps y RIR')
             return
@@ -966,7 +986,9 @@ function RoutineExerciseRecipeSheet({
 }
 
 type ExerciseForm = {
+  barWeight: string
   equipment: Equipment
+  loadMode: LoadMode
   mainMuscle: MuscleGroup
   name: string
   recommendedRir: string
@@ -978,9 +1000,24 @@ type ExerciseForm = {
   warmupProtocol: string
 }
 
-function exerciseToForm(exercise: RoutineExercise | null, catalogItem: ExerciseCatalogItem | null): ExerciseForm {
-  return {
+type CatalogExerciseForm = Pick<
+  ExerciseForm,
+  'barWeight' | 'equipment' | 'loadMode' | 'mainMuscle' | 'name' | 'technicalNotes' | 'warmupProtocol'
+> & {
+  aliases: string
+}
+
+function exerciseToForm(exercise: RoutineExercise | null, catalogItem: ExerciseCatalogItem | null, displayUnit: WeightUnit): ExerciseForm {
+  const loadSettings = loadSettingsForEquipment({
+    barWeightKg: exercise?.barWeightKg ?? catalogItem?.barWeightKg,
     equipment: exercise?.equipment ?? catalogItem?.equipment ?? 'Barra',
+    loadMode: exercise?.loadMode ?? catalogItem?.loadMode,
+  })
+
+  return {
+    barWeight: String(kgToUnit(loadSettings.barWeightKg, displayUnit)),
+    equipment: loadSettings.equipment,
+    loadMode: loadSettings.loadMode,
     mainMuscle: normalizeMuscleGroup(exercise?.mainMuscle ?? catalogItem?.mainMuscle),
     name: exercise?.name ?? catalogItem?.name ?? '',
     recommendedRir: String(exercise?.recommendedRir ?? catalogItem?.defaultRecommendedRir ?? 2),
@@ -993,7 +1030,7 @@ function exerciseToForm(exercise: RoutineExercise | null, catalogItem: ExerciseC
   }
 }
 
-function formToExerciseInput(form: ExerciseForm): ExerciseInput | null {
+function formToExerciseInput(form: ExerciseForm, displayUnit: WeightUnit): ExerciseInput | null {
   const restSeconds = numberOrDefault(form.restSeconds, 90)
   const repsMin = numberOrDefault(form.repsMin, 8)
   const repsMax = numberOrDefault(form.repsMax, 10)
@@ -1001,7 +1038,7 @@ function formToExerciseInput(form: ExerciseForm): ExerciseInput | null {
   if (repsMin <= 0 || repsMax <= 0 || repsMin > repsMax || recommendedRir < 0) return null
 
   return {
-    equipment: form.equipment,
+    ...loadInputFromForm(form, displayUnit),
     mainMuscle: form.mainMuscle,
     name: form.name,
     recommendedRir,
@@ -1014,6 +1051,48 @@ function formToExerciseInput(form: ExerciseForm): ExerciseInput | null {
     warmupProtocol: normalizeWarmupProtocol(form.warmupProtocol),
     warmupSets: 0,
   }
+}
+
+function catalogItemToForm(item: ExerciseCatalogItem | null, displayUnit: WeightUnit): CatalogExerciseForm {
+  const loadSettings = loadSettingsForEquipment({
+    barWeightKg: item?.barWeightKg,
+    equipment: item?.equipment ?? 'Barra',
+    loadMode: item?.loadMode,
+  })
+
+  return {
+    aliases: item?.aliases.join(', ') ?? '',
+    barWeight: String(kgToUnit(loadSettings.barWeightKg, displayUnit)),
+    equipment: loadSettings.equipment,
+    loadMode: loadSettings.loadMode,
+    mainMuscle: normalizeMuscleGroup(item?.mainMuscle),
+    name: item?.name ?? '',
+    technicalNotes: item?.technicalNotes ?? '',
+    warmupProtocol: normalizeWarmupProtocol(item?.warmupProtocol),
+  }
+}
+
+function applyEquipmentDefaults<T extends Pick<ExerciseForm, 'barWeight' | 'equipment' | 'loadMode'>>(
+  form: T,
+  equipment: Equipment,
+  displayUnit: WeightUnit,
+): T {
+  const defaults = defaultLoadSettingsForEquipment(equipment)
+
+  return {
+    ...form,
+    barWeight: String(kgToUnit(defaults.barWeightKg, displayUnit)),
+    equipment,
+    loadMode: defaults.loadMode,
+  }
+}
+
+function loadInputFromForm(form: Pick<ExerciseForm, 'barWeight' | 'equipment' | 'loadMode'>, displayUnit: WeightUnit) {
+  return loadSettingsForEquipment({
+    barWeightKg: unitToKg(numberOrDefault(form.barWeight, 0), displayUnit),
+    equipment: form.equipment,
+    loadMode: form.loadMode,
+  })
 }
 
 function SortableList({
@@ -1163,6 +1242,52 @@ function EquipmentSelect({ onChange, value }: { onChange: (value: Equipment) => 
     </label>
   )
 }
+
+function LoadSettingsFields({
+  barWeight,
+  displayUnit,
+  equipment,
+  loadMode,
+  onChange,
+}: {
+  barWeight: string
+  displayUnit: WeightUnit
+  equipment: Equipment
+  loadMode: LoadMode
+  onChange: (value: Pick<ExerciseForm, 'barWeight' | 'loadMode'>) => void
+}) {
+  return (
+    <div className="space-y-2">
+      <div>
+        <span className="mb-1 block text-xs font-bold text-arsen-muted">Carga</span>
+        <div className="grid min-h-14 grid-cols-2 overflow-hidden rounded-[10px] border border-white/10 bg-arsen-bg">
+          {loadModeOptions.map((option) => (
+            <button
+              aria-pressed={loadMode === option.value}
+              className={[
+                'min-w-0 px-3 text-sm font-extrabold transition',
+                loadMode === option.value ? 'bg-arsen-purple text-white' : 'text-arsen-muted hover:bg-white/5 hover:text-arsen-ink',
+              ].join(' ')}
+              key={option.value}
+              onClick={() => onChange({ barWeight, loadMode: option.value })}
+              type="button"
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      {equipment === 'Barra' ? (
+        <TextField label={`Barra ${displayUnit.toUpperCase()}`} onChange={(value) => onChange({ barWeight: value, loadMode })} type="number" value={barWeight} />
+      ) : null}
+    </div>
+  )
+}
+
+const loadModeOptions: Array<{ label: string; value: LoadMode }> = [
+  { label: 'Punto unico', value: 'single' },
+  { label: 'Por lado', value: 'split' },
+]
 
 function WarmupProtocolSelect({ onChange, value }: { onChange: (value: WarmupProtocol) => void; value: WarmupProtocol }) {
   return (

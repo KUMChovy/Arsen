@@ -1,7 +1,9 @@
 import { z } from 'zod'
+import { loadSettingsForEquipment, normalizeEquipment } from '../calculations/equipmentLoad'
 import { normalizeWarmupProtocol } from '../calculations/warmups'
 
-const equipmentSchema = z.enum(['Barra', 'Mancuerna', 'Maquina', 'Polea', 'Peso corporal', 'Otro'])
+const equipmentSchema = z.string().transform(normalizeEquipment)
+const loadModeSchema = z.enum(['single', 'split'])
 const weekdaySchema = z.union([
   z.literal(0),
   z.literal(1),
@@ -47,6 +49,8 @@ export const routineExerciseSchema = z
     dayId: z.string().min(1),
     equipment: equipmentSchema,
     id: z.string().min(1),
+    barWeightKg: z.number().optional().default(0),
+    loadMode: loadModeSchema.optional(),
     mainMuscle: z.string(),
     name: z.string(),
     order: z.number(),
@@ -64,6 +68,14 @@ export const routineExerciseSchema = z
     warmupSets: z.number(),
   })
   .passthrough()
+  .transform((exercise) => ({
+    ...exercise,
+    ...loadSettingsForEquipment({
+      barWeightKg: exercise.barWeightKg,
+      equipment: exercise.equipment,
+      loadMode: exercise.loadMode,
+    }),
+  }))
   .refine((exercise) => exercise.repsMin <= exercise.repsMax, { message: 'repsMin no puede ser mayor que repsMax' })
 
 export const weeklyVolumeTargetSchema = z
@@ -91,6 +103,8 @@ export const exerciseCatalogItemSchema = z
     defaultTargetSets: z.number(),
     equipment: equipmentSchema,
     id: z.string().min(1),
+    barWeightKg: z.number().optional().default(0),
+    loadMode: loadModeSchema.optional(),
     mainMuscle: z.string(),
     name: z.string(),
     technicalNotes: z.string().optional().default(''),
@@ -98,6 +112,14 @@ export const exerciseCatalogItemSchema = z
     warmupProtocol: z.string().optional().default('none').transform(normalizeWarmupProtocol),
   })
   .passthrough()
+  .transform((item) => ({
+    ...item,
+    ...loadSettingsForEquipment({
+      barWeightKg: item.barWeightKg,
+      equipment: item.equipment,
+      loadMode: item.loadMode,
+    }),
+  }))
   .refine((item) => item.defaultRepsMin <= item.defaultRepsMax, { message: 'defaultRepsMin no puede ser mayor que defaultRepsMax' })
 
 export const appSettingsSchema = z

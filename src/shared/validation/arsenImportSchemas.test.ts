@@ -190,4 +190,50 @@ describe('Arsen import schemas', () => {
     expect(result.data.tables.exerciseCatalog[0]?.warmupProtocol).toBe('strength')
     expect(result.data.tables.routineExercises[0]?.warmupProtocol).toBe('none')
   })
+
+  it('normalizes legacy Polea in routine imports and defaults load settings', () => {
+    const result = routineExportSchema.safeParse({
+      days: [day],
+      exercises: [{ ...exercise, equipment: 'Polea', loadMode: undefined, barWeightKg: undefined }],
+      routine,
+      weeklyVolumeTargets: [],
+    })
+
+    expect(result.success).toBe(true)
+    if (!result.success) return
+    expect(result.data.exercises[0]?.equipment).toBe('Maquina de polea')
+    expect(result.data.exercises[0]?.loadMode).toBe('single')
+    expect(result.data.exercises[0]?.barWeightKg).toBe(0)
+  })
+
+  it('normalizes legacy Polea in backup catalog imports', () => {
+    const catalogItem = {
+      aliases: [],
+      assetKind: null,
+      canonicalName: 'jalon-al-pecho',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      defaultRecommendedRir: 2,
+      defaultRepsMax: 10,
+      defaultRepsMin: 8,
+      defaultRestSeconds: 120,
+      defaultTargetSets: 4,
+      equipment: 'Polea',
+      id: 'catalog-polea',
+      mainMuscle: 'Espalda',
+      name: 'Jalon al pecho',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    }
+
+    const result = backupSchema.safeParse({
+      tables: {
+        exerciseCatalog: [catalogItem],
+      },
+    })
+
+    expect(result.success).toBe(true)
+    if (!result.success) return
+    expect(result.data.tables.exerciseCatalog[0]?.equipment).toBe('Maquina de polea')
+    expect(result.data.tables.exerciseCatalog[0]?.loadMode).toBe('single')
+    expect(result.data.tables.exerciseCatalog[0]?.barWeightKg).toBe(0)
+  })
 })

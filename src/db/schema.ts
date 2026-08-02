@@ -8,9 +8,10 @@ import type {
 } from '../domains/routine/types'
 import type { AppSettings } from '../domains/settings/types'
 import type { DropSetLog, ExerciseLog, SetLog, SkipLog, WorkoutSession } from '../domains/workout/types'
+import { loadSettingsForEquipment } from '../shared/calculations/equipmentLoad'
 import { normalizeWarmupProtocol } from '../shared/calculations/warmups'
 
-export const CURRENT_SCHEMA_VERSION = 4
+export const CURRENT_SCHEMA_VERSION = 5
 
 export class ArsenDatabase extends Dexie {
   settings!: Table<AppSettings, string>
@@ -117,6 +118,40 @@ export class ArsenDatabase extends Dexie {
               item.warmupProtocol = normalizeWarmupProtocol(item.warmupProtocol)
             }),
         ]),
+      )
+
+    this.version(5)
+      .stores({
+        settings: 'id, activeRoutineId, preferredUnit',
+        routines: 'id, isActive, name, updatedAt',
+        routineDays: 'id, routineId, [routineId+order], weekday',
+        routineExercises: 'id, routineId, dayId, canonicalName, [dayId+order], sourceExerciseId',
+        exerciseCatalog: 'id, canonicalName, mainMuscle, equipment',
+        weeklyVolumeTargets: 'id, routineId, muscle',
+        workoutSessions: 'id, routineId, dayId, date, [date+routineId], [date+dayId]',
+        exerciseLogs: 'id, sessionId, routineExerciseId, state',
+        setLogs: 'id, exerciseLogId, kind, [exerciseLogId+order]',
+        dropSetLogs: 'id, setLogId, [setLogId+order]',
+        skipLogs: 'id, sessionId, routineExerciseId',
+      })
+      .upgrade((tx) =>
+        Promise.all(
+          ['exerciseCatalog', 'routineExercises'].map((tableName) =>
+            tx
+              .table(tableName)
+              .toCollection()
+              .modify((item) => {
+                const settings = loadSettingsForEquipment({
+                  barWeightKg: item.barWeightKg,
+                  equipment: item.equipment,
+                  loadMode: item.loadMode,
+                })
+                item.equipment = settings.equipment
+                item.loadMode = settings.loadMode
+                item.barWeightKg = settings.barWeightKg
+              }),
+          ),
+        ),
       )
   }
 }

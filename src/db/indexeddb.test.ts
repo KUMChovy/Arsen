@@ -164,18 +164,36 @@ describe('IndexedDB integration', () => {
     const recipes = await db.routineExercises.where('sourceExerciseId').equals(catalogItemId).sortBy('dayId')
 
     expect(catalogItem).toMatchObject({
+      barWeightKg: 20,
       defaultRecommendedRir: 2,
       defaultRepsMax: 10,
       defaultRepsMin: 8,
       defaultTargetSets: 3,
+      loadMode: 'split',
       mainMuscle: 'Pecho',
       name: 'Press inclinado',
       technicalNotes: 'Baja controlado y pausa al pecho.',
       warmupProtocol: 'hypertrophy',
     })
     expect(recipes).toHaveLength(2)
-    expect(recipes[0]).toMatchObject({ dayId: dayA.id, recommendedRir: 2, repsMax: 10, repsMin: 8, targetSets: 3, technicalNotes: 'Baja controlado y pausa al pecho.', warmupProtocol: 'hypertrophy' })
-    expect(recipes[1]).toMatchObject({ dayId: dayB.id, recommendedRir: 3, repsMax: 12, repsMin: 10, targetSets: 2, technicalNotes: 'Version ligera del dia B.', warmupProtocol: 'strength' })
+    expect(recipes[0]).toMatchObject({ barWeightKg: 20, dayId: dayA.id, loadMode: 'split', recommendedRir: 2, repsMax: 10, repsMin: 8, targetSets: 3, technicalNotes: 'Baja controlado y pausa al pecho.', warmupProtocol: 'hypertrophy' })
+    expect(recipes[1]).toMatchObject({ barWeightKg: 20, dayId: dayB.id, loadMode: 'split', recommendedRir: 3, repsMax: 12, repsMin: 10, targetSets: 2, technicalNotes: 'Version ligera del dia B.', warmupProtocol: 'strength' })
+  })
+
+  it('defaults load settings for service-created barbell exercises', async () => {
+    const catalogItemId = await createCatalogExercise({
+      equipment: 'Barra',
+      mainMuscle: 'Pecho',
+      name: 'Press banca',
+    })
+
+    const catalogItem = await db.exerciseCatalog.get(catalogItemId)
+
+    expect(catalogItem).toMatchObject({
+      barWeightKg: 20,
+      equipment: 'Barra',
+      loadMode: 'split',
+    })
   })
 
   it('preserves indication notes when importing a backup', async () => {
@@ -417,6 +435,8 @@ function routineExercise(
     currentWeightKg: 50,
     dayId: overrides.dayId ?? 'day-1',
     equipment: 'Barra',
+    loadMode: 'split',
+    barWeightKg: 20,
     id: overrides.id ?? 'exercise-1',
     mainMuscle: 'Pecho',
     name: 'Press inclinado',
@@ -448,6 +468,8 @@ function catalogExercise(overrides: Partial<Pick<ExerciseCatalogItem, 'technical
     defaultRestSeconds: 120,
     defaultTargetSets: 4,
     equipment: 'Barra',
+    loadMode: 'split',
+    barWeightKg: 20,
     id: 'catalog-1',
     mainMuscle: 'Piernas',
     name: 'Sentadilla',

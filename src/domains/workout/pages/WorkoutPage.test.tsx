@@ -121,6 +121,12 @@ describe('WorkoutPage', () => {
     expect(screen.getByText('+2.5 kg')).toBeInTheDocument()
   })
 
+  it('shows barbell load note on the current exercise card', () => {
+    render(<WorkoutPage />)
+
+    expect(screen.getByText('Discos por lado: 30 kg · Total con barra: 80 kg')).toBeInTheDocument()
+  })
+
   it('hides weight increase recommendation for a different exercise', () => {
     workoutMocks.weightIncreaseRecommendations = [{ ...weightIncreaseRecommendation, exerciseId: 'exercise-otro', exerciseName: 'Remo T' }]
 
@@ -148,6 +154,8 @@ const exercise: RoutineExercise = {
   currentWeightKg: 60,
   dayId: 'day-1',
   equipment: 'Barra',
+  loadMode: 'split',
+  barWeightKg: 20,
   id: 'exercise-1',
   mainMuscle: 'Pecho',
   name: 'Press inclinado',
@@ -193,7 +201,9 @@ const exerciseLog: ExerciseLog = {
   sessionId: 'session-1',
   snapshot: {
     canonicalName: exercise.canonicalName,
+    barWeightKg: exercise.barWeightKg,
     equipment: exercise.equipment,
+    loadMode: exercise.loadMode,
     mainMuscle: exercise.mainMuscle,
     name: exercise.name,
     recommendedRir: exercise.recommendedRir,

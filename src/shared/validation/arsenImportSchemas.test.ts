@@ -27,6 +27,8 @@ const exercise = {
   dayId: 'day-1',
   equipment: 'Barra',
   id: 'exercise-1',
+  barWeightKg: 20,
+  loadMode: 'split',
   mainMuscle: 'Pecho',
   name: 'Press inclinado',
   order: 0,
@@ -57,6 +59,35 @@ describe('Arsen import schemas', () => {
         weeklyVolumeTargets: [],
       }).success,
     ).toBe(true)
+  })
+
+  it('defaults legacy routine exercise fields during routine imports', () => {
+    const result = routineExportSchema.safeParse({
+      days: [day],
+      exercises: [
+        removeFields(exercise, [
+          'barWeightKg',
+          'currentWeightKg',
+          'loadMode',
+          'repsMax',
+          'repsMin',
+          'technicalNotes',
+        ]),
+      ],
+      routine,
+      weeklyVolumeTargets: [],
+    })
+
+    expect(result.success).toBe(true)
+    if (!result.success) return
+    expect(result.data.exercises[0]).toMatchObject({
+      barWeightKg: 20,
+      currentWeightKg: 0,
+      loadMode: 'split',
+      repsMax: 10,
+      repsMin: 8,
+      technicalNotes: '',
+    })
   })
 
   it('rejects malformed routine exports', () => {
@@ -126,6 +157,90 @@ describe('Arsen import schemas', () => {
         },
       }).success,
     ).toBe(true)
+  })
+
+  it('defaults legacy backup routine and catalog fields', () => {
+    const catalogItem = {
+      aliases: [],
+      assetKind: null,
+      canonicalName: 'press-inclinado',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      defaultRecommendedRir: 2,
+      defaultRestSeconds: 120,
+      defaultTargetSets: 4,
+      equipment: 'Barra',
+      id: 'catalog-1',
+      mainMuscle: 'Pecho',
+      name: 'Press inclinado',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    }
+    const result = backupSchema.safeParse({
+      tables: {
+        exerciseCatalog: [catalogItem],
+        routineExercises: [
+          removeFields(exercise, [
+            'barWeightKg',
+            'currentWeightKg',
+            'loadMode',
+            'repsMax',
+            'repsMin',
+            'technicalNotes',
+          ]),
+        ],
+      },
+    })
+
+    expect(result.success).toBe(true)
+    if (!result.success) return
+    expect(result.data.tables.routineExercises[0]).toMatchObject({
+      barWeightKg: 20,
+      currentWeightKg: 0,
+      loadMode: 'split',
+      repsMax: 10,
+      repsMin: 8,
+      technicalNotes: '',
+    })
+    expect(result.data.tables.exerciseCatalog[0]).toMatchObject({
+      barWeightKg: 20,
+      defaultRepsMax: 10,
+      defaultRepsMin: 8,
+      loadMode: 'split',
+      technicalNotes: '',
+    })
+  })
+
+  it('accepts legacy exercise log snapshots without rep ranges', () => {
+    const result = backupSchema.safeParse({
+      tables: {
+        exerciseLogs: [
+          {
+            createdAt: '2026-01-01T00:00:00.000Z',
+            id: 'exercise-log-1',
+            notes: '',
+            routineExerciseId: 'exercise-1',
+            sessionId: 'session-1',
+            snapshot: {
+              canonicalName: 'press-inclinado',
+              equipment: 'Barra',
+              mainMuscle: 'Pecho',
+              name: 'Press inclinado',
+              recommendedRir: 2,
+              restSeconds: 120,
+              targetSets: 4,
+            },
+            state: 'done',
+            updatedAt: '2026-01-01T00:00:00.000Z',
+          },
+        ],
+      },
+    })
+
+    expect(result.success).toBe(true)
+    if (!result.success) return
+    expect(result.data.tables.exerciseLogs[0]?.snapshot).toMatchObject({
+      repsMax: 10,
+      repsMin: 8,
+    })
   })
 
   it('preserves catalog indication notes and defaults old backups to empty notes', () => {
@@ -237,3 +352,10 @@ describe('Arsen import schemas', () => {
     expect(result.data.tables.exerciseCatalog[0]?.barWeightKg).toBe(0)
   })
 })
+
+function removeFields<T extends Record<string, unknown>, K extends keyof T>(value: T, keys: K[]): Omit<T, K> {
+  const copy = { ...value }
+  for (const key of keys) delete copy[key]
+
+  return copy
+}

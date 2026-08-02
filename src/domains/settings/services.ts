@@ -16,6 +16,10 @@ import { localDateKey } from '../../shared/utils/date'
 import { backupSchema } from '../../shared/validation/arsenImportSchemas'
 import { deleteWorkoutSession } from '../workout/services'
 
+/**
+ * Exports a full IndexedDB backup JSON file with every persisted Arsen table.
+ * Routine and catalog rows keep recipe fields, notes, equipment, and load settings.
+ */
 export async function exportFullBackup() {
   const data = {
     exportedAt: new Date().toISOString(),
@@ -40,6 +44,9 @@ export async function exportFullBackup() {
 
 export type BackupImportMode = 'merge' | 'replace'
 
+/**
+ * Imports a full backup JSON file, replacing or merging every persisted table after schema validation.
+ */
 export async function importFullBackup(file: File, mode: BackupImportMode = 'replace') {
   const backup = parseBackup(await file.text())
   const tables = backup.tables
@@ -100,11 +107,17 @@ async function putBackupTables(tables: BackupTables, mode: BackupImportMode) {
   ])
 }
 
+/**
+ * Exports progress JSON: summary, graph points, and chronological main-set timeline.
+ */
 export async function exportProgressJson() {
   const data = await buildProgressExport()
   downloadJson(`arsen-progreso-${localDateKey(new Date())}.json`, data)
 }
 
+/**
+ * Exports progress CSV from the same timeline as progress JSON, with one row per main set.
+ */
 export async function exportProgressCsv() {
   const data = await buildProgressExport()
   const rows = [

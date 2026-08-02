@@ -15,6 +15,10 @@ type RoutineExport = {
   weeklyVolumeTargets: WeeklyVolumeTarget[]
 }
 
+/**
+ * Exports one routine JSON file: routine metadata, its days, day exercises, and weekly volume targets.
+ * Day exercises include recipe fields, technical notes, current weight, equipment, and load settings.
+ */
 export async function exportRoutineJson(routineId: string) {
   const routine = await db.routines.get(routineId)
   if (!routine) throw new Error('Rutina no encontrada')
@@ -31,6 +35,9 @@ export async function exportRoutineJson(routineId: string) {
   downloadJson(`arsen-rutina-${routine.name.replaceAll(' ', '-').toLowerCase()}.json`, data)
 }
 
+/**
+ * Imports one routine JSON file and activates it, applying schema defaults for legacy exercise fields.
+ */
 export async function importRoutineJson(file: File) {
   const parsed = parseRoutineExport(await file.text())
   const now = new Date().toISOString()

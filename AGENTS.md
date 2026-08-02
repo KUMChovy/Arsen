@@ -2,85 +2,116 @@
 
 Arsen is a mobile-first, 100% offline workout tracker. React 19 + TypeScript + Vite + Tailwind v4 + Dexie (IndexedDB). All data lives client-side; no backend.
 
-## every new task
 
-## Skills you must use
 
-This project requires you to actively use these installed skills — not only when you judge
-they "feel" relevant, but as a standing requirement on every task:
+You are the AI agent working in this repository. This file is written directly to you — follow
+it as instructions, not as background context. It applies to every task, on your first message,
+with no exceptions and no need to be reminded.
 
-- **`using-superpowers`** — the skill router. Governs whether/how the others below trigger.
-- **`superpowers:brainstorming`** / **`superpowers:systematic-debugging`** — process. Always
-  mandatory.
-- **`impeccable`** — UI/visual design quality. Mandatory whenever the task touches UI.
-- **`ponytail`** — implementation sizing/minimalism. Always mandatory.
+## Skills you must use (always installed — never check if they exist, just use them)
 
-You must invoke them, not just keep them in mind. Failing to invoke a skill that applies is a
-failure to follow this file, not a judgment call you get to make on your own.
+- **`superpowers:using-superpowers`** — Use this only as a lookup table: task is a feature/design
+  change/refactor → it tells you to use `brainstorming`; task is a bug fix → it tells you to use
+  `systematic-debugging`. Do not treat it as something that decides *whether* you run the
+  mandatory process below — that part is not up to this skill.
+- **`superpowers:brainstorming`** — Run this before you write any code for a feature, design
+  change, or refactor. Turn the rough idea into a short design doc through questions and
+  alternatives. Save that doc before you touch code.
+- **`superpowers:systematic-debugging`** — Run this for every bug fix. It is rigid: follow its
+  4 phases (investigate → root cause → hypothesis → fix) exactly, in order. Do not skip phases
+  because the bug looks simple. Do not let `ponytail` shrink or skip any of these phases —
+  Superpowers itself marks debugging as non-negotiable, independent of anything else in this file.
+- **`superpowers:verification-before-completion`** — Run this before you say a task is done, for
+  every feature and every bug fix. Confirm the thing actually works — run the tests, check the
+  behavior — before you report completion. Never report a task as complete without having run
+  this.
+- **`impeccable`** — Use this whenever the task touches UI, full stop. It loads `PRODUCT.md` and
+  `DESIGN.md` for you automatically on every command — you don't need to load them yourself.
+- **`ponytail`** — Actually invoke this skill (via your skill tool, or `/ponytail full` if the
+  command is available) before you write code — do not treat the ladder written in this file as
+  a substitute for running the skill itself. The skill's own SKILL.md is the source of truth;
+  this file only tells you when and at what intensity to run it. Keep it active on every
+  response, at `full` intensity. Do not switch to `ultra` (it questions the requirement itself —
+  that is not your call to make). Do not switch to `lite` (it only flags the leaner option
+  without applying it — you must apply it).
 
-## every new task
+## Design context you already have
 
-## Skills you must use
+`PRODUCT.md` and `DESIGN.md` already exist in this repo. Every `impeccable` command loads them for
+you automatically. Do not recreate them and do not hand-edit `DESIGN.md`. If a change makes the
+live UI drift from what `DESIGN.md` describes, run `/impeccable document` to regenerate it from
+the current source instead.
 
-This project requires you to actively use these installed skills — not only when you judge
-they "feel" relevant, but as a standing requirement on every task:
+## On every new task, do this in order
 
-- **`using-superpowers`** — the skill router. Governs whether/how the others below trigger.
-- **`superpowers:brainstorming`** / **`superpowers:systematic-debugging`** — process. Always
-  mandatory.
-- **`impeccable`** — UI/visual design quality. Mandatory whenever the task touches UI.
-- **`ponytail`** — implementation sizing/minimalism. Always mandatory.
+1. Check the current state of the repo. Confirm what is already implemented before you plan
+   anything.
+2. If a partial implementation already exists, change only what is necessary to meet the
+   criteria — do not rewrite what already works.
+3. Respect the architecture already defined in this repo.
+4. Add or update tests when your change touches calculations, validation, repositories, or any
+   critical flow.
+5. Classify the task using `using-superpowers`: feature / design change / refactor →
+   `brainstorming`; bug fix → `systematic-debugging`. If the task is both (see "Mixed case"
+   below), follow that section instead of picking one.
+6. Run the process skill from step 5 to a short plan — what you will build, how you will verify
+   it — before you touch code. This step is never optional and never skipped for task size.
+7. Before you create a branch, commit, push, or merge anything: stop and ask the human first.
+   This overrides Superpowers' own defaults — `using-git-worktrees` and
+   `finishing-a-development-branch` normally do these automatically as part of their process; you
+   must not let them. Stage the change, describe it, then wait for explicit confirmation.
+8. If the task touches UI or anything rendered to a user, run these `impeccable` commands — this
+   step is mandatory once UI is touched, and you do not get to decide it doesn't apply:
+   - Plan: `/impeccable shape` before you build.
+   - Before you close the task, run both of these pairs — they are not interchangeable, run both:
+     - `/impeccable critique` → `/impeccable polish` (review the UI, then refine it).
+     - `/impeccable audit` → `/impeccable harden` (find technical issues, then fix them).
+   - Impeccable's edit hooks also fire automatically on every UI change and report findings back
+     to you inline. Treat that as a background safety net only — it does not replace the explicit
+     passes above; run them anyway.
+   - If the task is purely backend/logic/script work with no visual output, skip this step
+     entirely and say so.
+9. Check for any other installed skill that fits this task — testing, a specific pattern, a
+   project-specific skill — and use it if it applies. This step depends on the task, unlike
+   steps 6 and 8. If none applied, say so in your response and say why.
+10. Invoke the `ponytail` skill itself before you implement — don't reconstruct its ladder from
+    memory or from the summary below, actually call the skill so its current SKILL.md governs.
+    Its ladder, in this exact order, for every piece of code you write:
+    1. Does this need to exist at all? If the need is speculative, skip it and say so (YAGNI).
+    2. Does something in this codebase already do it? Reuse it instead of rewriting it.
+    3. Does the standard library do it? Use that.
+    4. Does a native platform feature do it? Use that.
+    5. Does an already-installed dependency do it? Use that.
+    6. Can it be one line? Make it one line.
+    7. Only if none of the above apply, write the minimum code that works.
+    Do not let this ladder cut corners on understanding the problem — read the full flow the
+    change touches before you pick a rung. Skipping comprehension to ship a small diff is not
+    minimalism, it's a wrong fix wearing a small diff.
+11. Run `verification-before-completion` before you tell the human the task is done.
+12. When skills conflict, resolve it in this order:
+    - Superpowers governs process — how you explore, plan, and verify. Within Superpowers itself:
+      follow TDD and debugging exactly; adapt patterns to context.
+    - Impeccable governs visual/design quality, only when UI is touched. Ponytail may not cut
+      below Impeccable's bar.
+    - Ponytail governs code size and scope, but never at the cost of input validation at trust
+      boundaries, error handling that prevents data loss, security, or accessibility. This is
+      Ponytail's own stated limit — not just a rule added here.
+13. Never simplify away: input validation at trust boundaries, error handling that prevents data
+    loss, security, accessibility, or anything the human explicitly asked for.
 
-You must invoke them, not just keep them in mind. Failing to invoke a skill that applies is a
-failure to follow this file, not a judgment call you get to make on your own.
+## Mixed case: a bug fix that turns out to need a structural change
 
-## every new task
+Start in `systematic-debugging` and complete its phases through root-cause identification. If the
+fix for that root cause requires a structural or design change rather than a local patch, switch
+to `brainstorming` at that point, for that follow-on decision only. Do not open a `brainstorming`
+pass before root cause is established just because you suspect the task will end up needing one —
+that is the exact failure mode Superpowers warns against: never default to brainstorming for a bug.
 
-For **every new task** you're asked to do (a feature, a fix, a refactor, anything), follow
-this workflow without needing to be asked again:
+## Reminder
 
-1. **Skill check first, per `using-superpowers`.** Before planning, asking clarifying
-   questions, or coding, check which skills apply — this repo's `AGENTS.md` still overrides
-   any skill on conflict (per `using-superpowers`' own instruction-priority rule: user
-   instructions win).
-2. **Process — mandatory, always, no exceptions:** `superpowers:brainstorming` for a new
-   feature, design change, or refactor; `superpowers:systematic-debugging` for a bug fix.
-   Never skip based on task size, and never default to brainstorming for a bug — debugging is
-   a different process. Refine the idea, explore alternatives, define a short plan (what will
-   be built, how it will be verified) before touching code.
-3. **Never commit automatically.** `writing-plans` and `executing-plans` default to frequent
-   commits as part of their own methodology and will commit without asking. That default is
-   overridden here: never run `git commit` or `git push` on your own initiative, even mid-plan
-   or between checkpoints. Stage and describe the change, then stop and wait for explicit
-   confirmation from the human before committing. This applies regardless of which skill or
-   step is currently driving the work.
-4. **UI/visual work — mandatory once touched.** If the task involves HTML/CSS, components,
-   layout, or anything rendered to a user, this stops being optional. If the project already
-   documents its design system by hand somewhere (a styleguide section, a tokens file, a
-   design spec doc), fold that into the resulting DESIGN.md afterward so there's one source
-   of truth, not two. During planning:
-   `/impeccable shape` (new UI) or `/impeccable critique` (existing UI being changed). Before
-   closing: `/impeccable audit` + `/impeccable polish`. Purely backend/logic/script tasks with
-   no visual output skip this step entirely.
-5. **Other relevant skills.** Check for and use any other installed skill that fits the
-   problem — debugging, testing, a specific pattern, a project-specific skill. These depend
-   on applicability; steps 2 and 4 don't, once their trigger condition is met.
-6. **Implement with Ponytail.** Once the plan is clear, invoke the ponytail skill and follow
-   its own decision ladder exactly as defined in it — don't rewrite it here.
-7. **Priority on conflict:**
-   - **Superpowers governs process** — how to explore the problem, plan, and verify.
-   - **Impeccable governs visual/design quality**, only when UI is touched — a floor, not
-     something ponytail can trim.
-   - **Ponytail governs code size/scope** — never at the cost of validation, error handling
-     that prevents data loss, security, accessibility, or Impeccable's visual-quality bar
-     when it applies.
-8. **Never simplify away** input validation at trust boundaries, error handling that prevents
-   data loss, security, accessibility, or anything explicitly requested.
+Apply this entire file by default, on every task, starting from the first message. Do not wait to
+be told to follow it again.
 
-This is not optional and does not depend on being repeated in the message: apply this
-workflow by default on every task, starting from the first message of each new task. If no
-extra skill (step 5) was used, say so and justify why none applied. If the task touched UI
-and Impeccable wasn't run (or vice versa), say so and justify why.
 
 ## Commands
 

@@ -8,8 +8,9 @@ import type {
 } from '../domains/routine/types'
 import type { AppSettings } from '../domains/settings/types'
 import type { DropSetLog, ExerciseLog, SetLog, SkipLog, WorkoutSession } from '../domains/workout/types'
+import { normalizeWarmupProtocol } from '../shared/calculations/warmups'
 
-export const CURRENT_SCHEMA_VERSION = 3
+export const CURRENT_SCHEMA_VERSION = 4
 
 export class ArsenDatabase extends Dexie {
   settings!: Table<AppSettings, string>
@@ -85,6 +86,37 @@ export class ArsenDatabase extends Dexie {
           .modify((item) => {
             delete item.progressionStrategy
           }),
+      )
+
+    this.version(4)
+      .stores({
+        settings: 'id, activeRoutineId, preferredUnit',
+        routines: 'id, isActive, name, updatedAt',
+        routineDays: 'id, routineId, [routineId+order], weekday',
+        routineExercises: 'id, routineId, dayId, canonicalName, [dayId+order], sourceExerciseId',
+        exerciseCatalog: 'id, canonicalName, mainMuscle, equipment',
+        weeklyVolumeTargets: 'id, routineId, muscle',
+        workoutSessions: 'id, routineId, dayId, date, [date+routineId], [date+dayId]',
+        exerciseLogs: 'id, sessionId, routineExerciseId, state',
+        setLogs: 'id, exerciseLogId, kind, [exerciseLogId+order]',
+        dropSetLogs: 'id, setLogId, [setLogId+order]',
+        skipLogs: 'id, sessionId, routineExerciseId',
+      })
+      .upgrade((tx) =>
+        Promise.all([
+          tx
+            .table('exerciseCatalog')
+            .toCollection()
+            .modify((item) => {
+              item.warmupProtocol = normalizeWarmupProtocol(item.warmupProtocol)
+            }),
+          tx
+            .table('routineExercises')
+            .toCollection()
+            .modify((item) => {
+              item.warmupProtocol = normalizeWarmupProtocol(item.warmupProtocol)
+            }),
+        ]),
       )
   }
 }

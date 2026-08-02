@@ -1,4 +1,4 @@
-import { ArrowLeft, ChevronDown, TrendingUp } from 'lucide-react'
+import { ArrowLeft, ChevronDown, Info, TrendingUp } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import type { WeightIncreaseRecommendation } from '../../../shared/calculations/progression'
@@ -9,6 +9,7 @@ import { formatRepRange } from '../../../shared/utils/reps'
 import { formatWeight } from '../../../shared/utils/weight'
 import { normalizeWarmupProtocol, warmupProtocolLabel } from '../../../shared/calculations/warmups'
 import { useWeightIncreaseRecommendations } from '../../workout/hooks'
+import { WarmupProtocolInfoSheet } from '../components/WarmupProtocolInfoSheet'
 import { useRoutineDayDetail } from '../hooks'
 import type { RoutineExercise } from '../types'
 import { dominantMuscleForExercises } from '../utils/dominantMuscle'
@@ -73,11 +74,12 @@ function ExerciseDetailCard({
   recommendation: WeightIncreaseRecommendation | null
 }) {
   const protocol = normalizeWarmupProtocol(exercise.warmupProtocol)
+  const [warmupInfoOpen, setWarmupInfoOpen] = useState(false)
 
   return (
-    <button className="block w-full text-left" onClick={onToggle} type="button">
+    <div className="block w-full text-left">
       <Card className="p-3">
-        <div className="grid grid-cols-[52px_1fr_auto] items-center gap-3">
+        <button className="grid w-full grid-cols-[52px_1fr_auto] items-center gap-3 text-left" onClick={onToggle} type="button">
           <ExerciseArt alt={exercise.name} className="size-[52px]" muscle={exercise.mainMuscle} />
           <div className="min-w-0">
             <strong className="block truncate text-sm">{exercise.name}</strong>
@@ -85,7 +87,7 @@ function ExerciseDetailCard({
               {exercise.mainMuscle} - {exercise.equipment} - {exercise.targetSets}x{formatRepRange(exercise.repsMin, exercise.repsMax)} - RIR {exercise.recommendedRir}
             </span>
             {recommendation ? (
-              <span className="mt-2 inline-flex max-w-full items-center gap-1 rounded-full bg-arsen-acid/15 px-2 py-1 text-[10px] font-extrabold text-arsen-acid">
+              <span className="mt-2 inline-flex max-w-full items-center gap-1 rounded-full bg-arsen-acid/15 px-2 py-1 text-xs font-extrabold text-arsen-acid">
                 <TrendingUp aria-hidden="true" className="size-3 shrink-0" />
                 <span className="truncate">Listo para subir peso: {recommendation.suggestedIncreaseLabel}</span>
               </span>
@@ -95,26 +97,38 @@ function ExerciseDetailCard({
             aria-hidden="true"
             className={['size-5 text-arsen-muted transition-transform', expanded ? 'rotate-180' : ''].join(' ')}
           />
-        </div>
+        </button>
 
         {expanded ? (
           <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
             <DetailMetric label="Descanso" value={`${exercise.restSeconds} seg`} />
-            <DetailMetric label="Calentamiento" value={warmupProtocolLabel(protocol)} />
+            <button
+              aria-label="Ver descripcion del calentamiento"
+              className="rounded-[10px] border border-white/10 bg-arsen-bg/55 p-2 text-left"
+              onClick={() => setWarmupInfoOpen(true)}
+              type="button"
+            >
+              <span className="block text-xs font-bold text-arsen-muted">Calentamiento</span>
+              <span className="mt-1 flex items-center justify-between gap-2">
+                <strong className="block min-w-0 truncate text-sm text-arsen-ink">{warmupProtocolLabel(protocol)}</strong>
+                <Info aria-hidden="true" className="size-4 shrink-0 text-arsen-purple2" />
+              </span>
+            </button>
             <DetailMetric label="Ultimo peso" value={formatWeight(exercise.currentWeightKg, 'kg')} />
             <DetailMetric label="Orden" value={String(exercise.order + 1)} />
             {exercise.technicalNotes ? <DetailText label="Notas tecnicas" value={exercise.technicalNotes} /> : null}
           </div>
         ) : null}
       </Card>
-    </button>
+      {warmupInfoOpen ? <WarmupProtocolInfoSheet onClose={() => setWarmupInfoOpen(false)} protocol={protocol} /> : null}
+    </div>
   )
 }
 
 function DetailMetric({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-[10px] border border-white/10 bg-arsen-bg/55 p-2">
-      <span className="block text-[10px] font-bold text-arsen-muted">{label}</span>
+      <span className="block text-xs font-bold text-arsen-muted">{label}</span>
       <strong className="mt-1 block text-sm text-arsen-ink">{value}</strong>
     </div>
   )
@@ -123,7 +137,7 @@ function DetailMetric({ label, value }: { label: string; value: string }) {
 function DetailText({ label, value }: { label: string; value: string }) {
   return (
     <div className="col-span-2 rounded-[10px] border border-white/10 bg-arsen-bg/55 p-2">
-      <span className="block text-[10px] font-bold text-arsen-muted">{label}</span>
+      <span className="block text-xs font-bold text-arsen-muted">{label}</span>
       <p className="mt-1 text-xs font-semibold text-arsen-ink">{value}</p>
     </div>
   )

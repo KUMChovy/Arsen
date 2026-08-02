@@ -1,5 +1,6 @@
 import type { Equipment, ExerciseCatalogItem, Routine, RoutineDay, RoutineExercise } from './types'
 import { db } from '../../db/schema'
+import { normalizeWarmupProtocol } from '../../shared/calculations/warmups'
 import { createId } from '../../shared/utils/id'
 import { canonicalName } from '../../shared/utils/normalize'
 import { normalizeMuscleGroup } from './utils/muscles'
@@ -26,6 +27,7 @@ export type CatalogExerciseInput = {
   mainMuscle: string
   name: string
   technicalNotes?: string
+  warmupProtocol?: string
 }
 
 export async function createRoutine(name: string) {
@@ -281,7 +283,7 @@ export async function createExercise(routineId: string, dayId: string, input: Ex
     rest: input.rest ?? '60-90 seg',
     restSeconds: input.restSeconds ?? 90,
     warmupSets: input.warmupSets ?? 0,
-    warmupProtocol: input.warmupProtocol ?? '',
+    warmupProtocol: normalizeWarmupProtocol(input.warmupProtocol),
     technicalNotes: input.technicalNotes ?? '',
     currentWeightKg: input.currentWeightKg ?? 0,
     order,
@@ -318,7 +320,7 @@ export async function addCatalogExerciseToDay(routineId: string, dayId: string, 
     rest: input.rest ?? `${input.restSeconds ?? catalogItem.defaultRestSeconds} seg`,
     restSeconds: input.restSeconds ?? catalogItem.defaultRestSeconds,
     warmupSets: input.warmupSets ?? 0,
-    warmupProtocol: input.warmupProtocol ?? '',
+    warmupProtocol: normalizeWarmupProtocol(input.warmupProtocol ?? catalogItem.warmupProtocol),
     technicalNotes: input.technicalNotes ?? catalogItem.technicalNotes ?? '',
     currentWeightKg: input.currentWeightKg ?? 0,
     order,
@@ -349,7 +351,7 @@ export async function updateExercise(exerciseId: string, input: ExerciseInput) {
     rest: input.rest ?? '60-90 seg',
     restSeconds: input.restSeconds ?? 90,
     warmupSets: input.warmupSets ?? 0,
-    warmupProtocol: input.warmupProtocol ?? '',
+    warmupProtocol: normalizeWarmupProtocol(input.warmupProtocol),
     technicalNotes: input.technicalNotes ?? '',
     currentWeightKg: input.currentWeightKg ?? existing?.currentWeightKg ?? 0,
     updatedAt: new Date().toISOString(),
@@ -432,6 +434,7 @@ export async function createCatalogExercise(input: CatalogExerciseInput) {
     mainMuscle,
     name,
     technicalNotes: input.technicalNotes?.trim() ?? '',
+    warmupProtocol: normalizeWarmupProtocol(input.warmupProtocol),
     updatedAt: now,
   }
 
@@ -452,6 +455,7 @@ export async function updateCatalogExercise(catalogItemId: string, input: Catalo
     mainMuscle,
     name,
     technicalNotes: input.technicalNotes?.trim() ?? '',
+    warmupProtocol: normalizeWarmupProtocol(input.warmupProtocol),
     updatedAt: new Date().toISOString(),
   })
 }

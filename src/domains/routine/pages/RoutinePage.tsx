@@ -39,10 +39,11 @@ import { Card } from '../../../shared/components/Card'
 import { ExerciseArt } from '../../../shared/components/ExerciseArt'
 import { PageHeader } from '../../../shared/components/PageHeader'
 import type { WeightIncreaseRecommendation } from '../../../shared/calculations/progression'
-import { buildWarmupSets, normalizeWarmupProtocol, warmupProtocolLabel, type WarmupProtocol } from '../../../shared/calculations/warmups'
+import { normalizeWarmupProtocol, warmupProtocolLabel, type WarmupProtocol } from '../../../shared/calculations/warmups'
 import { confirmDanger } from '../../../shared/utils/alerts'
 import { formatRepRange } from '../../../shared/utils/reps'
 import { useWeightIncreaseRecommendations } from '../../workout/hooks'
+import { WarmupProtocolInfoSheet } from '../components/WarmupProtocolInfoSheet'
 import type { Equipment, ExerciseCatalogItem, MuscleGroup, Routine, RoutineDay, RoutineExercise } from '../types'
 import { useActiveRoutineBundle, useExerciseCatalog, useRoutines } from '../hooks'
 import { exportRoutineJson, importRoutineJson } from '../importExport'
@@ -674,7 +675,9 @@ function CatalogPanel({
               <span className="mt-1 block truncate text-xs text-arsen-muted">
                 {normalizeMuscleGroup(item.mainMuscle)} - {item.equipment}
               </span>
-              <span className="mt-1 block truncate text-xs font-bold text-arsen-purple2">Progresion doble</span>
+              <span className="mt-1 block truncate text-xs font-bold text-arsen-purple2">
+                Calentamiento: {warmupProtocolLabel(normalizeWarmupProtocol(item.warmupProtocol))}
+              </span>
             </div>
             <div className="grid grid-cols-2 gap-1">
               <IconOnly disabled={disabled} icon={Pencil} label="Editar catalogo" onClick={() => onEdit(item)} />
@@ -716,6 +719,9 @@ function CatalogPickerSheet({
                 <span className="mt-1 block truncate text-xs text-arsen-muted">
                   {normalizeMuscleGroup(item.mainMuscle)} - {item.equipment}
                 </span>
+                <span className="mt-1 block truncate text-xs font-bold text-arsen-purple2">
+                  {warmupProtocolLabel(normalizeWarmupProtocol(item.warmupProtocol))}
+                </span>
               </div>
               <ListPlus aria-hidden="true" className="size-5 text-arsen-purple2" />
             </Card>
@@ -747,8 +753,11 @@ function CatalogExerciseEditorSheet({
     mainMuscle: normalizeMuscleGroup(item?.mainMuscle),
     name: item?.name ?? '',
     technicalNotes: item?.technicalNotes ?? '',
+    warmupProtocol: normalizeWarmupProtocol(item?.warmupProtocol),
   }))
   const [progressionInfoOpen, setProgressionInfoOpen] = useState(false)
+  const [warmupInfoOpen, setWarmupInfoOpen] = useState(false)
+  const selectedWarmupProtocol = normalizeWarmupProtocol(form.warmupProtocol)
 
   return (
     <SheetFrame onClose={onClose} title={item ? 'Editar catalogo' : 'Crear ejercicio'}>
@@ -775,6 +784,20 @@ function CatalogExerciseEditorSheet({
           </span>
           <Info aria-hidden="true" className="size-5 text-arsen-purple2" />
         </button>
+        <div className="grid grid-cols-[1fr_42px] items-end gap-2">
+          <WarmupProtocolSelect
+            onChange={(value) => setForm((current) => ({ ...current, warmupProtocol: value }))}
+            value={selectedWarmupProtocol}
+          />
+          <button
+            aria-label="Ver descripcion del calentamiento"
+            className="grid min-h-11 place-items-center rounded-[10px] border border-white/10 bg-arsen-surface text-arsen-purple2"
+            onClick={() => setWarmupInfoOpen(true)}
+            type="button"
+          >
+            <Info aria-hidden="true" className="size-5" />
+          </button>
+        </div>
         <TextField label="Aliases" onChange={(value) => setForm((current) => ({ ...current, aliases: value }))} value={form.aliases} />
         <label className="block">
           <span className="mb-1 block text-xs font-bold text-arsen-muted">Indicaciones</span>
@@ -795,6 +818,7 @@ function CatalogExerciseEditorSheet({
             mainMuscle: form.mainMuscle,
             name: form.name,
             technicalNotes: form.technicalNotes,
+            warmupProtocol: selectedWarmupProtocol,
           })
         }
         tone="acid"
@@ -803,6 +827,7 @@ function CatalogExerciseEditorSheet({
         Guardar
       </ActionButton>
       {progressionInfoOpen ? <DoubleProgressionInfoSheet onClose={() => setProgressionInfoOpen(false)} /> : null}
+      {warmupInfoOpen ? <WarmupProtocolInfoSheet onClose={() => setWarmupInfoOpen(false)} protocol={selectedWarmupProtocol} /> : null}
     </SheetFrame>
   )
 }
@@ -894,17 +919,21 @@ function RoutineExerciseRecipeSheet({
           <TextField label="RIR" onChange={(value) => update('recommendedRir', value)} type="number" value={form.recommendedRir} />
           <TextField label="Descanso s" onChange={(value) => update('restSeconds', value)} type="number" value={form.restSeconds} />
         </div>
-        <div className="grid grid-cols-[1fr_42px] items-end gap-2">
-          <WarmupProtocolSelect onChange={(value) => update('warmupProtocol', value)} value={selectedWarmupProtocol} />
-          <button
-            aria-label="Ver descripcion del calentamiento"
-            className="grid min-h-11 place-items-center rounded-[10px] border border-white/10 bg-arsen-surface text-arsen-purple2"
-            onClick={() => setWarmupInfoOpen(true)}
-            type="button"
-          >
+        <button
+          aria-label="Ver descripcion del calentamiento"
+          className="grid min-h-16 w-full grid-cols-[36px_1fr_28px] items-center gap-3 rounded-[12px] border border-arsen-purple/30 bg-arsen-purple/10 p-3 text-left transition hover:border-arsen-purple/60 hover:bg-arsen-purple/15"
+          onClick={() => setWarmupInfoOpen(true)}
+          type="button"
+        >
+          <span className="grid size-9 place-items-center rounded-[10px] bg-arsen-purple/20 text-arsen-purple2">
             <Info aria-hidden="true" className="size-5" />
-          </button>
-        </div>
+          </span>
+          <span className="min-w-0">
+            <span className="mb-1 block text-xs font-bold text-arsen-muted">Calentamiento</span>
+            <strong className="block truncate text-sm text-arsen-purple2">{warmupProtocolLabel(selectedWarmupProtocol)}</strong>
+          </span>
+          <Info aria-hidden="true" className="size-5 text-arsen-purple2" />
+        </button>
         <label className="block">
           <span className="mb-1 block text-xs font-bold text-arsen-muted">Notas tecnicas</span>
           <textarea
@@ -936,55 +965,6 @@ function RoutineExerciseRecipeSheet({
   )
 }
 
-function WarmupProtocolInfoSheet({ onClose, protocol }: { onClose: () => void; protocol: WarmupProtocol }) {
-  const exampleSets = buildWarmupSets(100, protocol)
-  const description = warmupProtocolDescriptions[protocol]
-
-  return (
-    <div className="fixed inset-0 z-[60] mx-auto flex max-w-[430px] items-end bg-black/60">
-      <button aria-label="Cerrar descripcion" className="absolute inset-0 cursor-default" onClick={onClose} type="button" />
-      <section className="relative w-full rounded-t-[22px] border-t border-white/10 bg-arsen-bg2 p-4 shadow-[0_-16px_40px_rgb(0_0_0_/_0.35)]">
-        <div className="mx-auto mb-4 h-1.5 w-14 rounded-full bg-white/25" />
-        <div className="mb-4 flex items-start justify-between gap-3">
-          <div>
-            <h2 className="text-xl font-black">{warmupProtocolLabel(protocol)}</h2>
-            <p className="mt-1 text-xs font-semibold text-arsen-muted">Ejemplo con 100 kg de peso de trabajo.</p>
-          </div>
-          <button className="grid size-9 place-items-center rounded-[10px] text-arsen-muted" onClick={onClose} type="button">
-            <X aria-hidden="true" className="size-5" />
-            <span className="sr-only">Cerrar</span>
-          </button>
-        </div>
-        <Card className="p-3 text-sm text-arsen-muted">{description}</Card>
-        <div className="mt-3 space-y-2">
-          {exampleSets.length > 0 ? (
-            exampleSets.map((set, index) => (
-              <Card className="grid grid-cols-[28px_1fr_1fr_1fr] items-center gap-2 p-3 text-sm" key={`${set.percentage}-${index}`}>
-                <span className="grid size-6 place-items-center rounded-full border border-white/15 text-xs text-arsen-muted">{index + 1}</span>
-                <strong className="text-arsen-acid">{Math.round(set.percentage * 100)}%</strong>
-                <span>{set.weightKg} kg</span>
-                <span>
-                  {set.reps} reps / RIR {set.rir}
-                </span>
-              </Card>
-            ))
-          ) : (
-            <Card className="p-3 text-sm text-arsen-muted">No genera series previas.</Card>
-          )}
-        </div>
-      </section>
-    </div>
-  )
-}
-
-const warmupProtocolDescriptions: Record<WarmupProtocol, string> = {
-  heavy_low_volume: 'Una aproximacion corta para ejercicios pesados cuando quieres llegar rapido al peso de trabajo sin acumular fatiga.',
-  hypertrophy: 'Dos aproximaciones moderadas para preparar articulaciones y patron de movimiento antes de series de 6 a 15 repeticiones.',
-  none: 'No agrega calentamientos calculados. Usalo para ejercicios muy ligeros, accesorios simples o cuando ya vienes preparado.',
-  progressive: 'Sube de forma gradual y conserva repeticiones controladas. Bueno cuando quieres sentir tecnica y rango antes de trabajar fuerte.',
-  strength: 'Tres aproximaciones con menos repeticiones conforme sube el peso. Sirve para cargas altas sin gastar demasiada energia.',
-}
-
 type ExerciseForm = {
   equipment: Equipment
   mainMuscle: MuscleGroup
@@ -1009,7 +989,7 @@ function exerciseToForm(exercise: RoutineExercise | null, catalogItem: ExerciseC
     restSeconds: String(exercise?.restSeconds ?? catalogItem?.defaultRestSeconds ?? 90),
     targetSets: String(exercise?.targetSets ?? catalogItem?.defaultTargetSets ?? 3),
     technicalNotes: exercise?.technicalNotes ?? catalogItem?.technicalNotes ?? '',
-    warmupProtocol: normalizeWarmupProtocol(exercise?.warmupProtocol ?? ''),
+    warmupProtocol: normalizeWarmupProtocol(exercise?.warmupProtocol ?? catalogItem?.warmupProtocol),
   }
 }
 

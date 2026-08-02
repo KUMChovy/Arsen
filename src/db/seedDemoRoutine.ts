@@ -70,6 +70,7 @@ export async function ensureDemoData() {
         equipment: exercise.equipment,
         aliases: [],
         technicalNotes: exercise.technicalNotes,
+        warmupProtocol: exercise.warmupProtocol,
         defaultTargetSets: exercise.targetSets,
         defaultRepsMin: exercise.repsMin,
         defaultRepsMax: exercise.repsMax,

@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { normalizeWarmupProtocol } from '../calculations/warmups'
 
 const equipmentSchema = z.enum(['Barra', 'Mancuerna', 'Maquina', 'Polea', 'Peso corporal', 'Otro'])
 const weekdaySchema = z.union([
@@ -59,7 +60,7 @@ export const routineExerciseSchema = z
     targetSets: z.number(),
     technicalNotes: z.string(),
     updatedAt: z.string(),
-    warmupProtocol: z.string(),
+    warmupProtocol: z.string().optional().default('none').transform(normalizeWarmupProtocol),
     warmupSets: z.number(),
   })
   .passthrough()
@@ -94,6 +95,7 @@ export const exerciseCatalogItemSchema = z
     name: z.string(),
     technicalNotes: z.string().optional().default(''),
     updatedAt: z.string(),
+    warmupProtocol: z.string().optional().default('none').transform(normalizeWarmupProtocol),
   })
   .passthrough()
   .refine((item) => item.defaultRepsMin <= item.defaultRepsMax, { message: 'defaultRepsMin no puede ser mayor que defaultRepsMax' })

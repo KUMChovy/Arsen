@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest'
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { WeightIncreaseRecommendation } from '../../../shared/calculations/progression'
@@ -60,6 +60,19 @@ describe('RoutineDayDetailPage', () => {
     )
 
     expect(screen.queryByText(/Listo para subir peso/i)).not.toBeInTheDocument()
+  })
+
+  it('opens warmup description from the expanded exercise detail', () => {
+    render(
+      <MemoryRouter>
+        <RoutineDayDetailPage />
+      </MemoryRouter>,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: /Press inclinado/i }))
+    fireEvent.click(screen.getByRole('button', { name: 'Ver descripcion del calentamiento' }))
+
+    expect(screen.getByText('Ejemplo con 100 kg de peso de trabajo.')).toBeInTheDocument()
   })
 })
 

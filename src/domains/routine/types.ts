@@ -52,6 +52,7 @@ export type ExerciseCatalogItem = {
   canonicalName: string
   mainMuscle: string
   equipment: Equipment
+  warmupProtocol: string
   aliases: string[]
   technicalNotes: string
   defaultTargetSets: number

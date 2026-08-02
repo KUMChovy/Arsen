@@ -143,6 +143,7 @@ describe('IndexedDB integration', () => {
       mainMuscle: 'Pectoral mayor',
       name: 'Press inclinado',
       technicalNotes: 'Baja controlado y pausa al pecho.',
+      warmupProtocol: 'Hipertrofia',
     })
     await addCatalogExerciseToDay(routineA.id, dayA.id, catalogItemId, {
       recommendedRir: 2,
@@ -156,6 +157,7 @@ describe('IndexedDB integration', () => {
       repsMin: 10,
       targetSets: 2,
       technicalNotes: 'Version ligera del dia B.',
+      warmupProtocol: 'strength',
     })
 
     const catalogItem = await db.exerciseCatalog.get(catalogItemId)
@@ -169,10 +171,11 @@ describe('IndexedDB integration', () => {
       mainMuscle: 'Pecho',
       name: 'Press inclinado',
       technicalNotes: 'Baja controlado y pausa al pecho.',
+      warmupProtocol: 'hypertrophy',
     })
     expect(recipes).toHaveLength(2)
-    expect(recipes[0]).toMatchObject({ dayId: dayA.id, recommendedRir: 2, repsMax: 10, repsMin: 8, targetSets: 3, technicalNotes: 'Baja controlado y pausa al pecho.' })
-    expect(recipes[1]).toMatchObject({ dayId: dayB.id, recommendedRir: 3, repsMax: 12, repsMin: 10, targetSets: 2, technicalNotes: 'Version ligera del dia B.' })
+    expect(recipes[0]).toMatchObject({ dayId: dayA.id, recommendedRir: 2, repsMax: 10, repsMin: 8, targetSets: 3, technicalNotes: 'Baja controlado y pausa al pecho.', warmupProtocol: 'hypertrophy' })
+    expect(recipes[1]).toMatchObject({ dayId: dayB.id, recommendedRir: 3, repsMax: 12, repsMin: 10, targetSets: 2, technicalNotes: 'Version ligera del dia B.', warmupProtocol: 'strength' })
   })
 
   it('preserves indication notes when importing a backup', async () => {
@@ -433,7 +436,7 @@ function routineExercise(
   }
 }
 
-function catalogExercise(overrides: Partial<Pick<ExerciseCatalogItem, 'technicalNotes'>> = {}): ExerciseCatalogItem {
+function catalogExercise(overrides: Partial<Pick<ExerciseCatalogItem, 'technicalNotes' | 'warmupProtocol'>> = {}): ExerciseCatalogItem {
   return {
     aliases: [],
     assetKind: null,
@@ -450,5 +453,6 @@ function catalogExercise(overrides: Partial<Pick<ExerciseCatalogItem, 'technical
     name: 'Sentadilla',
     technicalNotes: overrides.technicalNotes ?? '',
     updatedAt: now,
+    warmupProtocol: overrides.warmupProtocol ?? 'none',
   }
 }

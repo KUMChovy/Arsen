@@ -20,6 +20,22 @@ failure to follow this file, not a judgment call you get to make on your own.
 
 ## every new task
 
+## Skills you must use
+
+This project requires you to actively use these installed skills — not only when you judge
+they "feel" relevant, but as a standing requirement on every task:
+
+- **`using-superpowers`** — the skill router. Governs whether/how the others below trigger.
+- **`superpowers:brainstorming`** / **`superpowers:systematic-debugging`** — process. Always
+  mandatory.
+- **`impeccable`** — UI/visual design quality. Mandatory whenever the task touches UI.
+- **`ponytail`** — implementation sizing/minimalism. Always mandatory.
+
+You must invoke them, not just keep them in mind. Failing to invoke a skill that applies is a
+failure to follow this file, not a judgment call you get to make on your own.
+
+## every new task
+
 For **every new task** you're asked to do (a feature, a fix, a refactor, anything), follow
 this workflow without needing to be asked again:
 
@@ -32,31 +48,38 @@ this workflow without needing to be asked again:
    Never skip based on task size, and never default to brainstorming for a bug — debugging is
    a different process. Refine the idea, explore alternatives, define a short plan (what will
    be built, how it will be verified) before touching code.
-3. **UI/visual work — mandatory once touched.** If the task involves HTML/CSS, components,
-   layout, or anything rendered to a user, this stops being optional. If the project already documents its design system by hand
-   somewhere (a styleguide section, a tokens file, a design spec doc), fold that into the
-   resulting DESIGN.md afterward so there's one source of truth, not two. During planning:
+3. **Never commit automatically.** `writing-plans` and `executing-plans` default to frequent
+   commits as part of their own methodology and will commit without asking. That default is
+   overridden here: never run `git commit` or `git push` on your own initiative, even mid-plan
+   or between checkpoints. Stage and describe the change, then stop and wait for explicit
+   confirmation from the human before committing. This applies regardless of which skill or
+   step is currently driving the work.
+4. **UI/visual work — mandatory once touched.** If the task involves HTML/CSS, components,
+   layout, or anything rendered to a user, this stops being optional. If the project already
+   documents its design system by hand somewhere (a styleguide section, a tokens file, a
+   design spec doc), fold that into the resulting DESIGN.md afterward so there's one source
+   of truth, not two. During planning:
    `/impeccable shape` (new UI) or `/impeccable critique` (existing UI being changed). Before
    closing: `/impeccable audit` + `/impeccable polish`. Purely backend/logic/script tasks with
    no visual output skip this step entirely.
-4. **Other relevant skills.** Check for and use any other installed skill that fits the
+5. **Other relevant skills.** Check for and use any other installed skill that fits the
    problem — debugging, testing, a specific pattern, a project-specific skill. These depend
-   on applicability; steps 2 and 3 don't, once their trigger condition is met.
-5. **Implement with Ponytail.** Once the plan is clear, invoke the ponytail skill and follow
+   on applicability; steps 2 and 4 don't, once their trigger condition is met.
+6. **Implement with Ponytail.** Once the plan is clear, invoke the ponytail skill and follow
    its own decision ladder exactly as defined in it — don't rewrite it here.
-6. **Priority on conflict:**
+7. **Priority on conflict:**
    - **Superpowers governs process** — how to explore the problem, plan, and verify.
    - **Impeccable governs visual/design quality**, only when UI is touched — a floor, not
      something ponytail can trim.
    - **Ponytail governs code size/scope** — never at the cost of validation, error handling
      that prevents data loss, security, accessibility, or Impeccable's visual-quality bar
      when it applies.
-7. **Never simplify away** input validation at trust boundaries, error handling that prevents
+8. **Never simplify away** input validation at trust boundaries, error handling that prevents
    data loss, security, accessibility, or anything explicitly requested.
 
 This is not optional and does not depend on being repeated in the message: apply this
 workflow by default on every task, starting from the first message of each new task. If no
-extra skill (step 4) was used, say so and justify why none applied. If the task touched UI
+extra skill (step 5) was used, say so and justify why none applied. If the task touched UI
 and Impeccable wasn't run (or vice versa), say so and justify why.
 
 ## Commands

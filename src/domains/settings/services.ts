@@ -9,6 +9,7 @@ import type {
 import type { AppSettings } from './types'
 import type { DropSetLog, ExerciseLog, SetLog, SkipLog, WeightUnit, WorkoutSession } from '../workout/types'
 import { performanceScore, volumeForSet } from '../../shared/calculations/workout'
+import { normalizeWarmupProtocol } from '../../shared/calculations/warmups'
 import { downloadJson, downloadText } from '../../shared/utils/download'
 import { localDateKey } from '../../shared/utils/date'
 import { backupSchema } from '../../shared/validation/arsenImportSchemas'
@@ -370,6 +371,7 @@ function parseBackup(content: string): { tables: BackupTables } {
 function stripLegacyProgression(exercise: RoutineExercise): RoutineExercise {
   const copy = { ...exercise } as RoutineExercise & { progression?: unknown }
   delete copy.progression
+  copy.warmupProtocol = normalizeWarmupProtocol(copy.warmupProtocol)
 
   return copy
 }
@@ -377,6 +379,7 @@ function stripLegacyProgression(exercise: RoutineExercise): RoutineExercise {
 function stripLegacyCatalogProgression(item: ExerciseCatalogItem): ExerciseCatalogItem {
   const copy = { ...item } as ExerciseCatalogItem & { progressionStrategy?: unknown }
   delete copy.progressionStrategy
+  copy.warmupProtocol = normalizeWarmupProtocol(copy.warmupProtocol)
 
   return copy
 }

@@ -1,4 +1,5 @@
 import { CURRENT_SCHEMA_VERSION, db } from '../../db/schema'
+import { normalizeWarmupProtocol } from '../../shared/calculations/warmups'
 import { downloadJson } from '../../shared/utils/download'
 import { createId } from '../../shared/utils/id'
 import { routineExportSchema } from '../../shared/validation/arsenImportSchemas'
@@ -85,6 +86,7 @@ export async function importRoutineJson(file: File) {
 function stripLegacyProgression(exercise: RoutineExercise): RoutineExercise {
   const copy = { ...exercise } as RoutineExercise & { progression?: unknown }
   delete copy.progression
+  copy.warmupProtocol = normalizeWarmupProtocol(copy.warmupProtocol)
 
   return copy
 }

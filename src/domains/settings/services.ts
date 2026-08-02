@@ -20,10 +20,10 @@ export async function exportFullBackup() {
     schemaVersion: CURRENT_SCHEMA_VERSION,
     tables: {
       dropSetLogs: await db.dropSetLogs.toArray(),
-      exerciseCatalog: await db.exerciseCatalog.toArray(),
+      exerciseCatalog: (await db.exerciseCatalog.toArray()).map(stripLegacyCatalogProgression),
       exerciseLogs: await db.exerciseLogs.toArray(),
       routineDays: await db.routineDays.toArray(),
-      routineExercises: await db.routineExercises.toArray(),
+      routineExercises: (await db.routineExercises.toArray()).map(stripLegacyProgression),
       routines: await db.routines.toArray(),
       setLogs: await db.setLogs.toArray(),
       settings: await db.settings.toArray(),
@@ -85,10 +85,10 @@ async function putBackupTables(tables: BackupTables, mode: BackupImportMode) {
 
   await Promise.all([
     db.dropSetLogs.bulkPut(tables.dropSetLogs ?? []),
-    db.exerciseCatalog.bulkPut(tables.exerciseCatalog ?? []),
+    db.exerciseCatalog.bulkPut((tables.exerciseCatalog ?? []).map(stripLegacyCatalogProgression)),
     db.exerciseLogs.bulkPut(tables.exerciseLogs ?? []),
     db.routineDays.bulkPut(tables.routineDays ?? []),
-    db.routineExercises.bulkPut(tables.routineExercises ?? []),
+    db.routineExercises.bulkPut((tables.routineExercises ?? []).map(stripLegacyProgression)),
     db.routines.bulkPut(tables.routines ?? []),
     db.setLogs.bulkPut(tables.setLogs ?? []),
     shouldImportSettings ? db.settings.bulkPut(tables.settings ?? []) : Promise.resolve(),
@@ -365,4 +365,18 @@ function parseBackup(content: string): { tables: BackupTables } {
   }
 
   return { tables: result.data.tables as BackupTables }
+}
+
+function stripLegacyProgression(exercise: RoutineExercise): RoutineExercise {
+  const copy = { ...exercise } as RoutineExercise & { progression?: unknown }
+  delete copy.progression
+
+  return copy
+}
+
+function stripLegacyCatalogProgression(item: ExerciseCatalogItem): ExerciseCatalogItem {
+  const copy = { ...item } as ExerciseCatalogItem & { progressionStrategy?: unknown }
+  delete copy.progressionStrategy
+
+  return copy
 }

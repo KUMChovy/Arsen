@@ -49,7 +49,6 @@ export const routineExerciseSchema = z
     mainMuscle: z.string(),
     name: z.string(),
     order: z.number(),
-    progression: z.string(),
     recommendedRir: z.number().min(0),
     repsMax: z.number(),
     repsMin: z.number(),

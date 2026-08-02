@@ -19,7 +19,7 @@ export async function exportRoutineJson(routineId: string) {
 
   const data: RoutineExport = {
     days: await db.routineDays.where('routineId').equals(routineId).sortBy('order'),
-    exercises: await db.routineExercises.where('routineId').equals(routineId).sortBy('order'),
+    exercises: (await db.routineExercises.where('routineId').equals(routineId).sortBy('order')).map(stripLegacyProgression),
     exportedAt: new Date().toISOString(),
     routine,
     schemaVersion: CURRENT_SCHEMA_VERSION,
@@ -46,14 +46,16 @@ export async function importRoutineJson(file: File) {
       updatedAt: now,
     }
   })
-  const exercises = parsed.exercises.map((exercise): RoutineExercise => ({
-    ...exercise,
-    id: createId('exercise'),
-    dayId: dayIdBySource.get(exercise.dayId) ?? exercise.dayId,
-    routineId,
-    createdAt: now,
-    updatedAt: now,
-  }))
+  const exercises = parsed.exercises.map((exercise): RoutineExercise =>
+    stripLegacyProgression({
+      ...exercise,
+      id: createId('exercise'),
+      dayId: dayIdBySource.get(exercise.dayId) ?? exercise.dayId,
+      routineId,
+      createdAt: now,
+      updatedAt: now,
+    }),
+  )
   const targets = parsed.weeklyVolumeTargets.map((target): WeeklyVolumeTarget => ({
     ...target,
     id: createId('volume-target'),
@@ -78,6 +80,13 @@ export async function importRoutineJson(file: File) {
   })
 
   return routineId
+}
+
+function stripLegacyProgression(exercise: RoutineExercise): RoutineExercise {
+  const copy = { ...exercise } as RoutineExercise & { progression?: unknown }
+  delete copy.progression
+
+  return copy
 }
 
 function parseRoutineExport(content: string): RoutineExport {

@@ -82,7 +82,6 @@ const exercise: RoutineExercise = {
   mainMuscle: 'Pecho',
   name: 'Press inclinado',
   order: 0,
-  progression: '',
   recommendedRir: 2,
   repsMax: 10,
   repsMin: 8,

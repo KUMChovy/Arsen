@@ -121,6 +121,15 @@ describe('WorkoutPage', () => {
     expect(screen.getByText('+2.5 kg')).toBeInTheDocument()
   })
 
+  it('hides weight increase recommendation for a different exercise', () => {
+    workoutMocks.weightIncreaseRecommendations = [{ ...weightIncreaseRecommendation, exerciseId: 'exercise-otro', exerciseName: 'Remo T' }]
+
+    render(<WorkoutPage />)
+
+    expect(screen.queryByText('Listo para subir peso')).not.toBeInTheDocument()
+    expect(screen.queryByText('+2.5 kg')).not.toBeInTheDocument()
+  })
+
   it('opens exercise indication notes from the info button', () => {
     render(<WorkoutPage />)
 
@@ -143,7 +152,6 @@ const exercise: RoutineExercise = {
   mainMuscle: 'Pecho',
   name: 'Press inclinado',
   order: 0,
-  progression: '',
   recommendedRir: 2,
   repsMax: 10,
   repsMin: 8,

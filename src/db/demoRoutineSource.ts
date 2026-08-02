@@ -13,7 +13,6 @@ export type DemoRoutineExerciseSource = {
   recommendedRir: number
   rest: string
   restSeconds: number
-  progression: string
   technicalNotes: string
   currentWeight: number
 }

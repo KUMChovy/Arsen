@@ -9,7 +9,7 @@ import type {
 import type { AppSettings } from '../domains/settings/types'
 import type { DropSetLog, ExerciseLog, SetLog, SkipLog, WorkoutSession } from '../domains/workout/types'
 
-export const CURRENT_SCHEMA_VERSION = 1
+export const CURRENT_SCHEMA_VERSION = 3
 
 export class ArsenDatabase extends Dexie {
   settings!: Table<AppSettings, string>
@@ -40,6 +40,52 @@ export class ArsenDatabase extends Dexie {
       dropSetLogs: 'id, setLogId, [setLogId+order]',
       skipLogs: 'id, sessionId, routineExerciseId',
     })
+
+    this.version(2)
+      .stores({
+        settings: 'id, activeRoutineId, preferredUnit',
+        routines: 'id, isActive, name, updatedAt',
+        routineDays: 'id, routineId, [routineId+order], weekday',
+        routineExercises: 'id, routineId, dayId, canonicalName, [dayId+order], sourceExerciseId',
+        exerciseCatalog: 'id, canonicalName, mainMuscle, equipment',
+        weeklyVolumeTargets: 'id, routineId, muscle',
+        workoutSessions: 'id, routineId, dayId, date, [date+routineId], [date+dayId]',
+        exerciseLogs: 'id, sessionId, routineExerciseId, state',
+        setLogs: 'id, exerciseLogId, kind, [exerciseLogId+order]',
+        dropSetLogs: 'id, setLogId, [setLogId+order]',
+        skipLogs: 'id, sessionId, routineExerciseId',
+      })
+      .upgrade((tx) =>
+        tx
+          .table('routineExercises')
+          .toCollection()
+          .modify((item) => {
+            delete item.progression
+          }),
+      )
+
+    this.version(3)
+      .stores({
+        settings: 'id, activeRoutineId, preferredUnit',
+        routines: 'id, isActive, name, updatedAt',
+        routineDays: 'id, routineId, [routineId+order], weekday',
+        routineExercises: 'id, routineId, dayId, canonicalName, [dayId+order], sourceExerciseId',
+        exerciseCatalog: 'id, canonicalName, mainMuscle, equipment',
+        weeklyVolumeTargets: 'id, routineId, muscle',
+        workoutSessions: 'id, routineId, dayId, date, [date+routineId], [date+dayId]',
+        exerciseLogs: 'id, sessionId, routineExerciseId, state',
+        setLogs: 'id, exerciseLogId, kind, [exerciseLogId+order]',
+        dropSetLogs: 'id, setLogId, [setLogId+order]',
+        skipLogs: 'id, sessionId, routineExerciseId',
+      })
+      .upgrade((tx) =>
+        tx
+          .table('exerciseCatalog')
+          .toCollection()
+          .modify((item) => {
+            delete item.progressionStrategy
+          }),
+      )
   }
 }
 

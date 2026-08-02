@@ -59,7 +59,6 @@ function buildBackup(demoRoutineSource, { endDate, startDate }) {
       mainMuscle: exercise.mainMuscle,
       name: exercise.name,
       order: index,
-      progression: exercise.progression,
       recommendedRir: exercise.recommendedRir,
       repsMax: exercise.repsMax,
       repsMin: exercise.repsMin,
@@ -154,13 +153,13 @@ function buildBackup(demoRoutineSource, { endDate, startDate }) {
 
       const repsRange = { max: exercise.repsMax, min: exercise.repsMin }
       const setCount = Math.max(1, exercise.targetSets)
-      const baseWeight = projectedWeight(exercise.currentWeightKg, progression, weekNumber, exercise.id)
+      const baseWeight = baseWeightForExercise(exercise, progression, weekNumber, sessionIndex)
 
       for (let order = 0; order < setCount; order += 1) {
         const fatigue = 1 - order * 0.025
         const weightKg = roundToHalf(baseWeight * fatigue)
-        const reps = repsForSet(repsRange, order, progression, exercise.id)
-        const rir = rirForSet(exercise.recommendedRir, order, setCount, sessionIndex)
+        const reps = repsForExerciseSet(exercise, repsRange, order, progression, sessionIndex)
+        const rir = rirForExerciseSet(exercise, order, setCount, sessionIndex)
         const setId = `set-demo-${date}-${exercise.id}-${order + 1}`
 
         setLogs.push({
@@ -197,7 +196,7 @@ function buildBackup(demoRoutineSource, { endDate, startDate }) {
 
   return {
     exportedAt: now,
-    schemaVersion: 1,
+    schemaVersion: 3,
     tables: {
       dropSetLogs,
       exerciseCatalog: [...catalogByName.values()],
@@ -223,7 +222,7 @@ function buildBackup(demoRoutineSource, { endDate, startDate }) {
           lastDeloadNotificationDate: null,
           notificationPermission: 'default',
           preferredUnit: 'kg',
-          schemaVersion: 1,
+          schemaVersion: 3,
           storagePersisted: null,
           updatedAt: now,
         },
@@ -349,6 +348,28 @@ function snapshotForExercise(exercise) {
   }
 }
 
+function baseWeightForExercise(exercise, progression, weekNumber, sessionIndex) {
+  if (exercise.id === 'dia-1-press-inclinado') return roundToHalf(38 + progression * 7.5)
+  if (exercise.id === 'dia-1-remo-t') return roundToHalf(48 + progression * 6 + (sessionIndex % 2) * 1)
+  if (exercise.id === 'dia-5-remo-t') return roundToHalf(64 + progression * 10 + (sessionIndex % 2) * 1.5)
+
+  return projectedWeight(exercise.currentWeightKg, progression, weekNumber, exercise.id)
+}
+
+function repsForExerciseSet(exercise, range, order, progression, sessionIndex) {
+  if (exercise.id === 'dia-1-press-inclinado' && progression > 0.72) return range.max
+  if (exercise.id === 'dia-1-remo-t') return clamp(10 + Math.floor(progression * 3) - Math.floor(order / 2), range.min, range.max)
+  if (exercise.id === 'dia-5-remo-t') return clamp(5 + (sessionIndex % 3 === 0 ? 1 : 0) - Math.floor(order / 3), range.min, range.max)
+
+  return repsForSet(range, order, progression, exercise.id)
+}
+
+function rirForExerciseSet(exercise, order, setCount, sessionIndex) {
+  if (exercise.id === 'dia-1-press-inclinado' && sessionIndex > 42) return exercise.recommendedRir
+
+  return rirForSet(exercise.recommendedRir, order, setCount, sessionIndex)
+}
+
 function repsForSet(range, order, progression, seed) {
   const spread = range.max - range.min
   const wave = seededNoise(`${seed}-reps-${order}`) > 0.55 ? 1 : 0
@@ -408,6 +429,8 @@ function sessionNote(dayName, weekNumber, sessionIndex) {
 function exerciseNote(exercise, sessionIndex) {
   if (sessionIndex % 7 === 0) return 'Subir peso solo si todas las reps salen limpias.'
   if (sessionIndex % 5 === 0) return 'Buen control de tempo.'
+  if (exercise.id === 'dia-1-remo-t') return 'Doble progresion: completa 10 reps en todas las series antes de subir peso.'
+  if (exercise.id === 'dia-5-remo-t') return 'Doble progresion pesada: completa 8 reps en todas las series antes de subir peso.'
 
   return exercise.technicalNotes ? exercise.technicalNotes.slice(0, 120) : ''
 }

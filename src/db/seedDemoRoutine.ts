@@ -51,7 +51,6 @@ export async function ensureDemoData() {
       restSeconds: exercise.restSeconds,
       warmupSets: exercise.warmupSets,
       warmupProtocol: exercise.warmupProtocol,
-      progression: exercise.progression,
       technicalNotes: exercise.technicalNotes,
       currentWeightKg: exercise.currentWeight,
       order: index,
@@ -85,7 +84,7 @@ export async function ensureDemoData() {
 
   const appSettings: AppSettings = {
     id: 'app',
-    schemaVersion: 1,
+    schemaVersion: 3,
     activeRoutineId: routineId,
     preferredUnit: 'kg',
     deloadNotifications: true,

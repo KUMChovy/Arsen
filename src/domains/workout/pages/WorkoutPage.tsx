@@ -50,6 +50,9 @@ export function WorkoutPage() {
   const currentExercise = navigableExercises.find((exercise) => exercise.id === currentExerciseId) ?? navigableExercises[0] ?? null
   const currentExerciseIndex = currentExercise ? navigableExercises.findIndex((exercise) => exercise.id === currentExercise.id) : -1
   const selectedExercise = selectedExerciseId ? dayExercises.find((exercise) => exercise.id === selectedExerciseId) : null
+  const currentExerciseRecommendations = currentExercise
+    ? weightIncreaseRecommendations.filter((recommendation) => recommendation.exerciseId === currentExercise.id)
+    : []
   const completedCount = dailyProgress.completedCount
   const totalCount = dayExercises.length
   const preferredUnit = workoutDay?.settings.preferredUnit ?? 'kg'
@@ -233,7 +236,7 @@ export function WorkoutPage() {
               ['RIR', currentExercise?.recommendedRir ?? '-', 'text-arsen-ink'],
             ].map(([label, value, tone]) => (
               <div className="border-r border-white/10 px-1 last:border-r-0" key={label}>
-                <span className="block text-[10px] text-arsen-muted">{label}</span>
+                <span className="block text-xs text-arsen-muted">{label}</span>
                 <strong className={['mt-1 block text-lg', tone].join(' ')}>{value}</strong>
               </div>
             ))}
@@ -265,7 +268,7 @@ export function WorkoutPage() {
         </div>
       </section>
 
-      <WeightIncreaseCard recommendations={weightIncreaseRecommendations} unit={preferredUnit} />
+      <WeightIncreaseCard recommendations={currentExerciseRecommendations} unit={preferredUnit} />
 
       {message ? (
         <div className="rounded-[10px] border border-arsen-purple/40 bg-arsen-purple/15 px-3 py-2 text-xs text-arsen-purple2">
@@ -300,7 +303,7 @@ export function WorkoutPage() {
         {statusSummary.map((item) => (
           <Card className="p-2 text-center" key={item.label}>
             <strong className={['block text-base', item.tone ?? 'text-arsen-ink'].join(' ')}>{item.value}</strong>
-            <span className="mt-1 block text-[10px] text-arsen-muted">{item.label}</span>
+            <span className="mt-1 block text-xs text-arsen-muted">{item.label}</span>
           </Card>
         ))}
       </section>
@@ -310,15 +313,15 @@ export function WorkoutPage() {
         <div className="grid grid-cols-3 gap-2">
           <Card className="p-2 text-center">
             <strong className="block text-base text-arsen-acid">{mainSets.length}</strong>
-            <span className="mt-1 block text-[10px] text-arsen-muted">Series</span>
+            <span className="mt-1 block text-xs text-arsen-muted">Series</span>
           </Card>
           <Card className="p-2 text-center">
             <strong className="block text-base text-arsen-acid">{dailyProgress.dropSets.length}</strong>
-            <span className="mt-1 block text-[10px] text-arsen-muted">Drops</span>
+            <span className="mt-1 block text-xs text-arsen-muted">Drops</span>
           </Card>
           <Card className="p-2 text-center">
             <strong className="block text-base text-arsen-acid">{dailyVolume}</strong>
-            <span className="mt-1 block text-[10px] text-arsen-muted">Volumen kg</span>
+            <span className="mt-1 block text-xs text-arsen-muted">Volumen kg</span>
           </Card>
         </div>
       </section>
@@ -405,7 +408,7 @@ export function WorkoutPage() {
                     </span>
                   </div>
                 </button>
-                <span className={['rounded-full px-2 py-1 text-[10px] font-bold', stateClassName(state)].join(' ')}>
+                <span className={['rounded-full px-2 py-1 text-xs font-bold', stateClassName(state)].join(' ')}>
                   {stateLabel(state)}
                 </span>
                 {note ? (

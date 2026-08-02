@@ -103,7 +103,6 @@ function ExerciseDetailCard({
             <DetailMetric label="Calentamiento" value={warmupProtocolLabel(protocol)} />
             <DetailMetric label="Ultimo peso" value={formatWeight(exercise.currentWeightKg, 'kg')} />
             <DetailMetric label="Orden" value={String(exercise.order + 1)} />
-            {exercise.progression ? <DetailText label="Progresion" value={exercise.progression} /> : null}
             {exercise.technicalNotes ? <DetailText label="Notas tecnicas" value={exercise.technicalNotes} /> : null}
           </div>
         ) : null}

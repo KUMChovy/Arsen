@@ -620,7 +620,7 @@ function ExerciseEditRow({
           {exercise.mainMuscle} - {exercise.targetSets}x{formatRepRange(exercise.repsMin, exercise.repsMax)} - RIR {exercise.recommendedRir}
         </span>
         {recommendation ? (
-          <span className="mt-2 inline-flex max-w-full items-center gap-1 rounded-full bg-arsen-acid/15 px-2 py-1 text-[10px] font-extrabold text-arsen-acid">
+          <span className="mt-2 inline-flex max-w-full items-center gap-1 rounded-full bg-arsen-acid/15 px-2 py-1 text-xs font-extrabold text-arsen-acid">
             <TrendingUp aria-hidden="true" className="size-3 shrink-0" />
             <span className="truncate">Listo para subir peso: {recommendation.suggestedIncreaseLabel}</span>
           </span>
@@ -674,6 +674,7 @@ function CatalogPanel({
               <span className="mt-1 block truncate text-xs text-arsen-muted">
                 {normalizeMuscleGroup(item.mainMuscle)} - {item.equipment}
               </span>
+              <span className="mt-1 block truncate text-xs font-bold text-arsen-purple2">Progresion doble</span>
             </div>
             <div className="grid grid-cols-2 gap-1">
               <IconOnly disabled={disabled} icon={Pencil} label="Editar catalogo" onClick={() => onEdit(item)} />
@@ -747,6 +748,7 @@ function CatalogExerciseEditorSheet({
     name: item?.name ?? '',
     technicalNotes: item?.technicalNotes ?? '',
   }))
+  const [progressionInfoOpen, setProgressionInfoOpen] = useState(false)
 
   return (
     <SheetFrame onClose={onClose} title={item ? 'Editar catalogo' : 'Crear ejercicio'}>
@@ -756,6 +758,23 @@ function CatalogExerciseEditorSheet({
           <MuscleSelect onChange={(value) => setForm((current) => ({ ...current, mainMuscle: value }))} value={form.mainMuscle} />
           <EquipmentSelect onChange={(value) => setForm((current) => ({ ...current, equipment: value }))} value={form.equipment} />
         </div>
+        <button
+          aria-label="Ver explicacion de progresion doble"
+          className="grid min-h-16 w-full grid-cols-[36px_1fr_28px] items-center gap-3 rounded-[12px] border border-arsen-acid/30 bg-arsen-acid/10 p-3 text-left transition hover:border-arsen-acid/60 hover:bg-arsen-acid/15"
+          onClick={() => setProgressionInfoOpen(true)}
+          type="button"
+        >
+          <span className="grid size-9 place-items-center rounded-[10px] bg-arsen-acid/15 text-arsen-acid">
+            <TrendingUp aria-hidden="true" className="size-5" />
+          </span>
+          <span className="min-w-0">
+            <strong className="block text-sm text-arsen-acid">Progresion doble</strong>
+            <span className="mt-1 block text-xs font-semibold text-arsen-muted">
+              Arsen siempre usa esta regla para recomendar cuando subir peso.
+            </span>
+          </span>
+          <Info aria-hidden="true" className="size-5 text-arsen-purple2" />
+        </button>
         <TextField label="Aliases" onChange={(value) => setForm((current) => ({ ...current, aliases: value }))} value={form.aliases} />
         <label className="block">
           <span className="mb-1 block text-xs font-bold text-arsen-muted">Indicaciones</span>
@@ -783,7 +802,52 @@ function CatalogExerciseEditorSheet({
         <Check aria-hidden="true" className="size-5" />
         Guardar
       </ActionButton>
+      {progressionInfoOpen ? <DoubleProgressionInfoSheet onClose={() => setProgressionInfoOpen(false)} /> : null}
     </SheetFrame>
+  )
+}
+
+function DoubleProgressionInfoSheet({ onClose }: { onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-[60] mx-auto flex max-w-[430px] items-end bg-black/60">
+      <button aria-label="Cerrar explicacion de progresion doble" className="absolute inset-0 cursor-default" onClick={onClose} type="button" />
+      <section className="relative w-full rounded-t-[22px] border-t border-white/10 bg-arsen-bg2 p-4 shadow-[0_-16px_40px_rgb(0_0_0_/_0.35)]">
+        <div className="mx-auto mb-4 h-1.5 w-14 rounded-full bg-white/25" />
+        <div className="mb-4 flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="mb-3 grid size-12 place-items-center rounded-[12px] bg-arsen-acid/15 text-arsen-acid">
+              <TrendingUp aria-hidden="true" className="size-6" />
+            </div>
+            <h2 className="text-xl font-black">Progresion doble</h2>
+            <p className="mt-1 text-xs font-semibold text-arsen-muted">La unica estrategia de Arsen para decidir cuando subir peso.</p>
+          </div>
+          <button className="grid size-9 shrink-0 place-items-center rounded-[10px] text-arsen-muted" onClick={onClose} type="button">
+            <X aria-hidden="true" className="size-5" />
+            <span className="sr-only">Cerrar</span>
+          </button>
+        </div>
+        <div className="space-y-2">
+          <Card className="grid grid-cols-[28px_1fr] gap-3 p-3">
+            <span className="grid size-7 place-items-center rounded-full border border-arsen-acid/30 text-xs font-black text-arsen-acid">1</span>
+            <p className="text-sm font-semibold text-arsen-muted">
+              Mantienes el mismo peso y buscas subir repeticiones dentro del rango, por ejemplo 8 a 12 reps.
+            </p>
+          </Card>
+          <Card className="grid grid-cols-[28px_1fr] gap-3 p-3">
+            <span className="grid size-7 place-items-center rounded-full border border-arsen-acid/30 text-xs font-black text-arsen-acid">2</span>
+            <p className="text-sm font-semibold text-arsen-muted">
+              Cuando completas el maximo en todas las series con el RIR objetivo, Arsen muestra la alerta para subir peso.
+            </p>
+          </Card>
+          <Card className="grid grid-cols-[28px_1fr] gap-3 p-3">
+            <span className="grid size-7 place-items-center rounded-full border border-arsen-acid/30 text-xs font-black text-arsen-acid">3</span>
+            <p className="text-sm font-semibold text-arsen-muted">
+              Subes peso y vuelves al minimo del rango. Ejemplo: completas 3x12, subes peso y regresas a 3x8.
+            </p>
+          </Card>
+        </div>
+      </section>
+    </div>
   )
 }
 
@@ -841,7 +905,6 @@ function RoutineExerciseRecipeSheet({
             <Info aria-hidden="true" className="size-5" />
           </button>
         </div>
-        <TextField label="Progresion" onChange={(value) => update('progression', value)} value={form.progression} />
         <label className="block">
           <span className="mb-1 block text-xs font-bold text-arsen-muted">Notas tecnicas</span>
           <textarea
@@ -926,7 +989,6 @@ type ExerciseForm = {
   equipment: Equipment
   mainMuscle: MuscleGroup
   name: string
-  progression: string
   recommendedRir: string
   repsMax: string
   repsMin: string
@@ -941,7 +1003,6 @@ function exerciseToForm(exercise: RoutineExercise | null, catalogItem: ExerciseC
     equipment: exercise?.equipment ?? catalogItem?.equipment ?? 'Barra',
     mainMuscle: normalizeMuscleGroup(exercise?.mainMuscle ?? catalogItem?.mainMuscle),
     name: exercise?.name ?? catalogItem?.name ?? '',
-    progression: exercise?.progression ?? '',
     recommendedRir: String(exercise?.recommendedRir ?? catalogItem?.defaultRecommendedRir ?? 2),
     repsMax: String(exercise?.repsMax ?? catalogItem?.defaultRepsMax ?? 10),
     repsMin: String(exercise?.repsMin ?? catalogItem?.defaultRepsMin ?? 8),
@@ -963,7 +1024,6 @@ function formToExerciseInput(form: ExerciseForm): ExerciseInput | null {
     equipment: form.equipment,
     mainMuscle: form.mainMuscle,
     name: form.name,
-    progression: form.progression,
     recommendedRir,
     repsMax,
     repsMin,
@@ -1159,7 +1219,7 @@ function IconButton({
   return (
     <button
       className={[
-        'grid min-h-11 place-items-center gap-1 rounded-[10px] border px-1 text-[10px] font-extrabold disabled:opacity-40',
+        'grid min-h-11 place-items-center gap-1 rounded-[10px] border px-1 text-xs font-extrabold disabled:opacity-40',
         danger ? 'border-red-300/30 text-red-300' : 'border-white/10 text-arsen-muted',
       ].join(' ')}
       disabled={disabled}

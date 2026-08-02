@@ -176,16 +176,40 @@ describe('IndexedDB integration', () => {
   })
 
   it('preserves indication notes when importing a backup', async () => {
+    const legacyExercise = { ...routineExercise({ technicalNotes: 'Rodillas siguen la punta del pie.' }), progression: 'legacy' }
+
     await importFullBackup(
       backupFile({
         exerciseCatalog: [catalogExercise({ technicalNotes: 'Empuja el piso con todo el pie.' })],
-        routineExercises: [routineExercise({ technicalNotes: 'Rodillas siguen la punta del pie.' })],
+        routineExercises: [legacyExercise],
       }),
       'replace',
     )
 
     await expect(db.exerciseCatalog.get('catalog-1')).resolves.toMatchObject({ technicalNotes: 'Empuja el piso con todo el pie.' })
     await expect(db.routineExercises.get('exercise-1')).resolves.toMatchObject({ technicalNotes: 'Rodillas siguen la punta del pie.' })
+    expect(await db.routineExercises.get('exercise-1')).not.toHaveProperty('progression')
+  })
+
+  it('strips legacy catalog progression strategy when importing a backup', async () => {
+    const legacyCatalogExercise = {
+      ...catalogExercise({ technicalNotes: 'Completa el rango alto antes de subir peso.' }),
+      progressionStrategy: 'legacy_catalog_strategy',
+    } as ExerciseCatalogItem
+
+    await importFullBackup(
+      backupFile({
+        exerciseCatalog: [legacyCatalogExercise],
+      }),
+      'replace',
+    )
+
+    const savedCatalogExercise = await db.exerciseCatalog.get('catalog-1')
+
+    await expect(db.exerciseCatalog.get('catalog-1')).resolves.toMatchObject({
+      technicalNotes: 'Completa el rango alto antes de subir peso.',
+    })
+    expect(savedCatalogExercise).not.toHaveProperty('progressionStrategy')
   })
 
   it('exports chronological progress with routines, graph points and drop set volume', async () => {
@@ -382,7 +406,7 @@ function routineDay(id: string, routineId: string, name: string): RoutineDay {
 }
 
 function routineExercise(
-  overrides: Partial<Pick<RoutineExercise, 'dayId' | 'id' | 'routineId' | 'technicalNotes'>> = {},
+  overrides: Partial<Pick<RoutineExercise, 'dayId' | 'id' | 'routineId' | 'sourceExerciseId' | 'technicalNotes'>> = {},
 ): RoutineExercise {
   return {
     canonicalName: 'press-inclinado',
@@ -394,14 +418,13 @@ function routineExercise(
     mainMuscle: 'Pecho',
     name: 'Press inclinado',
     order: 0,
-    progression: '',
     recommendedRir: 2,
     repsMax: 10,
     repsMin: 8,
     rest: '90 seg',
     restSeconds: 90,
     routineId: overrides.routineId ?? 'routine-1',
-    sourceExerciseId: null,
+    sourceExerciseId: overrides.sourceExerciseId ?? null,
     targetSets: 2,
     technicalNotes: overrides.technicalNotes ?? '',
     updatedAt: now,

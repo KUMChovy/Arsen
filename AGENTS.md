@@ -26,8 +26,7 @@ this workflow without needing to be asked again:
 1. **Skill check first, per `using-superpowers`.** Before planning, asking clarifying
    questions, or coding, check which skills apply — this repo's `AGENTS.md` still overrides
    any skill on conflict (per `using-superpowers`' own instruction-priority rule: user
-   instructions win). Verify `using-superpowers` is actually installed (`npx skills list`);
-   without it, this whole enforcement chain has no engine behind it.
+   instructions win).
 2. **Process — mandatory, always, no exceptions:** `superpowers:brainstorming` for a new
    feature, design change, or refactor; `superpowers:systematic-debugging` for a bug fix.
    Never skip based on task size, and never default to brainstorming for a bug — debugging is

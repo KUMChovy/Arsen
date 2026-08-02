@@ -16,7 +16,6 @@ export type ExerciseInput = {
   restSeconds?: number
   warmupSets?: number
   warmupProtocol?: string
-  progression?: string
   technicalNotes?: string
   currentWeightKg?: number
 }
@@ -283,7 +282,6 @@ export async function createExercise(routineId: string, dayId: string, input: Ex
     restSeconds: input.restSeconds ?? 90,
     warmupSets: input.warmupSets ?? 0,
     warmupProtocol: input.warmupProtocol ?? '',
-    progression: input.progression ?? '',
     technicalNotes: input.technicalNotes ?? '',
     currentWeightKg: input.currentWeightKg ?? 0,
     order,
@@ -321,7 +319,6 @@ export async function addCatalogExerciseToDay(routineId: string, dayId: string, 
     restSeconds: input.restSeconds ?? catalogItem.defaultRestSeconds,
     warmupSets: input.warmupSets ?? 0,
     warmupProtocol: input.warmupProtocol ?? '',
-    progression: input.progression ?? '',
     technicalNotes: input.technicalNotes ?? catalogItem.technicalNotes ?? '',
     currentWeightKg: input.currentWeightKg ?? 0,
     order,
@@ -353,7 +350,6 @@ export async function updateExercise(exerciseId: string, input: ExerciseInput) {
     restSeconds: input.restSeconds ?? 90,
     warmupSets: input.warmupSets ?? 0,
     warmupProtocol: input.warmupProtocol ?? '',
-    progression: input.progression ?? '',
     technicalNotes: input.technicalNotes ?? '',
     currentWeightKg: input.currentWeightKg ?? existing?.currentWeightKg ?? 0,
     updatedAt: new Date().toISOString(),

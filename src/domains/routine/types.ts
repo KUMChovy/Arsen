@@ -39,7 +39,6 @@ export type RoutineExercise = {
   restSeconds: number
   warmupSets: number
   warmupProtocol: string
-  progression: string
   technicalNotes: string
   currentWeightKg: number
   order: number

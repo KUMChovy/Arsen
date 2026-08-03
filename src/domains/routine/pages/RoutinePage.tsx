@@ -47,12 +47,14 @@ import { kgToUnit, unitToKg } from '../../../shared/utils/weight'
 import { useWeightIncreaseRecommendations } from '../../workout/hooks'
 import type { WeightUnit } from '../../workout/types'
 import { WarmupProtocolInfoSheet } from '../components/WarmupProtocolInfoSheet'
-import type { Equipment, ExerciseCatalogItem, LoadMode, MuscleGroup, Routine, RoutineDay, RoutineExercise } from '../types'
-import { useActiveRoutineBundle, useExerciseCatalog, useRoutines } from '../hooks'
+import { ExerciseImageSelector, type ExerciseImageSelection } from '../components/ExerciseImageSelector'
+import type { Equipment, ExerciseAsset, ExerciseCatalogItem, LoadMode, MuscleGroup, Routine, RoutineDay, RoutineExercise } from '../types'
+import { useActiveRoutineBundle, useExerciseAssets, useExerciseCatalog, useRoutines } from '../hooks'
 import { exportRoutineJson, importRoutineJson } from '../importExport'
 import {
   addCatalogExerciseToDay,
   createCatalogExercise,
+  createExerciseAsset,
   createDay,
   createRoutine,
   deleteCatalogExercise,
@@ -100,6 +102,8 @@ export function RoutinePage() {
   const bundle = useActiveRoutineBundle()
   const routines = useRoutines() ?? []
   const catalog = useExerciseCatalog() ?? []
+  const exerciseAssets = useExerciseAssets() ?? []
+  const imageSrcByAssetId = useMemo(() => new Map(exerciseAssets.map((asset) => [asset.id, asset.dataUrl])), [exerciseAssets])
   const days = bundle?.days ?? []
   const importInputRef = useRef<HTMLInputElement>(null)
   const [mode, setMode] = useState<Mode>('view')
@@ -200,6 +204,7 @@ export function RoutinePage() {
           }}
           onSelectDay={setSelectedDayId}
           onUpdateDay={(dayId, input) => runRoutineAction(() => updateDay(dayId, input), 'Dia guardado')}
+          imageSrcByAssetId={imageSrcByAssetId}
           recommendationByExerciseId={recommendationByExerciseId}
           routine={bundle.routine}
           selectedDay={selectedDay}
@@ -210,6 +215,7 @@ export function RoutinePage() {
         <CatalogPanel
           catalog={catalog}
           disabled={isPending}
+          imageSrcByAssetId={imageSrcByAssetId}
           onCreate={() => setCatalogSheet({ item: null })}
           onDelete={async (catalogItemId) => {
             if (!(await confirmDanger('Eliminar del catalogo', 'Las rutinas existentes no se borran.'))) return
@@ -235,6 +241,7 @@ export function RoutinePage() {
       {catalogPickerOpen && selectedDay && bundle ? (
         <CatalogPickerSheet
           catalog={catalog}
+          imageSrcByAssetId={imageSrcByAssetId}
           onClose={() => setCatalogPickerOpen(false)}
           onCreateCatalog={() => setCatalogSheet({ item: null })}
           onSelect={(item) => {
@@ -249,6 +256,7 @@ export function RoutinePage() {
         <CatalogExerciseEditorSheet
           disabled={isPending}
           displayUnit={bundle?.settings.preferredUnit ?? 'kg'}
+          assets={exerciseAssets}
           item={catalogSheet.item}
           onClose={() => setCatalogSheet(null)}
           onSave={(input) => {
@@ -267,6 +275,7 @@ export function RoutinePage() {
           disabled={isPending}
           displayUnit={bundle.settings.preferredUnit}
           exercise={recipeSheet.exercise}
+          imageSrcByAssetId={imageSrcByAssetId}
           onClose={() => setRecipeSheet(null)}
           onSave={(input) => {
             const action =
@@ -396,7 +405,7 @@ function RoutineView({
 
             return (
               <button className="block w-full text-left" key={day.id} onClick={() => onSelectDay(day.id)} type="button">
-                <Card className="content-auto grid grid-cols-[1fr_74px] items-center gap-3 p-4">
+                <Card className="content-auto grid grid-cols-[minmax(0,1fr)_78px] items-center gap-4 p-4">
                   <div className="min-w-0">
                     <div className="flex items-center justify-between gap-2">
                       <h2 className="text-2xl font-black">{day.name}</h2>
@@ -405,7 +414,7 @@ function RoutineView({
                     <p className="font-extrabold text-arsen-purple2">{dominantMuscle}</p>
                     <p className="mt-1 text-sm text-arsen-muted">{day.description || 'Sin descripcion'}</p>
                   </div>
-                  <ExerciseArt alt={day.name} className="size-[74px]" muscle={dominantMuscle} />
+                  <ExerciseArt alt={day.name} className="size-[74px] justify-self-center" muscle={dominantMuscle} />
                 </Card>
               </button>
             )
@@ -434,6 +443,7 @@ function RoutineEditor({
   onReorderExercises,
   onSelectDay,
   onUpdateDay,
+  imageSrcByAssetId,
   recommendationByExerciseId,
   routine,
   selectedDay,
@@ -455,6 +465,7 @@ function RoutineEditor({
   onReorderExercises: (orderedIds: string[]) => void
   onSelectDay: (dayId: string) => void
   onUpdateDay: (dayId: string, input: { description: string; name: string; weekday: RoutineDay['weekday'] }) => void
+  imageSrcByAssetId: Map<string, string>
   recommendationByExerciseId: Map<string, WeightIncreaseRecommendation>
   routine: Routine
   selectedDay: RoutineDay | null
@@ -534,6 +545,7 @@ function RoutineEditor({
                 <ExerciseEditRow
                   disabled={disabled}
                   exercise={exercise}
+                  imageSrcByAssetId={imageSrcByAssetId}
                   onDelete={() => onDeleteExercise(exercise.id)}
                   onDuplicate={() => onDuplicateExercise(exercise.id)}
                   onEdit={() => onEditExercise(exercise)}
@@ -604,6 +616,7 @@ function DayEditorCard({
 function ExerciseEditRow({
   disabled,
   exercise,
+  imageSrcByAssetId,
   onDelete,
   onDuplicate,
   onEdit,
@@ -611,28 +624,35 @@ function ExerciseEditRow({
 }: {
   disabled: boolean
   exercise: RoutineExercise
+  imageSrcByAssetId: Map<string, string>
   onDelete: () => void
   onDuplicate: () => void
   onEdit: () => void
   recommendation: WeightIncreaseRecommendation | null
 }) {
   return (
-    <Card className="grid grid-cols-[28px_52px_1fr_auto] items-center gap-2 p-2">
-      <GripVertical aria-hidden="true" className="size-4 text-arsen-dim" />
-      <ExerciseArt alt={exercise.name} className="size-[52px]" muscle={exercise.mainMuscle} />
+    <Card className="grid grid-cols-[20px_48px_minmax(0,1fr)_100px] items-center gap-x-2 gap-y-1 p-2">
+      <GripVertical aria-hidden="true" className="size-4 justify-self-center text-arsen-dim" />
+      <ExerciseArt
+        alt={exercise.name}
+        assetKind={exercise.assetKind}
+        className="size-12"
+        customImageSrc={exercise.customAssetId ? imageSrcByAssetId.get(exercise.customAssetId) : null}
+        muscle={exercise.mainMuscle}
+      />
       <div className="min-w-0">
         <h3 className="truncate text-sm font-extrabold">{exercise.name}</h3>
         <span className="mt-1 block truncate text-xs text-arsen-muted">
           {exercise.mainMuscle} - {exercise.targetSets}x{formatRepRange(exercise.repsMin, exercise.repsMax)} - RIR {exercise.recommendedRir}
         </span>
         {recommendation ? (
-          <span className="mt-2 inline-flex max-w-full items-center gap-1 rounded-full bg-arsen-acid/15 px-2 py-1 text-xs font-extrabold text-arsen-acid">
+          <span className="mt-1 flex max-w-full items-center gap-1 text-xs font-extrabold text-arsen-acid">
             <TrendingUp aria-hidden="true" className="size-3 shrink-0" />
-            <span className="truncate">Listo para subir peso: {recommendation.suggestedIncreaseLabel}</span>
+            <span className="truncate">Subir peso: {recommendation.suggestedIncreaseLabel}</span>
           </span>
         ) : null}
       </div>
-      <div className="grid grid-cols-3 gap-1">
+      <div className="grid grid-cols-3 gap-0.5 justify-self-end">
         <IconOnly disabled={disabled} icon={Pencil} label="Editar receta" onClick={onEdit} />
         <IconOnly disabled={disabled} icon={Copy} label="Duplicar" onClick={onDuplicate} />
         <IconOnly danger disabled={disabled} icon={Trash2} label="Quitar" onClick={onDelete} />
@@ -644,12 +664,14 @@ function ExerciseEditRow({
 function CatalogPanel({
   catalog,
   disabled,
+  imageSrcByAssetId,
   onCreate,
   onDelete,
   onEdit,
 }: {
   catalog: ExerciseCatalogItem[]
   disabled: boolean
+  imageSrcByAssetId: Map<string, string>
   onCreate: () => void
   onDelete: (catalogItemId: string) => void
   onEdit: (item: ExerciseCatalogItem) => void
@@ -673,8 +695,14 @@ function CatalogPanel({
       </div>
       <div className="space-y-2">
         {filtered.map((item) => (
-          <Card className="grid grid-cols-[52px_1fr_auto] items-center gap-3 p-2" key={item.id}>
-            <ExerciseArt alt={item.name} className="size-[52px]" muscle={item.mainMuscle} />
+          <Card className="grid grid-cols-[52px_minmax(0,1fr)_auto] items-center gap-4 p-2" key={item.id}>
+            <ExerciseArt
+              alt={item.name}
+              assetKind={item.assetKind}
+              className="size-[52px]"
+              customImageSrc={item.customAssetId ? imageSrcByAssetId.get(item.customAssetId) : null}
+              muscle={item.mainMuscle}
+            />
             <div className="min-w-0">
               <h3 className="truncate text-sm font-extrabold">{item.name}</h3>
               <span className="mt-1 block truncate text-xs text-arsen-muted">
@@ -697,12 +725,14 @@ function CatalogPanel({
 
 function CatalogPickerSheet({
   catalog,
+  imageSrcByAssetId,
   onClose,
   onCreateCatalog,
   onSelect,
   selectedDay,
 }: {
   catalog: ExerciseCatalogItem[]
+  imageSrcByAssetId: Map<string, string>
   onClose: () => void
   onCreateCatalog: () => void
   onSelect: (item: ExerciseCatalogItem) => void
@@ -717,8 +747,14 @@ function CatalogPickerSheet({
       <div className="mt-3 space-y-2">
         {filtered.map((item) => (
           <button className="block w-full text-left" key={item.id} onClick={() => onSelect(item)} type="button">
-            <Card className="grid grid-cols-[52px_1fr_auto] items-center gap-3 p-2">
-              <ExerciseArt alt={item.name} className="size-[52px]" muscle={item.mainMuscle} />
+            <Card className="grid grid-cols-[52px_minmax(0,1fr)_auto] items-center gap-4 p-2">
+              <ExerciseArt
+                alt={item.name}
+                assetKind={item.assetKind}
+                className="size-[52px]"
+                customImageSrc={item.customAssetId ? imageSrcByAssetId.get(item.customAssetId) : null}
+                muscle={item.mainMuscle}
+              />
               <div className="min-w-0">
                 <h3 className="truncate text-sm font-extrabold">{item.name}</h3>
                 <span className="mt-1 block truncate text-xs text-arsen-muted">
@@ -742,12 +778,14 @@ function CatalogPickerSheet({
 }
 
 function CatalogExerciseEditorSheet({
+  assets,
   disabled,
   displayUnit,
   item,
   onClose,
   onSave,
 }: {
+  assets: ExerciseAsset[]
   disabled: boolean
   displayUnit: WeightUnit
   item: ExerciseCatalogItem | null
@@ -755,9 +793,52 @@ function CatalogExerciseEditorSheet({
   onSave: (input: CatalogExerciseInput) => void
 }) {
   const [form, setForm] = useState(() => catalogItemToForm(item, displayUnit))
+  const [imageError, setImageError] = useState<string | null>(null)
+  const [imageSheetOpen, setImageSheetOpen] = useState(false)
+  const [isImageUploadPending, setIsImageUploadPending] = useState(false)
   const [progressionInfoOpen, setProgressionInfoOpen] = useState(false)
   const [warmupInfoOpen, setWarmupInfoOpen] = useState(false)
+  const uploadRequestId = useRef(0)
   const selectedWarmupProtocol = normalizeWarmupProtocol(form.warmupProtocol)
+  const maxImageBytes = 2 * 1024 * 1024
+  const selectedAsset = form.customAssetId ? assets.find((asset) => asset.id === form.customAssetId) ?? null : null
+  const selectedImageLabel = selectedAsset?.name ?? includedArtLabel(form.assetKind)
+
+  async function uploadCustomImage(file: File) {
+    const requestId = ++uploadRequestId.current
+    setImageError(null)
+    if (!file.type.startsWith('image/')) {
+      setImageError('Sube un archivo de imagen.')
+      return
+    }
+    if (file.size > maxImageBytes) {
+      setImageError('Usa una imagen de hasta 2 MB.')
+      return
+    }
+    setIsImageUploadPending(true)
+    try {
+      const dataUrl = await readFileAsDataUrl(file)
+      const customAssetId = await createExerciseAsset({
+        dataUrl,
+        mimeType: file.type,
+        name: file.name,
+      })
+      if (requestId === uploadRequestId.current) setForm((current) => ({ ...current, customAssetId }))
+    } catch (error: unknown) {
+      if (requestId === uploadRequestId.current) {
+        setImageError(error instanceof Error ? error.message : 'No se pudo cargar la imagen')
+      }
+    } finally {
+      if (requestId === uploadRequestId.current) setIsImageUploadPending(false)
+    }
+  }
+
+  function updateImageSelection(selection: ExerciseImageSelection) {
+    uploadRequestId.current += 1
+    setIsImageUploadPending(false)
+    setForm((current) => ({ ...current, ...selection }))
+    setImageSheetOpen(false)
+  }
 
   return (
     <SheetFrame onClose={onClose} title={item ? 'Editar catalogo' : 'Crear ejercicio'}>
@@ -814,13 +895,33 @@ function CatalogExerciseEditorSheet({
             value={form.technicalNotes}
           />
         </label>
+        <button
+          className="grid min-h-16 w-full grid-cols-[52px_minmax(0,1fr)] items-center gap-4 rounded-[12px] border border-white/10 bg-arsen-surface p-2 text-left transition hover:border-arsen-purple/45 disabled:opacity-50"
+          disabled={disabled || isImageUploadPending}
+          onClick={() => setImageSheetOpen(true)}
+          type="button"
+        >
+          <ExerciseArt
+            alt={form.name || 'Imagen del ejercicio'}
+            assetKind={form.assetKind}
+            className="size-[52px]"
+            customImageSrc={selectedAsset?.dataUrl ?? null}
+            muscle={form.mainMuscle}
+          />
+          <span className="min-w-0">
+            <span className="block text-xs font-bold text-arsen-muted">Imagen del ejercicio</span>
+            <strong className="mt-1 block truncate text-sm text-arsen-ink">{selectedImageLabel}</strong>
+          </span>
+        </button>
       </div>
       <ActionButton
         className="mt-4 w-full"
-        disabled={disabled}
+        disabled={disabled || isImageUploadPending}
         onClick={() =>
           onSave({
             aliases: form.aliases.split(',').map((alias) => alias.trim()).filter(Boolean),
+            assetKind: form.assetKind,
+            customAssetId: form.customAssetId,
             ...loadInputFromForm(form, displayUnit),
             mainMuscle: form.mainMuscle,
             name: form.name,
@@ -833,10 +934,45 @@ function CatalogExerciseEditorSheet({
         <Check aria-hidden="true" className="size-5" />
         Guardar
       </ActionButton>
+      {imageSheetOpen ? (
+        <SheetFrame onClose={() => setImageSheetOpen(false)} title="Imagen del ejercicio">
+          <ExerciseImageSelector
+            assets={assets}
+            disabled={disabled || isImageUploadPending}
+            error={imageError}
+            mainMuscle={form.mainMuscle}
+            onChange={updateImageSelection}
+            onUpload={uploadCustomImage}
+            selection={{ assetKind: form.assetKind, customAssetId: form.customAssetId }}
+          />
+        </SheetFrame>
+      ) : null}
       {progressionInfoOpen ? <DoubleProgressionInfoSheet onClose={() => setProgressionInfoOpen(false)} /> : null}
       {warmupInfoOpen ? <WarmupProtocolInfoSheet onClose={() => setWarmupInfoOpen(false)} protocol={selectedWarmupProtocol} /> : null}
     </SheetFrame>
   )
+}
+
+function includedArtLabel(assetKind: string | null) {
+  const labels: Record<string, string> = {
+    hackSquat: 'Hack',
+    latPulldown: 'Jalon',
+    pecDeck: 'Pec deck',
+    press: 'Press',
+    row: 'Remo',
+    shoulderPress: 'Hombro',
+  }
+
+  return assetKind ? labels[assetKind] ?? 'Auto' : 'Auto'
+}
+
+function readFileAsDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.addEventListener('load', () => resolve(String(reader.result ?? '')))
+    reader.addEventListener('error', () => reject(new Error('No se pudo leer la imagen')))
+    reader.readAsDataURL(file)
+  })
 }
 
 function DoubleProgressionInfoSheet({ onClose }: { onClose: () => void }) {
@@ -888,6 +1024,7 @@ function RoutineExerciseRecipeSheet({
   disabled,
   displayUnit,
   exercise,
+  imageSrcByAssetId,
   onClose,
   onSave,
 }: {
@@ -895,6 +1032,7 @@ function RoutineExerciseRecipeSheet({
   disabled: boolean
   displayUnit: WeightUnit
   exercise: RoutineExercise | null
+  imageSrcByAssetId: Map<string, string>
   onClose: () => void
   onSave: (input: ExerciseInput) => void
 }) {
@@ -902,6 +1040,7 @@ function RoutineExerciseRecipeSheet({
   const [message, setMessage] = useState<string | null>(null)
   const [warmupInfoOpen, setWarmupInfoOpen] = useState(false)
   const selectedWarmupProtocol = normalizeWarmupProtocol(form.warmupProtocol)
+  const visualReference = exercise ?? catalogItem
 
   function update<K extends keyof ExerciseForm>(key: K, value: ExerciseForm[K]) {
     setForm((current) => ({ ...current, [key]: value }))
@@ -910,8 +1049,14 @@ function RoutineExerciseRecipeSheet({
   return (
     <SheetFrame onClose={onClose} title={exercise ? 'Editar receta' : 'Receta del dia'}>
       <div className="space-y-3">
-        <Card className="grid grid-cols-[52px_1fr] items-center gap-3 p-2">
-          <ExerciseArt alt={form.name} className="size-[52px]" muscle={form.mainMuscle} />
+        <Card className="grid grid-cols-[52px_minmax(0,1fr)] items-center gap-4 p-2">
+          <ExerciseArt
+            alt={form.name}
+            assetKind={visualReference?.assetKind}
+            className="size-[52px]"
+            customImageSrc={visualReference?.customAssetId ? imageSrcByAssetId.get(visualReference.customAssetId) : null}
+            muscle={form.mainMuscle}
+          />
           <div className="min-w-0">
             <strong className="block truncate text-sm">{form.name}</strong>
             <span className="text-xs text-arsen-muted">
@@ -1005,6 +1150,8 @@ type CatalogExerciseForm = Pick<
   'barWeight' | 'equipment' | 'loadMode' | 'mainMuscle' | 'name' | 'technicalNotes' | 'warmupProtocol'
 > & {
   aliases: string
+  assetKind: string | null
+  customAssetId: string | null
 }
 
 function exerciseToForm(exercise: RoutineExercise | null, catalogItem: ExerciseCatalogItem | null, displayUnit: WeightUnit): ExerciseForm {
@@ -1062,11 +1209,13 @@ function catalogItemToForm(item: ExerciseCatalogItem | null, displayUnit: Weight
 
   return {
     aliases: item?.aliases.join(', ') ?? '',
+    assetKind: item?.assetKind ?? null,
     barWeight: String(kgToUnit(loadSettings.barWeightKg, displayUnit)),
     equipment: loadSettings.equipment,
     loadMode: loadSettings.loadMode,
     mainMuscle: normalizeMuscleGroup(item?.mainMuscle),
     name: item?.name ?? '',
+    customAssetId: item?.customAssetId ?? null,
     technicalNotes: item?.technicalNotes ?? '',
     warmupProtocol: normalizeWarmupProtocol(item?.warmupProtocol),
   }

@@ -37,6 +37,8 @@ export async function ensureDemoData() {
     const loadSettings = loadSettingsForEquipment({ equipment: inferEquipment(exercise.name) })
 
     return {
+      assetKind: assetKindForExercise(canonicalName(exercise.name)),
+      customAssetId: null,
       id: exercise.id,
       routineId,
       dayId: day.id,
@@ -83,6 +85,7 @@ export async function ensureDemoData() {
         defaultRecommendedRir: exercise.recommendedRir,
         defaultRestSeconds: exercise.restSeconds,
         assetKind: assetKindForExercise(exercise.canonicalName),
+        customAssetId: null,
         createdAt: now,
         updatedAt: now,
       },

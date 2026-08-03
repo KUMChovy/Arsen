@@ -1,6 +1,7 @@
 import { CURRENT_SCHEMA_VERSION, db } from '../../db/schema'
 import type {
   ExerciseCatalogItem,
+  ExerciseAsset,
   Routine,
   RoutineDay,
   RoutineExercise,
@@ -26,6 +27,7 @@ export async function exportFullBackup() {
     schemaVersion: CURRENT_SCHEMA_VERSION,
     tables: {
       dropSetLogs: await db.dropSetLogs.toArray(),
+      exerciseAssets: await db.exerciseAssets.toArray(),
       exerciseCatalog: (await db.exerciseCatalog.toArray()).map(stripLegacyCatalogProgression),
       exerciseLogs: await db.exerciseLogs.toArray(),
       routineDays: await db.routineDays.toArray(),
@@ -55,6 +57,7 @@ export async function importFullBackup(file: File, mode: BackupImportMode = 'rep
     'rw',
     [
       db.dropSetLogs,
+      db.exerciseAssets,
       db.exerciseCatalog,
       db.exerciseLogs,
       db.routineDays,
@@ -76,6 +79,7 @@ export async function importFullBackup(file: File, mode: BackupImportMode = 'rep
 async function clearBackupTables() {
   await Promise.all([
     db.dropSetLogs.clear(),
+    db.exerciseAssets.clear(),
     db.exerciseCatalog.clear(),
     db.exerciseLogs.clear(),
     db.routineDays.clear(),
@@ -94,6 +98,7 @@ async function putBackupTables(tables: BackupTables, mode: BackupImportMode) {
 
   await Promise.all([
     db.dropSetLogs.bulkPut(tables.dropSetLogs ?? []),
+    db.exerciseAssets.bulkPut(tables.exerciseAssets ?? []),
     db.exerciseCatalog.bulkPut((tables.exerciseCatalog ?? []).map(stripLegacyCatalogProgression)),
     db.exerciseLogs.bulkPut(tables.exerciseLogs ?? []),
     db.routineDays.bulkPut(tables.routineDays ?? []),
@@ -381,6 +386,7 @@ function progressExportFilename(filters: ProgressExportFilters, extension: 'csv'
 
 type BackupTables = {
   dropSetLogs?: DropSetLog[]
+  exerciseAssets?: ExerciseAsset[]
   exerciseCatalog?: ExerciseCatalogItem[]
   exerciseLogs?: ExerciseLog[]
   routineDays?: RoutineDay[]

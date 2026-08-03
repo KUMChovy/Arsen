@@ -4,10 +4,11 @@ import { normalizeWarmupProtocol } from '../../shared/calculations/warmups'
 import { downloadJson } from '../../shared/utils/download'
 import { createId } from '../../shared/utils/id'
 import { routineExportSchema } from '../../shared/validation/arsenImportSchemas'
-import type { Routine, RoutineDay, RoutineExercise, WeeklyVolumeTarget } from './types'
+import type { ExerciseAsset, Routine, RoutineDay, RoutineExercise, WeeklyVolumeTarget } from './types'
 
 type RoutineExport = {
   days: RoutineDay[]
+  exerciseAssets: ExerciseAsset[]
   exercises: RoutineExercise[]
   exportedAt: string
   routine: Routine
@@ -22,10 +23,14 @@ type RoutineExport = {
 export async function exportRoutineJson(routineId: string) {
   const routine = await db.routines.get(routineId)
   if (!routine) throw new Error('Rutina no encontrada')
+  const exercises = (await db.routineExercises.where('routineId').equals(routineId).sortBy('order')).map(cleanExerciseForTransfer)
+  const customAssetIds = [...new Set(exercises.map((exercise) => exercise.customAssetId).filter((id): id is string => Boolean(id)))]
+  const exerciseAssets = customAssetIds.length > 0 ? await db.exerciseAssets.where('id').anyOf(customAssetIds).toArray() : []
 
   const data: RoutineExport = {
     days: await db.routineDays.where('routineId').equals(routineId).sortBy('order'),
-    exercises: (await db.routineExercises.where('routineId').equals(routineId).sortBy('order')).map(cleanExerciseForTransfer),
+    exerciseAssets,
+    exercises,
     exportedAt: new Date().toISOString(),
     routine,
     schemaVersion: CURRENT_SCHEMA_VERSION,
@@ -42,6 +47,17 @@ export async function importRoutineJson(file: File) {
   const parsed = parseRoutineExport(await file.text())
   const now = new Date().toISOString()
   const routineId = createId('routine')
+  const assetIdBySource = new Map<string, string>()
+  const exerciseAssets = parsed.exerciseAssets.map((asset): ExerciseAsset => {
+    const nextAssetId = createId('exercise-asset')
+    assetIdBySource.set(asset.id, nextAssetId)
+    return {
+      ...asset,
+      id: nextAssetId,
+      createdAt: now,
+      updatedAt: now,
+    }
+  })
   const dayIdBySource = new Map<string, string>()
   const days = parsed.days.map((day): RoutineDay => {
     const nextDayId = createId('day')
@@ -60,6 +76,7 @@ export async function importRoutineJson(file: File) {
       ...exercise,
       id: createId('exercise'),
       dayId: dayIdBySource.get(exercise.dayId) ?? exercise.dayId,
+      customAssetId: exercise.customAssetId ? assetIdBySource.get(exercise.customAssetId) ?? null : null,
       routineId,
       createdAt: now,
       updatedAt: now,
@@ -71,7 +88,7 @@ export async function importRoutineJson(file: File) {
     routineId,
   }))
 
-  await db.transaction('rw', [db.settings, db.routines, db.routineDays, db.routineExercises, db.weeklyVolumeTargets], async () => {
+  await db.transaction('rw', [db.settings, db.routines, db.routineDays, db.routineExercises, db.exerciseAssets, db.weeklyVolumeTargets], async () => {
     const routines = await db.routines.toArray()
     await Promise.all(routines.map((routine) => db.routines.update(routine.id, { isActive: false, updatedAt: now })))
     await db.routines.add({
@@ -84,6 +101,7 @@ export async function importRoutineJson(file: File) {
     })
     await db.routineDays.bulkAdd(days)
     await db.routineExercises.bulkAdd(exercises)
+    await db.exerciseAssets.bulkAdd(exerciseAssets)
     await db.weeklyVolumeTargets.bulkAdd(targets)
     await db.settings.update('app', { activeRoutineId: routineId, updatedAt: now })
   })
@@ -113,6 +131,7 @@ function parseRoutineExport(content: string): RoutineExport {
 
   return {
     days: data.days as RoutineDay[],
+    exerciseAssets: (data.exerciseAssets ?? []) as ExerciseAsset[],
     exercises: data.exercises as RoutineExercise[],
     exportedAt: data.exportedAt,
     routine: data.routine as Routine,

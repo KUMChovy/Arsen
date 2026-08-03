@@ -180,7 +180,7 @@ function SessionDetailInline({
     <div className="space-y-2">
       {detail.exercises.map((exercise) => (
         <Card className="p-3" key={exercise.exerciseLogId}>
-          <div className="mb-2 flex items-center gap-2">
+          <div className="mb-2 flex items-center gap-3">
             <ExerciseArt alt={exercise.exerciseName} className="size-10" muscle={exercise.mainMuscle} />
             <div className="min-w-0">
               <strong className="block truncate text-sm">{exercise.exerciseName}</strong>

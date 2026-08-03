@@ -2,7 +2,7 @@ import { Check, ChevronLeft, ChevronRight, Dumbbell, Info, Pencil, Trash2, Trend
 import { useEffect, useMemo, useState, useTransition } from 'react'
 import { ActionButton } from '../../../shared/components/ActionButton'
 import { Card } from '../../../shared/components/Card'
-import { ExerciseArt, type ExerciseArtKind } from '../../../shared/components/ExerciseArt'
+import { ExerciseArt } from '../../../shared/components/ExerciseArt'
 import { PageHeader } from '../../../shared/components/PageHeader'
 import type { WeightIncreaseRecommendation } from '../../../shared/calculations/progression'
 import { buildEquipmentLoadNote } from '../../../shared/calculations/equipmentLoad'
@@ -12,7 +12,7 @@ import { localDateKey } from '../../../shared/utils/date'
 import { confirmDanger } from '../../../shared/utils/alerts'
 import { formatRepRange } from '../../../shared/utils/reps'
 import { formatWeight } from '../../../shared/utils/weight'
-import { useActiveRoutineBundle, useRoutines, useWorkoutDayById } from '../../routine/hooks'
+import { useActiveRoutineBundle, useExerciseAssets, useRoutines, useWorkoutDayById } from '../../routine/hooks'
 import type { Routine, RoutineDay, RoutineExercise } from '../../routine/types'
 import { RegisterSetSheet } from '../components/RegisterSetSheet'
 import { EditSetSheet } from '../components/EditSetSheet'
@@ -28,6 +28,8 @@ export function WorkoutPage() {
   const dateKey = useMemo(() => localDateKey(today), [today])
   const selectedDate = useMemo(() => new Date(`${dateKey}T12:00:00`), [dateKey])
   const bundle = useActiveRoutineBundle()
+  const exerciseAssets = useExerciseAssets() ?? []
+  const imageSrcByAssetId = useMemo(() => new Map(exerciseAssets.map((asset) => [asset.id, asset.dataUrl])), [exerciseAssets])
   const routines = useRoutines() ?? []
   const days = bundle?.days ?? []
   const defaultDayId = days.find((day) => day.weekday === selectedDate.getDay())?.id ?? days[0]?.id ?? null
@@ -196,7 +198,7 @@ export function WorkoutPage() {
       <div>
         <div className="mb-2 text-xs font-extrabold text-arsen-purple2">Ejercicio actual</div>
         <Card className="min-w-0 p-3">
-          <div className="grid grid-cols-[28px_72px_1fr_28px] items-center gap-3 border-b border-white/10 pb-4">
+          <div className="grid grid-cols-[28px_72px_minmax(0,1fr)_28px] items-center gap-4 border-b border-white/10 pb-4">
             <button
               aria-label="Regresar al ejercicio anterior"
               className="grid size-8 place-items-center rounded-[10px] text-arsen-muted transition-colors enabled:hover:bg-white/5 enabled:hover:text-arsen-purple2 disabled:opacity-30"
@@ -206,8 +208,14 @@ export function WorkoutPage() {
             >
               <ChevronLeft aria-hidden="true" className="size-6" />
             </button>
-            <div className="overflow-hidden rounded-[14px] border border-arsen-purple/45 bg-arsen-purple/10 p-1">
-              <ExerciseArt alt={currentExercise?.name ?? 'Ejercicio'} kind={artForExercise(currentExercise)} />
+            <div className="grid size-[72px] place-items-center overflow-hidden rounded-[14px] border border-arsen-purple/45 bg-arsen-purple/10 p-1">
+              <ExerciseArt
+                alt={currentExercise?.name ?? 'Ejercicio'}
+                assetKind={currentExercise?.assetKind}
+                className="size-16"
+                customImageSrc={currentExercise?.customAssetId ? imageSrcByAssetId.get(currentExercise.customAssetId) : null}
+                muscle={currentExercise?.mainMuscle}
+              />
             </div>
             <div className="min-w-0">
               <h2 className="truncate text-[22px] font-black leading-tight">{currentExercise?.name ?? 'Sin ejercicio pendiente'}</h2>
@@ -414,9 +422,15 @@ export function WorkoutPage() {
             const note = exercise.technicalNotes.trim()
 
             return (
-              <Card className="content-auto grid grid-cols-[1fr_auto_auto] items-center gap-2 p-2" key={exercise.id}>
-                <button className="grid min-w-0 grid-cols-[52px_1fr] items-center gap-3 text-left" onClick={() => setSelectedExerciseId(exercise.id)} type="button">
-                  <ExerciseArt alt={exercise.name} className="size-[52px]" kind={artForExercise(exercise)} />
+              <Card className="content-auto grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 p-2" key={exercise.id}>
+                <button className="grid min-w-0 grid-cols-[52px_minmax(0,1fr)] items-center gap-4 text-left" onClick={() => setSelectedExerciseId(exercise.id)} type="button">
+                  <ExerciseArt
+                    alt={exercise.name}
+                    assetKind={exercise.assetKind}
+                    className="size-[52px]"
+                    customImageSrc={exercise.customAssetId ? imageSrcByAssetId.get(exercise.customAssetId) : null}
+                    muscle={exercise.mainMuscle}
+                  />
                   <div className="min-w-0">
                     <h3 className="truncate text-sm font-extrabold">{exercise.name}</h3>
                     <span className="mt-1 block truncate text-xs text-arsen-muted">
@@ -533,17 +547,6 @@ function buildWarmupsForExercise(exercise: RoutineExercise | null | undefined, u
 
 function blockedNavigation(isPending: boolean, isBlocked: boolean) {
   return isPending || isBlocked
-}
-
-function artForExercise(exercise: RoutineExercise | null | undefined): ExerciseArtKind {
-  const value = exercise?.canonicalName ?? ''
-  if (value.includes('pec-deck')) return 'pecDeck'
-  if (value.includes('remo')) return 'row'
-  if (value.includes('hack') || value.includes('prensa')) return 'hackSquat'
-  if (value.includes('jalon') || value.includes('pullover')) return 'latPulldown'
-  if (value.includes('militar') || value.includes('hombro')) return 'shoulderPress'
-
-  return 'press'
 }
 
 function weekdayLabel(date: Date) {

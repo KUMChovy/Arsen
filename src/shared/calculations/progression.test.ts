@@ -93,9 +93,11 @@ describe('progression calculations', () => {
 })
 
 const exercise: RoutineExercise = {
+  assetKind: null,
   canonicalName: 'press-inclinado',
   createdAt: '2026-07-20T00:00:00.000Z',
   currentWeightKg: 60,
+  customAssetId: null,
   dayId: 'day-1',
   equipment: 'Barra',
   loadMode: 'split',

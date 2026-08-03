@@ -99,10 +99,12 @@ async function seedProgressData(input: { dayName: string; exerciseName: string; 
     weekday: null,
   }
   const exercise: RoutineExercise = {
+    assetKind: null,
     barWeightKg: 20,
     canonicalName: 'press-inclinado',
     createdAt: now,
     currentWeightKg: 60,
+    customAssetId: null,
     dayId: day.id,
     equipment: 'Barra',
     id: 'exercise-1',

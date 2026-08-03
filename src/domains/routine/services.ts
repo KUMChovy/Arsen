@@ -1,4 +1,4 @@
-import type { Equipment, ExerciseCatalogItem, LoadMode, Routine, RoutineDay, RoutineExercise } from './types'
+import type { Equipment, ExerciseAsset, ExerciseCatalogItem, LoadMode, Routine, RoutineDay, RoutineExercise } from './types'
 import { db } from '../../db/schema'
 import { loadSettingsForEquipment } from '../../shared/calculations/equipmentLoad'
 import { normalizeWarmupProtocol } from '../../shared/calculations/warmups'
@@ -7,7 +7,9 @@ import { canonicalName } from '../../shared/utils/normalize'
 import { normalizeMuscleGroup } from './utils/muscles'
 
 export type ExerciseInput = {
+  assetKind?: string | null
   name: string
+  customAssetId?: string | null
   mainMuscle: string
   equipment?: Equipment
   loadMode?: LoadMode
@@ -26,13 +28,33 @@ export type ExerciseInput = {
 
 export type CatalogExerciseInput = {
   aliases?: string[]
+  assetKind?: string | null
   barWeightKg?: number
   equipment?: Equipment
   loadMode?: LoadMode
   mainMuscle: string
   name: string
+  customAssetId?: string | null
   technicalNotes?: string
   warmupProtocol?: string
+}
+
+export type ExerciseAssetInput = Pick<ExerciseAsset, 'dataUrl' | 'mimeType' | 'name'>
+
+export async function createExerciseAsset(input: ExerciseAssetInput) {
+  const now = new Date().toISOString()
+  const asset: ExerciseAsset = {
+    createdAt: now,
+    dataUrl: input.dataUrl,
+    id: createId('exercise-asset'),
+    mimeType: input.mimeType,
+    name: input.name.trim() || 'Imagen de ejercicio',
+    updatedAt: now,
+  }
+
+  await db.exerciseAssets.add(asset)
+
+  return asset.id
 }
 
 export async function createRoutine(name: string) {
@@ -278,6 +300,8 @@ export async function createExercise(routineId: string, dayId: string, input: Ex
     loadMode: input.loadMode,
   })
   const exercise: RoutineExercise = {
+    assetKind: input.assetKind ?? null,
+    customAssetId: input.customAssetId ?? null,
     id: createId('exercise'),
     routineId,
     dayId,
@@ -322,6 +346,8 @@ export async function addCatalogExerciseToDay(routineId: string, dayId: string, 
     loadMode: input.loadMode ?? catalogItem.loadMode,
   })
   const exercise: RoutineExercise = {
+    assetKind: catalogItem.assetKind ?? null,
+    customAssetId: catalogItem.customAssetId ?? null,
     id: createId('exercise'),
     routineId,
     dayId,
@@ -364,6 +390,8 @@ export async function updateExercise(exerciseId: string, input: ExerciseInput) {
   })
 
   await db.routineExercises.update(exerciseId, {
+    assetKind: input.assetKind === undefined ? existing?.assetKind ?? null : input.assetKind,
+    customAssetId: input.customAssetId === undefined ? existing?.customAssetId ?? null : input.customAssetId,
     name,
     canonicalName: canonicalName(name),
     mainMuscle: normalizeMuscleGroup(input.mainMuscle),
@@ -452,7 +480,7 @@ export async function createCatalogExercise(input: CatalogExerciseInput) {
   })
   const catalogItem: ExerciseCatalogItem = {
     aliases: input.aliases ?? [],
-    assetKind: mainMuscle,
+    assetKind: input.assetKind ?? null,
     canonicalName: canonicalName(name),
     createdAt: now,
     defaultRecommendedRir: 2,
@@ -466,6 +494,7 @@ export async function createCatalogExercise(input: CatalogExerciseInput) {
     id: createId('catalog'),
     mainMuscle,
     name,
+    customAssetId: input.customAssetId ?? null,
     technicalNotes: input.technicalNotes?.trim() ?? '',
     warmupProtocol: normalizeWarmupProtocol(input.warmupProtocol),
     updatedAt: now,
@@ -488,13 +517,14 @@ export async function updateCatalogExercise(catalogItemId: string, input: Catalo
 
   await db.exerciseCatalog.update(catalogItemId, {
     aliases: input.aliases ?? [],
-    assetKind: mainMuscle,
+    assetKind: input.assetKind === undefined ? existing?.assetKind ?? null : input.assetKind,
     canonicalName: canonicalName(name),
     equipment: loadSettings.equipment,
     loadMode: loadSettings.loadMode,
     barWeightKg: loadSettings.barWeightKg,
     mainMuscle,
     name,
+    customAssetId: input.customAssetId === undefined ? existing?.customAssetId ?? null : input.customAssetId,
     technicalNotes: input.technicalNotes?.trim() ?? '',
     warmupProtocol: normalizeWarmupProtocol(input.warmupProtocol),
     updatedAt: new Date().toISOString(),

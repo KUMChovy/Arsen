@@ -177,8 +177,8 @@ export function ProgressPage() {
         </div>
       ) : null}
 
-      <Card className="grid grid-cols-[52px_1fr] items-center gap-3 p-3">
-        <ExerciseArt alt={overview?.exerciseName ?? 'Ejercicio'} kind="press" />
+      <Card className="grid grid-cols-[66px_minmax(0,1fr)] items-center gap-4 p-3">
+        <ExerciseArt alt={overview?.exerciseName ?? 'Ejercicio'} />
         <div className="min-w-0">
           <strong className="block truncate">{currentTitle}</strong>
           <p className="mt-2 text-sm font-semibold text-arsen-muted">{selectedDay?.routineName ?? 'Sin rutina'}</p>
@@ -409,7 +409,7 @@ export function SessionDetailSheet({
         <div className="space-y-3">
           {detail?.exercises.map((exercise) => (
             <Card className="p-3" key={exercise.exerciseLogId}>
-              <div className="mb-2 flex items-center gap-2">
+              <div className="mb-2 flex items-center gap-3">
                 <ExerciseArt alt={exercise.exerciseName} className="size-10" muscle={exercise.mainMuscle} />
                 <div className="min-w-0">
                   <strong className="block truncate text-sm">{exercise.exerciseName}</strong>

@@ -1,5 +1,5 @@
 import { ArrowLeft, ChevronDown, Info, TrendingUp } from 'lucide-react'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import type { WeightIncreaseRecommendation } from '../../../shared/calculations/progression'
 import { normalizeEquipment } from '../../../shared/calculations/equipmentLoad'
@@ -11,13 +11,15 @@ import { formatWeight } from '../../../shared/utils/weight'
 import { normalizeWarmupProtocol, warmupProtocolLabel } from '../../../shared/calculations/warmups'
 import { useWeightIncreaseRecommendations } from '../../workout/hooks'
 import { WarmupProtocolInfoSheet } from '../components/WarmupProtocolInfoSheet'
-import { useRoutineDayDetail } from '../hooks'
+import { useExerciseAssets, useRoutineDayDetail } from '../hooks'
 import type { RoutineExercise } from '../types'
 import { dominantMuscleForExercises } from '../utils/dominantMuscle'
 
 export function RoutineDayDetailPage() {
   const { dayId } = useParams()
   const detail = useRoutineDayDetail(dayId ?? null)
+  const exerciseAssets = useExerciseAssets() ?? []
+  const imageSrcByAssetId = useMemo(() => new Map(exerciseAssets.map((asset) => [asset.id, asset.dataUrl])), [exerciseAssets])
   const [expandedExerciseId, setExpandedExerciseId] = useState<string | null>(null)
   const exercises = detail?.exercises ?? []
   const recommendationByExerciseId = new Map(useWeightIncreaseRecommendations(exercises).map((recommendation) => [recommendation.exerciseId, recommendation]))
@@ -33,7 +35,7 @@ export function RoutineDayDetailPage() {
       </PageHeader>
 
       <Card className="p-3">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-4">
           <ExerciseArt alt={dominantMuscle} className="size-16" muscle={dominantMuscle} />
           <div className="min-w-0">
             <h2 className="text-xl font-black">{detail?.day.name ?? 'Cargando dia'}</h2>
@@ -52,6 +54,7 @@ export function RoutineDayDetailPage() {
           <ExerciseDetailCard
             expanded={expandedExerciseId === exercise.id}
             exercise={exercise}
+            imageSrcByAssetId={imageSrcByAssetId}
             key={exercise.id}
             onToggle={() => setExpandedExerciseId((current) => (current === exercise.id ? null : exercise.id))}
             recommendation={recommendationByExerciseId.get(exercise.id) ?? null}
@@ -66,11 +69,13 @@ export function RoutineDayDetailPage() {
 function ExerciseDetailCard({
   expanded,
   exercise,
+  imageSrcByAssetId,
   onToggle,
   recommendation,
 }: {
   expanded: boolean
   exercise: RoutineExercise
+  imageSrcByAssetId: Map<string, string>
   onToggle: () => void
   recommendation: WeightIncreaseRecommendation | null
 }) {
@@ -80,8 +85,14 @@ function ExerciseDetailCard({
   return (
     <div className="block w-full text-left">
       <Card className="p-3">
-        <button className="grid w-full grid-cols-[52px_1fr_auto] items-center gap-3 text-left" onClick={onToggle} type="button">
-          <ExerciseArt alt={exercise.name} className="size-[52px]" muscle={exercise.mainMuscle} />
+        <button className="grid w-full grid-cols-[52px_minmax(0,1fr)_auto] items-center gap-4 text-left" onClick={onToggle} type="button">
+          <ExerciseArt
+            alt={exercise.name}
+            assetKind={exercise.assetKind}
+            className="size-[52px]"
+            customImageSrc={exercise.customAssetId ? imageSrcByAssetId.get(exercise.customAssetId) : null}
+            muscle={exercise.mainMuscle}
+          />
           <div className="min-w-0">
             <strong className="block truncate text-sm">{exercise.name}</strong>
             <span className="mt-1 block truncate text-xs text-arsen-muted">

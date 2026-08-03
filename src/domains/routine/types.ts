@@ -4,6 +4,15 @@ export type Equipment = 'Barra' | 'Mancuerna' | 'Maquina' | 'Maquina de polea' |
 export type LoadMode = 'single' | 'split'
 export type MuscleGroup = 'Pecho' | 'Espalda' | 'Hombros' | 'Brazos' | 'Abdomen' | 'Piernas'
 
+export type ExerciseAsset = {
+  id: string
+  name: string
+  mimeType: string
+  dataUrl: string
+  createdAt: string
+  updatedAt: string
+}
+
 export type Routine = {
   id: string
   name: string
@@ -28,6 +37,8 @@ export type RoutineExercise = {
   routineId: string
   dayId: string
   sourceExerciseId: string | null
+  assetKind: string | null
+  customAssetId: string | null
   name: string
   canonicalName: string
   mainMuscle: string
@@ -66,6 +77,7 @@ export type ExerciseCatalogItem = {
   defaultRecommendedRir: number
   defaultRestSeconds: number
   assetKind: string | null
+  customAssetId: string | null
   createdAt: string
   updatedAt: string
 }

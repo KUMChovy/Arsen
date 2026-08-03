@@ -52,6 +52,8 @@ export async function ensureExerciseLog(sessionId: string, exercise: RoutineExer
     state: 'pending',
     notes: '',
     snapshot: {
+      assetKind: exercise.assetKind,
+      customAssetId: exercise.customAssetId,
       name: exercise.name,
       canonicalName: exercise.canonicalName,
       mainMuscle: exercise.mainMuscle,

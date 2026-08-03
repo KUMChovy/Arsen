@@ -7,9 +7,10 @@ export type ExerciseArtKind = 'press' | 'pecDeck' | 'row' | 'hackSquat' | 'latPu
 
 type ExerciseArtProps = {
   alt: string
-  kind?: ExerciseArtKind
+  assetKind?: string | null
   className?: string
-  muscle?: string
+  customImageSrc?: string | null
+  muscle?: string | null
 }
 
 const positions: Record<ExerciseArtKind, string> = {
@@ -30,22 +31,30 @@ const musclePositions: Record<MuscleGroup, string> = {
   Piernas: '100% 50%',
 }
 
-export function ExerciseArt({ alt, className = '', kind = 'press', muscle }: ExerciseArtProps) {
+function isExerciseArtKind(value: string | null | undefined): value is ExerciseArtKind {
+  return typeof value === 'string' && Object.hasOwn(positions, value)
+}
+
+export function ExerciseArt({ alt, assetKind, className = 'size-[66px]', customImageSrc, muscle }: ExerciseArtProps) {
   const normalizedMuscle = muscle ? normalizeMuscleGroup(muscle) : null
+  const resolvedKind = isExerciseArtKind(assetKind) ? assetKind : null
+  const backgroundImage = customImageSrc
+    ? `url(${customImageSrc})`
+    : `url(${resolvedKind || !normalizedMuscle ? exerciseSprite : muscleSprite})`
 
   return (
     <div
       aria-label={alt}
       className={[
-        'size-[66px] shrink-0 rounded-[10px] border border-arsen-purple/40 bg-arsen-bg2 shadow-[inset_0_0_18px_rgb(153_83_255_/_0.18)]',
+        'shrink-0 overflow-hidden rounded-[10px] border border-arsen-purple/40 bg-arsen-bg2 bg-no-repeat shadow-[inset_0_0_18px_rgb(153_83_255_/_0.18)]',
         className,
       ].join(' ')}
       role="img"
       style={{
-        backgroundImage: `url(${normalizedMuscle ? muscleSprite : exerciseSprite})`,
-        backgroundPosition: normalizedMuscle ? musclePositions[normalizedMuscle] : positions[kind],
+        backgroundImage,
+        backgroundPosition: customImageSrc ? 'center' : resolvedKind ? positions[resolvedKind] : normalizedMuscle ? musclePositions[normalizedMuscle] : positions.press,
         backgroundRepeat: 'no-repeat',
-        backgroundSize: normalizedMuscle ? '640% 108%' : '600% 100%',
+        backgroundSize: customImageSrc ? 'cover' : resolvedKind ? '600% 100%' : '640% 108%',
       }}
     />
   )

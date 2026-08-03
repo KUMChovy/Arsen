@@ -43,9 +43,11 @@ export const routineDaySchema = z
 
 export const routineExerciseSchema = z
   .object({
+    assetKind: z.string().nullable().optional().default(null),
     canonicalName: z.string(),
     createdAt: z.string(),
     currentWeightKg: z.number().optional().default(0),
+    customAssetId: z.string().nullable().optional().default(null),
     dayId: z.string().min(1),
     equipment: equipmentSchema,
     id: z.string().min(1),
@@ -93,9 +95,10 @@ export const weeklyVolumeTargetSchema = z
 export const exerciseCatalogItemSchema = z
   .object({
     aliases: z.array(z.string()),
-    assetKind: z.string().nullable(),
+    assetKind: z.string().nullable().optional().default(null),
     canonicalName: z.string(),
     createdAt: z.string(),
+    customAssetId: z.string().nullable().optional().default(null),
     defaultRecommendedRir: z.number().min(0),
     defaultRepsMax: z.number().optional().default(10),
     defaultRepsMin: z.number().optional().default(8),
@@ -121,6 +124,17 @@ export const exerciseCatalogItemSchema = z
     }),
   }))
   .refine((item) => item.defaultRepsMin <= item.defaultRepsMax, { message: 'defaultRepsMin no puede ser mayor que defaultRepsMax' })
+
+export const exerciseAssetSchema = z
+  .object({
+    createdAt: z.string(),
+    dataUrl: z.string().startsWith('data:image/'),
+    id: z.string().min(1),
+    mimeType: z.string().startsWith('image/'),
+    name: z.string(),
+    updatedAt: z.string(),
+  })
+  .passthrough()
 
 export const appSettingsSchema = z
   .object({
@@ -160,7 +174,9 @@ export const exerciseLogSchema = z
     sessionId: z.string().min(1),
     snapshot: z
       .object({
+        assetKind: z.string().nullable().optional().default(null),
         canonicalName: z.string(),
+        customAssetId: z.string().nullable().optional().default(null),
         equipment: z.string(),
         mainMuscle: z.string(),
         name: z.string(),
@@ -219,6 +235,7 @@ export const skipLogSchema = z
 export const routineExportSchema = z
   .object({
     days: z.array(routineDaySchema),
+    exerciseAssets: z.array(exerciseAssetSchema).optional().default([]),
     exercises: z.array(routineExerciseSchema),
     exportedAt: z.string().optional().default(''),
     routine: routineSchema,
@@ -234,6 +251,7 @@ export const backupSchema = z
     tables: z
       .object({
         dropSetLogs: z.array(dropSetLogSchema).optional().default([]),
+        exerciseAssets: z.array(exerciseAssetSchema).optional().default([]),
         exerciseCatalog: z.array(exerciseCatalogItemSchema).optional().default([]),
         exerciseLogs: z.array(exerciseLogSchema).optional().default([]),
         routineDays: z.array(routineDaySchema).optional().default([]),

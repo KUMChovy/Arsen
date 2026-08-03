@@ -78,6 +78,10 @@ export async function getExerciseCatalog() {
   return db.exerciseCatalog.orderBy('canonicalName').toArray()
 }
 
+export async function getExerciseAssets() {
+  return db.exerciseAssets.orderBy('updatedAt').reverse().toArray()
+}
+
 export async function getRoutines() {
   return db.routines.orderBy('updatedAt').reverse().toArray()
 }

@@ -21,6 +21,7 @@ vi.mock('../../routine/hooks', () => ({
       preferredUnit: 'kg',
     },
   }),
+  useExerciseAssets: () => [],
   useRoutines: () => [routine],
   useWorkoutDayById: () => ({
     day: {
@@ -149,9 +150,11 @@ describe('WorkoutPage', () => {
 })
 
 const exercise: RoutineExercise = {
+  assetKind: null,
   canonicalName: 'press-inclinado',
   createdAt: '2026-07-20T00:00:00.000Z',
   currentWeightKg: 60,
+  customAssetId: null,
   dayId: 'day-1',
   equipment: 'Barra',
   loadMode: 'split',

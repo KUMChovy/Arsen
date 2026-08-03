@@ -193,6 +193,10 @@ describe('Arsen import schemas', () => {
     expect(result.success).toBe(true)
     if (!result.success) return
     expect(result.data.tables.routineExercises[0]).toMatchObject({
+      assetKind: null,
+      customAssetId: null,
+    })
+    expect(result.data.tables.routineExercises[0]).toMatchObject({
       barWeightKg: 20,
       currentWeightKg: 0,
       loadMode: 'split',
@@ -207,6 +211,73 @@ describe('Arsen import schemas', () => {
       loadMode: 'split',
       technicalNotes: '',
     })
+  })
+
+  it('accepts visual asset fields and custom exercise assets', () => {
+    const result = backupSchema.safeParse({
+      tables: {
+        exerciseAssets: [
+          {
+            createdAt: '2026-01-01T00:00:00.000Z',
+            dataUrl: 'data:image/png;base64,AAAA',
+            id: 'asset-1',
+            mimeType: 'image/png',
+            name: 'press.png',
+            updatedAt: '2026-01-01T00:00:00.000Z',
+          },
+        ],
+        exerciseCatalog: [
+          {
+            aliases: [],
+            assetKind: 'row',
+            canonicalName: 'remo-barra',
+            createdAt: '2026-01-01T00:00:00.000Z',
+            customAssetId: 'asset-1',
+            defaultRecommendedRir: 2,
+            defaultRepsMax: 10,
+            defaultRepsMin: 8,
+            defaultRestSeconds: 120,
+            defaultTargetSets: 4,
+            equipment: 'Barra',
+            id: 'catalog-1',
+            mainMuscle: 'Espalda',
+            name: 'Remo barra',
+            updatedAt: '2026-01-01T00:00:00.000Z',
+          },
+        ],
+        routineExercises: [
+          {
+            ...exercise,
+            assetKind: 'row',
+            customAssetId: 'asset-1',
+          },
+        ],
+        exerciseLogs: [
+          {
+            createdAt: '2026-01-01T00:00:00.000Z',
+            id: 'exercise-log-1',
+            notes: '',
+            routineExerciseId: 'exercise-1',
+            sessionId: 'session-1',
+            snapshot: {
+              assetKind: 'row',
+              canonicalName: 'remo-barra',
+              customAssetId: 'asset-1',
+              equipment: 'Barra',
+              mainMuscle: 'Espalda',
+              name: 'Remo barra',
+              recommendedRir: 2,
+              restSeconds: 120,
+              targetSets: 4,
+            },
+            state: 'done',
+            updatedAt: '2026-01-01T00:00:00.000Z',
+          },
+        ],
+      },
+    })
+
+    expect(result.success).toBe(true)
   })
 
   it('accepts legacy exercise log snapshots without rep ranges', () => {

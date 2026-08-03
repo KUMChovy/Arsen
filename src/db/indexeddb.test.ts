@@ -1,9 +1,10 @@
 import 'fake-indexeddb/auto'
+import Dexie from 'dexie'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { db } from './schema'
-import type { ExerciseCatalogItem, Routine, RoutineDay, RoutineExercise } from '../domains/routine/types'
+import type { ExerciseAsset, ExerciseCatalogItem, Routine, RoutineDay, RoutineExercise } from '../domains/routine/types'
 import type { AppSettings } from '../domains/settings/types'
-import { addCatalogExerciseToDay, createCatalogExercise } from '../domains/routine/services'
+import { addCatalogExerciseToDay, createCatalogExercise, createExerciseAsset, updateCatalogExercise } from '../domains/routine/services'
 import { buildProgressExport, importFullBackup } from '../domains/settings/services'
 import {
   getProgressDayOptions,
@@ -311,6 +312,56 @@ describe('IndexedDB integration', () => {
     })
   })
 
+  it('imports custom exercise assets from full backup', async () => {
+    await importFullBackup(
+      backupFile({
+        exerciseAssets: [
+          {
+            createdAt: now,
+            dataUrl: 'data:image/png;base64,CCCC',
+            id: 'asset-1',
+            mimeType: 'image/png',
+            name: 'sentadilla.png',
+            updatedAt: now,
+          },
+        ],
+        exerciseCatalog: [catalogExercise({ customAssetId: 'asset-1' })],
+      }),
+      'replace',
+    )
+
+    await expect(db.exerciseAssets.get('asset-1')).resolves.toMatchObject({
+      dataUrl: 'data:image/png;base64,CCCC',
+    })
+    await expect(db.exerciseCatalog.get('catalog-1')).resolves.toMatchObject({
+      customAssetId: 'asset-1',
+    })
+  })
+
+  it('migrates v5 legacy visual fields to null', async () => {
+    db.close()
+    await db.delete()
+    const legacyDb = new Dexie('arsen')
+    legacyDb.version(5).stores({
+      exerciseCatalog: 'id, canonicalName, mainMuscle, equipment',
+      exerciseLogs: 'id, sessionId, routineExerciseId, state',
+      routineExercises: 'id, routineId, dayId, canonicalName, [dayId+order], sourceExerciseId',
+    })
+    await legacyDb.open()
+    await legacyDb.table('exerciseCatalog').put({ id: 'catalog-v5' })
+    await legacyDb.table('routineExercises').put({ id: 'exercise-v5' })
+    await legacyDb.table('exerciseLogs').put({ id: 'log-v5', snapshot: {} })
+    legacyDb.close()
+
+    await db.open()
+
+    await expect(db.exerciseCatalog.get('catalog-v5')).resolves.toMatchObject({ assetKind: null, customAssetId: null })
+    await expect(db.routineExercises.get('exercise-v5')).resolves.toMatchObject({ assetKind: null, customAssetId: null })
+    await expect(db.exerciseLogs.get('log-v5')).resolves.toMatchObject({
+      snapshot: { assetKind: null, customAssetId: null },
+    })
+  })
+
   it('filters progress export by day and canonical exercise', async () => {
     const routineA = routine('routine-a', 'Rutina A')
     const routineB = routine('routine-b', 'Rutina B')
@@ -537,6 +588,79 @@ describe('IndexedDB integration', () => {
     })
     expect(detail?.exercises.some((exercise) => exercise.routineExerciseId === 'exercise-b')).toBe(true)
   })
+
+  it('copies catalog visual references into day recipes and workout snapshots', async () => {
+    const routineA = routine('routine-a', 'Rutina A')
+    const dayA = routineDay('day-a', routineA.id, 'Dia A')
+    await db.routines.put(routineA)
+    await db.routineDays.put(dayA)
+
+    const customAssetId = await createExerciseAsset({
+      dataUrl: 'data:image/png;base64,AAAA',
+      mimeType: 'image/png',
+      name: 'remo.png',
+    })
+    const catalogItemId = await createCatalogExercise({
+      assetKind: 'row',
+      customAssetId,
+      equipment: 'Barra',
+      mainMuscle: 'Espalda',
+      name: 'Remo barra',
+    })
+
+    const exerciseId = await addCatalogExerciseToDay(routineA.id, dayA.id, catalogItemId)
+    const exercise = await db.routineExercises.get(exerciseId)
+
+    expect(exercise).toMatchObject({
+      assetKind: 'row',
+      customAssetId,
+    })
+
+    const registered = await registerMainSetForExercise({
+      date: '2026-08-02',
+      dayId: dayA.id,
+      displayUnit: 'kg',
+      exercise: exercise!,
+      reps: 8,
+      rir: 2,
+      routineId: routineA.id,
+      weightKg: 70,
+    })
+
+    await expect(db.exerciseLogs.get(registered.exerciseLogId)).resolves.toMatchObject({
+      snapshot: {
+        assetKind: 'row',
+        customAssetId,
+      },
+    })
+  })
+
+  it('preserves catalog visual reference when editing catalog metadata', async () => {
+    const customAssetId = await createExerciseAsset({
+      dataUrl: 'data:image/png;base64,BBBB',
+      mimeType: 'image/png',
+      name: 'press.png',
+    })
+    const catalogItemId = await createCatalogExercise({
+      assetKind: 'press',
+      customAssetId,
+      equipment: 'Barra',
+      mainMuscle: 'Pecho',
+      name: 'Press banca',
+    })
+
+    await updateCatalogExercise(catalogItemId, {
+      equipment: 'Barra',
+      mainMuscle: 'Pecho',
+      name: 'Press banca pausado',
+    })
+
+    await expect(db.exerciseCatalog.get(catalogItemId)).resolves.toMatchObject({
+      assetKind: 'press',
+      customAssetId,
+      name: 'Press banca pausado',
+    })
+  })
 })
 
 async function resetDb() {
@@ -546,6 +670,7 @@ async function resetDb() {
 }
 
 function backupFile(tables: {
+  exerciseAssets?: ExerciseAsset[]
   exerciseCatalog?: ExerciseCatalogItem[]
   routineExercises?: RoutineExercise[]
   routines?: Routine[]
@@ -606,9 +731,11 @@ function routineExercise(
   > = {},
 ): RoutineExercise {
   return {
+    assetKind: null,
     canonicalName: overrides.canonicalName ?? 'press-inclinado',
     createdAt: now,
     currentWeightKg: 50,
+    customAssetId: null,
     dayId: overrides.dayId ?? 'day-1',
     equipment: 'Barra',
     loadMode: 'split',
@@ -632,12 +759,15 @@ function routineExercise(
   }
 }
 
-function catalogExercise(overrides: Partial<Pick<ExerciseCatalogItem, 'technicalNotes' | 'warmupProtocol'>> = {}): ExerciseCatalogItem {
+function catalogExercise(
+  overrides: Partial<Pick<ExerciseCatalogItem, 'customAssetId' | 'technicalNotes' | 'warmupProtocol'>> = {},
+): ExerciseCatalogItem {
   return {
     aliases: [],
     assetKind: null,
     canonicalName: 'sentadilla',
     createdAt: now,
+    customAssetId: overrides.customAssetId ?? null,
     defaultRecommendedRir: 2,
     defaultRepsMax: 10,
     defaultRepsMin: 8,

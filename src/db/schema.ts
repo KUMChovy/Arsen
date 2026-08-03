@@ -1,5 +1,6 @@
 import Dexie, { type Table } from 'dexie'
 import type {
+  ExerciseAsset,
   ExerciseCatalogItem,
   Routine,
   RoutineDay,
@@ -11,7 +12,7 @@ import type { DropSetLog, ExerciseLog, SetLog, SkipLog, WorkoutSession } from '.
 import { loadSettingsForEquipment } from '../shared/calculations/equipmentLoad'
 import { normalizeWarmupProtocol } from '../shared/calculations/warmups'
 
-export const CURRENT_SCHEMA_VERSION = 5
+export const CURRENT_SCHEMA_VERSION = 6
 
 export class ArsenDatabase extends Dexie {
   settings!: Table<AppSettings, string>
@@ -19,6 +20,7 @@ export class ArsenDatabase extends Dexie {
   routineDays!: Table<RoutineDay, string>
   routineExercises!: Table<RoutineExercise, string>
   exerciseCatalog!: Table<ExerciseCatalogItem, string>
+  exerciseAssets!: Table<ExerciseAsset, string>
   weeklyVolumeTargets!: Table<WeeklyVolumeTarget, string>
   workoutSessions!: Table<WorkoutSession, string>
   exerciseLogs!: Table<ExerciseLog, string>
@@ -35,6 +37,7 @@ export class ArsenDatabase extends Dexie {
       routineDays: 'id, routineId, [routineId+order], weekday',
       routineExercises: 'id, routineId, dayId, canonicalName, [dayId+order], sourceExerciseId',
       exerciseCatalog: 'id, canonicalName, mainMuscle, equipment',
+      exerciseAssets: 'id, updatedAt',
       weeklyVolumeTargets: 'id, routineId, muscle',
       workoutSessions: 'id, routineId, dayId, date, [date+routineId], [date+dayId]',
       exerciseLogs: 'id, sessionId, routineExerciseId, state',
@@ -50,6 +53,7 @@ export class ArsenDatabase extends Dexie {
         routineDays: 'id, routineId, [routineId+order], weekday',
         routineExercises: 'id, routineId, dayId, canonicalName, [dayId+order], sourceExerciseId',
         exerciseCatalog: 'id, canonicalName, mainMuscle, equipment',
+        exerciseAssets: 'id, updatedAt',
         weeklyVolumeTargets: 'id, routineId, muscle',
         workoutSessions: 'id, routineId, dayId, date, [date+routineId], [date+dayId]',
         exerciseLogs: 'id, sessionId, routineExerciseId, state',
@@ -73,6 +77,7 @@ export class ArsenDatabase extends Dexie {
         routineDays: 'id, routineId, [routineId+order], weekday',
         routineExercises: 'id, routineId, dayId, canonicalName, [dayId+order], sourceExerciseId',
         exerciseCatalog: 'id, canonicalName, mainMuscle, equipment',
+        exerciseAssets: 'id, updatedAt',
         weeklyVolumeTargets: 'id, routineId, muscle',
         workoutSessions: 'id, routineId, dayId, date, [date+routineId], [date+dayId]',
         exerciseLogs: 'id, sessionId, routineExerciseId, state',
@@ -96,6 +101,7 @@ export class ArsenDatabase extends Dexie {
         routineDays: 'id, routineId, [routineId+order], weekday',
         routineExercises: 'id, routineId, dayId, canonicalName, [dayId+order], sourceExerciseId',
         exerciseCatalog: 'id, canonicalName, mainMuscle, equipment',
+        exerciseAssets: 'id, updatedAt',
         weeklyVolumeTargets: 'id, routineId, muscle',
         workoutSessions: 'id, routineId, dayId, date, [date+routineId], [date+dayId]',
         exerciseLogs: 'id, sessionId, routineExerciseId, state',
@@ -127,6 +133,7 @@ export class ArsenDatabase extends Dexie {
         routineDays: 'id, routineId, [routineId+order], weekday',
         routineExercises: 'id, routineId, dayId, canonicalName, [dayId+order], sourceExerciseId',
         exerciseCatalog: 'id, canonicalName, mainMuscle, equipment',
+        exerciseAssets: 'id, updatedAt',
         weeklyVolumeTargets: 'id, routineId, muscle',
         workoutSessions: 'id, routineId, dayId, date, [date+routineId], [date+dayId]',
         exerciseLogs: 'id, sessionId, routineExerciseId, state',
@@ -152,6 +159,47 @@ export class ArsenDatabase extends Dexie {
               }),
           ),
         ),
+      )
+
+    this.version(6)
+      .stores({
+        settings: 'id, activeRoutineId, preferredUnit',
+        routines: 'id, isActive, name, updatedAt',
+        routineDays: 'id, routineId, [routineId+order], weekday',
+        routineExercises: 'id, routineId, dayId, canonicalName, [dayId+order], sourceExerciseId',
+        exerciseCatalog: 'id, canonicalName, mainMuscle, equipment',
+        exerciseAssets: 'id, updatedAt',
+        weeklyVolumeTargets: 'id, routineId, muscle',
+        workoutSessions: 'id, routineId, dayId, date, [date+routineId], [date+dayId]',
+        exerciseLogs: 'id, sessionId, routineExerciseId, state',
+        setLogs: 'id, exerciseLogId, kind, [exerciseLogId+order]',
+        dropSetLogs: 'id, setLogId, [setLogId+order]',
+        skipLogs: 'id, sessionId, routineExerciseId',
+      })
+      .upgrade((tx) =>
+        Promise.all([
+          tx
+            .table('exerciseCatalog')
+            .toCollection()
+            .modify((item) => {
+              item.assetKind = typeof item.assetKind === 'string' ? item.assetKind : null
+              item.customAssetId = typeof item.customAssetId === 'string' ? item.customAssetId : null
+            }),
+          tx
+            .table('routineExercises')
+            .toCollection()
+            .modify((item) => {
+              item.assetKind = typeof item.assetKind === 'string' ? item.assetKind : null
+              item.customAssetId = typeof item.customAssetId === 'string' ? item.customAssetId : null
+            }),
+          tx
+            .table('exerciseLogs')
+            .toCollection()
+            .modify((log) => {
+              log.snapshot.assetKind = typeof log.snapshot.assetKind === 'string' ? log.snapshot.assetKind : null
+              log.snapshot.customAssetId = typeof log.snapshot.customAssetId === 'string' ? log.snapshot.customAssetId : null
+            }),
+        ]),
       )
   }
 }

@@ -61,3 +61,136 @@ select:focus-visible {
   content-visibility: auto;
   contain-intrinsic-size: 0 84px;
 }
+
+.arsen-swal-container {
+  padding: 16px;
+}
+
+.arsen-swal-popup {
+  max-width: calc(100vw - 24px);
+  overflow-x: hidden;
+  border: 1px solid color-mix(in oklch, var(--color-arsen-ink) 12%, transparent);
+  border-radius: 12px;
+  background:
+    linear-gradient(180deg, rgb(255 255 255 / 0.04), transparent 34%),
+    var(--color-arsen-surface);
+  box-shadow: 0 18px 42px rgb(0 0 0 / 0.48);
+  padding: 18px 16px 16px;
+  color: var(--color-arsen-ink);
+}
+
+.arsen-swal-title {
+  overflow-wrap: anywhere;
+  padding: 0;
+  color: var(--color-arsen-ink);
+  font-size: 20px;
+  font-weight: 900;
+  line-height: 1.2;
+}
+
+.arsen-swal-text {
+  margin: 8px 0 0;
+  overflow-wrap: anywhere;
+  color: var(--color-arsen-muted);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.arsen-swal-actions {
+  display: grid;
+  width: 100%;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 16px 0 0;
+}
+
+.arsen-swal-button {
+  min-height: 48px;
+  min-width: 0;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  padding: 12px 14px;
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1.15;
+  white-space: normal;
+}
+
+.arsen-swal-button:focus-visible {
+  outline: 2px solid var(--color-arsen-acid);
+  outline-offset: 2px;
+}
+
+.arsen-swal-purple {
+  border-color: color-mix(in oklch, var(--color-arsen-ink) 10%, transparent);
+  background: linear-gradient(180deg, var(--color-arsen-purple2), var(--color-arsen-purple));
+  color: var(--color-arsen-ink);
+}
+
+.arsen-swal-acid {
+  background: linear-gradient(180deg, var(--color-arsen-acid), var(--color-arsen-acid2));
+  color: #142100;
+}
+
+.arsen-swal-danger {
+  border-color: color-mix(in oklch, var(--color-red-300) 35%, transparent);
+  background: color-mix(in oklch, var(--color-red-950) 32%, transparent);
+  color: var(--color-red-100);
+}
+
+.arsen-swal-cancel {
+  border-color: color-mix(in oklch, var(--color-arsen-ink) 14%, transparent);
+  background: var(--color-arsen-surface2);
+  color: var(--color-arsen-ink);
+}
+
+.arsen-swal-input {
+  min-height: 48px;
+  max-width: 100%;
+  margin: 12px 0 0;
+  border: 1px solid color-mix(in oklch, var(--color-arsen-ink) 12%, transparent);
+  border-radius: 10px;
+  background: var(--color-arsen-bg2);
+  color: var(--color-arsen-ink);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.arsen-swal-validation {
+  margin: 10px 0 0;
+  border-radius: 10px;
+  background: color-mix(in oklch, var(--color-red-950) 28%, transparent);
+  color: var(--color-red-100);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.arsen-swal-icon.swal2-warning {
+  border-color: var(--color-arsen-purple2);
+  color: var(--color-arsen-purple2);
+}
+
+.arsen-swal-icon.swal2-success {
+  border-color: var(--color-arsen-acid);
+  color: var(--color-arsen-acid);
+}
+
+.arsen-swal-icon.swal2-error {
+  border-color: color-mix(in oklch, var(--color-red-300) 55%, transparent);
+  color: var(--color-red-100);
+}
+
+@media (max-width: 380px) {
+  .arsen-swal-container {
+    padding: 12px;
+  }
+
+  .arsen-swal-popup {
+    padding: 16px 12px 14px;
+  }
+
+  .arsen-swal-actions {
+    grid-template-columns: 1fr;
+  }
+}

@@ -6,7 +6,8 @@ import type { WeightIncreaseRecommendation } from '../../../shared/calculations/
 import { WorkoutPage } from './WorkoutPage'
 import type { RoutineExercise } from '../../routine/types'
 import type { ExerciseLog, SetLog } from '../types'
-import { completeSessionForDay } from '../services'
+import { confirmDanger } from '../../../shared/utils/alerts'
+import { completeSessionForDay, deleteMainSet, updateMainSet } from '../services'
 
 const workoutMocks = vi.hoisted(() => ({
   weightIncreaseRecommendations: [] as WeightIncreaseRecommendation[],
@@ -15,7 +16,7 @@ const workoutMocks = vi.hoisted(() => ({
 vi.mock('../../routine/hooks', () => ({
   useActiveRoutineBundle: () => ({
     days: [day],
-    exercisesByDay: new Map([[day.id, [exercise]]]),
+    exercisesByDay: new Map([[day.id, [exercise, otherExercise]]]),
     routine,
     settings: {
       preferredUnit: 'kg',
@@ -29,7 +30,7 @@ vi.mock('../../routine/hooks', () => ({
       id: 'day-1',
       name: 'Dia 1',
     },
-    dayExercises: [exercise],
+    dayExercises: [exercise, otherExercise],
     routine: {
       id: 'routine-1',
       name: 'Mi rutina actual',
@@ -45,7 +46,10 @@ vi.mock('../hooks', () => ({
   useWorkoutProgress: () => ({
     completedCount: 0,
     dropSets: [],
-    exerciseLogByExerciseId: new Map([[exercise.id, exerciseLog]]),
+    exerciseLogByExerciseId: new Map([
+      [exercise.id, exerciseLog],
+      [otherExercise.id, otherExerciseLog],
+    ]),
     inProgressCount: 1,
     pendingCount: 0,
     progress: {
@@ -55,8 +59,11 @@ vi.mock('../hooks', () => ({
         status: 'draft',
       },
     },
-    setLogs: [setLog],
-    setsByExerciseLogId: new Map([[exerciseLog.id, 1]]),
+    setLogs: [setLog, otherSetLog],
+    setsByExerciseLogId: new Map([
+      [exerciseLog.id, 1],
+      [otherExerciseLog.id, 1],
+    ]),
     skippedCount: 0,
     stateByExerciseId: new Map([[exercise.id, 'in_progress']]),
   }),
@@ -74,6 +81,10 @@ vi.mock('../services', () => ({
 
 vi.mock('../../routine/services', () => ({
   setActiveRoutine: vi.fn(() => Promise.resolve()),
+}))
+
+vi.mock('../../../shared/utils/alerts', () => ({
+  confirmDanger: vi.fn(() => Promise.resolve(true)),
 }))
 
 describe('WorkoutPage', () => {
@@ -147,6 +158,44 @@ describe('WorkoutPage', () => {
     expect(screen.getByRole('heading', { name: 'Indicaciones' })).toBeInTheDocument()
     expect(screen.getByText(exercise.technicalNotes)).toBeInTheDocument()
   })
+
+  it('shows registered sets inside the selected exercise only', () => {
+    render(<WorkoutPage />)
+
+    fireEvent.click(screen.getByRole('button', { name: /Ver series de Press inclinado/i }))
+
+    expect(screen.getByText('Serie 1 - 60 kg - 8 reps - RIR 1')).toBeInTheDocument()
+    expect(screen.queryByText('Serie 1 - 80 kg - 6 reps - RIR 2')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /Ver series de Remo T/i }))
+
+    expect(screen.getByText('Serie 1 - 80 kg - 6 reps - RIR 2')).toBeInTheDocument()
+    expect(screen.queryByText('Serie 1 - 60 kg - 8 reps - RIR 1')).not.toBeInTheDocument()
+  })
+
+  it('edits a set from the active exercise context', async () => {
+    render(<WorkoutPage />)
+
+    fireEvent.click(screen.getByRole('button', { name: /Ver series de Press inclinado/i }))
+    fireEvent.click(screen.getByRole('button', { name: /Editar serie 1 de Press inclinado/i }))
+    fireEvent.click(screen.getByRole('button', { name: /Guardar cambios/i }))
+
+    await waitFor(() => {
+      expect(updateMainSet).toHaveBeenCalledWith('set-1', expect.objectContaining({ reps: 8, rir: 1, weightKg: 60 }))
+    })
+  })
+
+  it('deletes a set from the active exercise context', async () => {
+    render(<WorkoutPage />)
+
+    fireEvent.click(screen.getByRole('button', { name: /Ver series de Press inclinado/i }))
+    fireEvent.click(screen.getByRole('button', { name: /Eliminar serie 1 de Press inclinado/i }))
+
+    await waitFor(() => {
+      expect(confirmDanger).toHaveBeenCalledWith('Eliminar serie', 'Se borrara esta serie y sus drop sets.')
+      expect(deleteMainSet).toHaveBeenCalledWith('set-1')
+    })
+  })
 })
 
 const exercise: RoutineExercise = {
@@ -175,6 +224,15 @@ const exercise: RoutineExercise = {
   updatedAt: '2026-07-20T00:00:00.000Z',
   warmupProtocol: '',
   warmupSets: 2,
+}
+
+const otherExercise: RoutineExercise = {
+  ...exercise,
+  canonicalName: 'remo-t',
+  id: 'exercise-2',
+  mainMuscle: 'Espalda',
+  name: 'Remo T',
+  order: 1,
 }
 
 const day = {
@@ -219,6 +277,18 @@ const exerciseLog: ExerciseLog = {
   updatedAt: '2026-07-20T00:00:00.000Z',
 }
 
+const otherExerciseLog: ExerciseLog = {
+  ...exerciseLog,
+  id: 'exercise-log-2',
+  routineExerciseId: otherExercise.id,
+  snapshot: {
+    ...exerciseLog.snapshot,
+    canonicalName: otherExercise.canonicalName,
+    mainMuscle: otherExercise.mainMuscle,
+    name: otherExercise.name,
+  },
+}
+
 const setLog: SetLog = {
   createdAt: '2026-07-20T00:00:00.000Z',
   displayUnit: 'kg',
@@ -230,6 +300,15 @@ const setLog: SetLog = {
   rir: 1,
   updatedAt: '2026-07-20T00:00:00.000Z',
   weightKg: 60,
+}
+
+const otherSetLog: SetLog = {
+  ...setLog,
+  exerciseLogId: otherExerciseLog.id,
+  id: 'set-2',
+  reps: 6,
+  rir: 2,
+  weightKg: 80,
 }
 
 const weightIncreaseRecommendation: WeightIncreaseRecommendation = {

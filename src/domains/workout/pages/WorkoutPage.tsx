@@ -40,6 +40,7 @@ export function WorkoutPage() {
   const weightIncreaseRecommendations = useWeightIncreaseRecommendations(dayExercises)
   const [selectedExerciseId, setSelectedExerciseId] = useState<string | null>(null)
   const [currentExerciseId, setCurrentExerciseId] = useState<string | null>(null)
+  const [activeExerciseId, setActiveExerciseId] = useState<string | null>(null)
   const [exerciseFilter, setExerciseFilter] = useState<ExerciseFilter>('all')
   const [editingSet, setEditingSet] = useState<{ exercise: RoutineExercise; set: SetLog } | null>(null)
   const [noteSheetExercise, setNoteSheetExercise] = useState<RoutineExercise | null>(null)
@@ -79,23 +80,6 @@ export function WorkoutPage() {
       }),
     [dailyProgress.stateByExerciseId, dayExercises, exerciseFilter],
   )
-  const loggedSetRows = useMemo(
-    () =>
-      dayExercises.flatMap((exercise) => {
-        const log = dailyProgress.exerciseLogByExerciseId.get(exercise.id)
-        if (!log) return []
-
-        return dailyProgress.setLogs
-          .filter((set) => set.kind === 'main' && set.exerciseLogId === log.id)
-          .sort((a, b) => a.order - b.order)
-          .map((set) => ({
-            dropSets: dailyProgress.dropSets.filter((dropSet) => dropSet.setLogId === set.id).sort((a, b) => a.order - b.order),
-            exercise,
-            set,
-          }))
-      }),
-    [dailyProgress.dropSets, dailyProgress.exerciseLogByExerciseId, dailyProgress.setLogs, dayExercises],
-  )
   const editingDropSets = editingSet ? dailyProgress.dropSets.filter((dropSet) => dropSet.setLogId === editingSet.set.id) : []
   const statusSummary = [
     { label: 'Pendientes', value: dailyProgress.pendingCount },
@@ -113,6 +97,11 @@ export function WorkoutPage() {
     if (currentExerciseId && navigableExercises.some((exercise) => exercise.id === currentExerciseId)) return
     setCurrentExerciseId(navigableExercises[0]?.id ?? null)
   }, [currentExerciseId, navigableExercises])
+
+  useEffect(() => {
+    if (activeExerciseId && dayExercises.some((exercise) => exercise.id === activeExerciseId)) return
+    setActiveExerciseId(currentExercise?.id ?? dayExercises[0]?.id ?? null)
+  }, [activeExerciseId, currentExercise?.id, dayExercises])
 
   function runSetAction(action: () => Promise<void>, success: string) {
     startTransition(() => {
@@ -150,6 +139,7 @@ export function WorkoutPage() {
           setSelectedDayId(null)
           setSelectedExerciseId(null)
           setCurrentExerciseId(null)
+          setActiveExerciseId(null)
           setMessage('Rutina activa cambiada')
         })
         .catch((error: unknown) => setMessage(error instanceof Error ? error.message : 'No se pudo cambiar rutina'))
@@ -158,7 +148,9 @@ export function WorkoutPage() {
 
   function goToPreviousExercise() {
     if (currentExerciseIndex <= 0) return
-    setCurrentExerciseId(navigableExercises[currentExerciseIndex - 1]?.id ?? null)
+    const previousExerciseId = navigableExercises[currentExerciseIndex - 1]?.id ?? null
+    setCurrentExerciseId(previousExerciseId)
+    setActiveExerciseId(previousExerciseId)
   }
 
   function skipCurrentExercise() {
@@ -174,10 +166,31 @@ export function WorkoutPage() {
       })
         .then(() => {
           setCurrentExerciseId(nextExerciseId)
+          setActiveExerciseId(nextExerciseId)
           setMessage('Ejercicio saltado')
         })
         .catch((error: unknown) => setMessage(error instanceof Error ? error.message : 'No se pudo saltar'))
     })
+  }
+
+  function activateExercise(exercise: RoutineExercise) {
+    setActiveExerciseId(exercise.id)
+    if ((dailyProgress.stateByExerciseId.get(exercise.id) ?? 'pending') !== 'done') {
+      setCurrentExerciseId(exercise.id)
+    }
+  }
+
+  function loggedRowsForExercise(exercise: RoutineExercise) {
+    const log = dailyProgress.exerciseLogByExerciseId.get(exercise.id)
+    if (!log) return []
+
+    return dailyProgress.setLogs
+      .filter((set) => set.kind === 'main' && set.exerciseLogId === log.id)
+      .sort((a, b) => a.order - b.order)
+      .map((set) => ({
+        dropSets: dailyProgress.dropSets.filter((dropSet) => dropSet.setLogId === set.id).sort((a, b) => a.order - b.order),
+        set,
+      }))
   }
 
   return (
@@ -352,51 +365,7 @@ export function WorkoutPage() {
 
       <section>
         <div className="mb-2 flex items-center justify-between text-xs font-extrabold">
-          <span className="text-arsen-muted">Series registradas</span>
-          <span className="text-arsen-purple2">{loggedSetRows.length}</span>
-        </div>
-        <div className="space-y-2">
-          {loggedSetRows.length > 0 ? (
-            loggedSetRows.map(({ dropSets, exercise, set }) => (
-              <Card className="grid grid-cols-[1fr_auto] items-center gap-3 p-3" key={set.id}>
-                <div className="min-w-0">
-                  <strong className="block truncate text-sm">{exercise.name}</strong>
-                  <span className="mt-1 block text-xs text-arsen-muted">
-                    Serie {set.order + 1} - {formatWeight(set.weightKg, preferredUnit)} - {set.reps} reps - RIR {set.rir}
-                    {dropSets.length > 0 ? ` - ${dropSets.length} drop${dropSets.length === 1 ? '' : 's'}` : ''}
-                  </span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <button
-                    className="grid size-9 place-items-center rounded-[10px] border border-white/10 text-arsen-purple2 disabled:opacity-40"
-                    disabled={isPending}
-                    onClick={() => setEditingSet({ exercise, set })}
-                    type="button"
-                  >
-                    <Pencil aria-hidden="true" className="size-4" />
-                    <span className="sr-only">Editar serie</span>
-                  </button>
-                  <button
-                    className="grid size-9 place-items-center rounded-[10px] border border-red-300/30 text-red-300 disabled:opacity-40"
-                    disabled={isPending}
-                    onClick={() => deleteSet(set)}
-                    type="button"
-                  >
-                    <Trash2 aria-hidden="true" className="size-4" />
-                    <span className="sr-only">Eliminar serie</span>
-                  </button>
-                </div>
-              </Card>
-            ))
-          ) : (
-            <Card className="p-4 text-sm text-arsen-muted">Sin series registradas en esta sesion.</Card>
-          )}
-        </div>
-      </section>
-
-      <section>
-        <div className="mb-2 flex items-center justify-between text-xs font-extrabold">
-          <span className="text-arsen-muted">Ejercicios del dia</span>
+          <span className="text-arsen-muted">Ejercicios y series del dia</span>
           <span className="text-arsen-purple2">{visibleExercises.length}</span>
         </div>
         <div className="mb-2 flex gap-2 overflow-x-auto pb-1 scrollbar-none">
@@ -420,36 +389,94 @@ export function WorkoutPage() {
           {visibleExercises.map((exercise) => {
             const state = dailyProgress.stateByExerciseId.get(exercise.id) ?? 'pending'
             const note = exercise.technicalNotes.trim()
+            const isActive = activeExerciseId === exercise.id
+            const loggedRows = isActive ? loggedRowsForExercise(exercise) : []
 
             return (
-              <Card className="content-auto grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 p-2" key={exercise.id}>
-                <button className="grid min-w-0 grid-cols-[52px_minmax(0,1fr)] items-center gap-4 text-left" onClick={() => setSelectedExerciseId(exercise.id)} type="button">
-                  <ExerciseArt
-                    alt={exercise.name}
-                    assetKind={exercise.assetKind}
-                    className="size-[52px]"
-                    customImageSrc={exercise.customAssetId ? imageSrcByAssetId.get(exercise.customAssetId) : null}
-                    muscle={exercise.mainMuscle}
-                  />
-                  <div className="min-w-0">
-                    <h3 className="truncate text-sm font-extrabold">{exercise.name}</h3>
-                    <span className="mt-1 block truncate text-xs text-arsen-muted">
-                      {exercise.mainMuscle} - {exercise.targetSets}x{formatRepRange(exercise.repsMin, exercise.repsMax)} - RIR {exercise.recommendedRir}
-                    </span>
-                  </div>
-                </button>
-                <span className={['rounded-full px-2 py-1 text-xs font-bold', stateClassName(state)].join(' ')}>
-                  {stateLabel(state)}
-                </span>
-                {note ? (
+              <Card className={['content-auto p-2', isActive ? 'border-arsen-purple/45' : ''].join(' ')} key={exercise.id}>
+                <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2">
                   <button
-                    aria-label={`Ver indicaciones de ${exercise.name}`}
-                    className="grid size-9 place-items-center rounded-[10px] border border-white/10 text-arsen-purple2"
-                    onClick={() => setNoteSheetExercise(exercise)}
+                    aria-expanded={isActive}
+                    aria-label={`Ver series de ${exercise.name}`}
+                    className="grid min-w-0 grid-cols-[52px_minmax(0,1fr)] items-center gap-4 text-left"
+                    onClick={() => activateExercise(exercise)}
                     type="button"
                   >
-                    <Info aria-hidden="true" className="size-4" />
+                    <ExerciseArt
+                      alt={exercise.name}
+                      assetKind={exercise.assetKind}
+                      className="size-[52px]"
+                      customImageSrc={exercise.customAssetId ? imageSrcByAssetId.get(exercise.customAssetId) : null}
+                      muscle={exercise.mainMuscle}
+                    />
+                    <div className="min-w-0">
+                      <h3 className="truncate text-sm font-extrabold">{exercise.name}</h3>
+                      <span className="mt-1 block truncate text-xs text-arsen-muted">
+                        {exercise.mainMuscle} - {exercise.targetSets}x{formatRepRange(exercise.repsMin, exercise.repsMax)} - RIR {exercise.recommendedRir}
+                      </span>
+                    </div>
                   </button>
+                  <span className={['rounded-full px-2 py-1 text-xs font-bold', stateClassName(state)].join(' ')}>
+                    {stateLabel(state)}
+                  </span>
+                  {note ? (
+                    <button
+                      aria-label={`Ver indicaciones de ${exercise.name}`}
+                      className="grid size-9 place-items-center rounded-[10px] border border-white/10 text-arsen-purple2"
+                      onClick={() => setNoteSheetExercise(exercise)}
+                      type="button"
+                    >
+                      <Info aria-hidden="true" className="size-4" />
+                    </button>
+                  ) : null}
+                </div>
+
+                {isActive ? (
+                  <div className="mt-3 border-t border-white/10 pt-3">
+                    <div className="mb-2 flex items-center justify-between text-xs font-extrabold">
+                      <span className="text-arsen-muted">Series registradas</span>
+                      <span className="text-arsen-purple2">{loggedRows.length}</span>
+                    </div>
+                    <div className="space-y-2">
+                      {loggedRows.length > 0 ? (
+                        loggedRows.map(({ dropSets, set }) => (
+                          <div className="grid grid-cols-[1fr_auto] items-center gap-3 rounded-[10px] border border-white/10 bg-arsen-bg/45 p-3" key={set.id}>
+                            <div className="min-w-0">
+                              <strong className="block truncate text-sm">Serie {set.order + 1}</strong>
+                              <span className="mt-1 block text-xs text-arsen-muted">
+                                Serie {set.order + 1} - {formatWeight(set.weightKg, preferredUnit)} - {set.reps} reps - RIR {set.rir}
+                                {dropSets.length > 0 ? ` - ${dropSets.length} drop${dropSets.length === 1 ? '' : 's'}` : ''}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <button
+                                aria-label={`Editar serie ${set.order + 1} de ${exercise.name}`}
+                                className="grid size-9 place-items-center rounded-[10px] border border-white/10 text-arsen-purple2 disabled:opacity-40"
+                                disabled={isPending}
+                                onClick={() => setEditingSet({ exercise, set })}
+                                type="button"
+                              >
+                                <Pencil aria-hidden="true" className="size-4" />
+                              </button>
+                              <button
+                                aria-label={`Eliminar serie ${set.order + 1} de ${exercise.name}`}
+                                className="grid size-9 place-items-center rounded-[10px] border border-red-300/30 text-red-300 disabled:opacity-40"
+                                disabled={isPending}
+                                onClick={() => deleteSet(set)}
+                                type="button"
+                              >
+                                <Trash2 aria-hidden="true" className="size-4" />
+                              </button>
+                            </div>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="rounded-[10px] border border-white/10 bg-arsen-bg/45 p-3 text-sm text-arsen-muted">
+                          Sin series registradas para este ejercicio.
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 ) : null}
               </Card>
             )
@@ -515,6 +542,7 @@ export function WorkoutPage() {
             setSelectedDayId(dayId)
             setSelectedExerciseId(null)
             setCurrentExerciseId(null)
+            setActiveExerciseId(null)
           }}
           onChangeRoutine={changeRoutine}
           onClose={() => setRoutineSheetOpen(false)}

@@ -131,18 +131,24 @@ export function RoutinePage() {
     })
   }
 
+  function createAndActivateRoutine() {
+    runRoutineAction(async () => {
+      const routineId = await createRoutine('Nueva rutina')
+      await setActiveRoutine(routineId)
+      return routineId
+    }, 'Rutina creada y activada')
+  }
+
+  const hasNoRoutines = !bundle && routines.length === 0
+
   return (
     <div className="space-y-4">
       <PageHeader eyebrow="Gestion de rutinas y catalogo" title="Rutina">
         <RoutineActions
-          disabled={isPending || !bundle}
-          onCreate={() =>
-            runRoutineAction(async () => {
-              const routineId = await createRoutine('Nueva rutina')
-              await setActiveRoutine(routineId)
-              return routineId
-            }, 'Rutina creada y activada')
-          }
+          createDisabled={isPending}
+          exportDisabled={isPending || !bundle}
+          importDisabled={isPending}
+          onCreate={createAndActivateRoutine}
           onExport={() => {
             if (bundle) void exportRoutineJson(bundle.routine.id)
           }}
@@ -150,7 +156,7 @@ export function RoutinePage() {
         />
       </PageHeader>
 
-      <ModeTabs mode={mode} onModeChange={setMode} />
+      {!hasNoRoutines ? <ModeTabs mode={mode} onModeChange={setMode} /> : null}
 
       {actionMessage ? (
         <div className="rounded-[10px] border border-arsen-purple/40 bg-arsen-purple/15 px-3 py-2 text-xs text-arsen-purple2">
@@ -158,14 +164,25 @@ export function RoutinePage() {
         </div>
       ) : null}
 
-      <RoutineSwitcher
-        activeRoutineId={bundle?.routine.id ?? null}
-        disabled={isPending}
-        onSelect={(routineId) => runRoutineAction(() => setActiveRoutine(routineId), 'Rutina activa cambiada')}
-        routines={routines}
-      />
+      {!hasNoRoutines ? (
+        <RoutineSwitcher
+          activeRoutineId={bundle?.routine.id ?? null}
+          disabled={isPending}
+          onSelect={(routineId) => runRoutineAction(() => setActiveRoutine(routineId), 'Rutina activa cambiada')}
+          routines={routines}
+        />
+      ) : null}
 
-      {mode === 'view' ? (
+      {!hasNoRoutines ? (
+        <ActionButton className="w-full" disabled={isPending} onClick={createAndActivateRoutine} type="button">
+          <PlusCircle aria-hidden="true" className="size-5" />
+          Crear rutina
+        </ActionButton>
+      ) : null}
+
+      {hasNoRoutines ? <EmptyRoutineState disabled={isPending} onCreate={createAndActivateRoutine} /> : null}
+
+      {mode === 'view' && !hasNoRoutines ? (
         <RoutineView
           bundle={bundle}
           days={days}
@@ -292,12 +309,16 @@ export function RoutinePage() {
 }
 
 function RoutineActions({
-  disabled,
+  createDisabled,
+  exportDisabled,
+  importDisabled,
   onCreate,
   onExport,
   onImport,
 }: {
-  disabled: boolean
+  createDisabled: boolean
+  exportDisabled: boolean
+  importDisabled: boolean
   onCreate: () => void
   onExport: () => void
   onImport: () => void
@@ -309,11 +330,29 @@ function RoutineActions({
         <span className="sr-only">Abrir acciones de rutina</span>
       </summary>
       <div className="absolute right-0 z-30 mt-2 w-44 rounded-[10px] border border-white/10 bg-arsen-surface p-1 shadow-lg">
-        <MenuButton disabled={disabled} icon={PlusCircle} label="Crear rutina" onClick={onCreate} />
-        <MenuButton disabled={disabled} icon={UploadCloud} label="Importar JSON" onClick={onImport} />
-        <MenuButton disabled={disabled} icon={Download} label="Exportar JSON" onClick={onExport} />
+        <MenuButton disabled={createDisabled} icon={PlusCircle} label="Crear rutina" onClick={onCreate} />
+        <MenuButton disabled={importDisabled} icon={UploadCloud} label="Importar JSON" onClick={onImport} />
+        <MenuButton disabled={exportDisabled} icon={Download} label="Exportar JSON" onClick={onExport} />
       </div>
     </details>
+  )
+}
+
+function EmptyRoutineState({ disabled, onCreate }: { disabled: boolean; onCreate: () => void }) {
+  return (
+    <Card className="space-y-4 p-4 text-center">
+      <div className="mx-auto grid size-12 place-items-center rounded-[12px] bg-arsen-purple/25 text-arsen-purple2">
+        <CalendarPlus aria-hidden="true" className="size-6" />
+      </div>
+      <div>
+        <h2 className="text-xl font-black">Crea tu primera rutina</h2>
+        <p className="mt-1 text-sm font-semibold text-arsen-muted">Empieza con una rutina vacia y agrega dias cuando quieras entrenar.</p>
+      </div>
+      <ActionButton className="w-full" disabled={disabled} onClick={onCreate} tone="acid" type="button">
+        <PlusCircle aria-hidden="true" className="size-5" />
+        Crear rutina
+      </ActionButton>
+    </Card>
   )
 }
 
@@ -351,7 +390,7 @@ function RoutineSwitcher({
   return (
     <section>
       <div className="mb-2 text-xs font-extrabold text-arsen-muted">Rutinas guardadas</div>
-      <div className="flex gap-2 overflow-x-auto pb-1">
+      <div className="scrollbar-none flex gap-2 overflow-x-auto pb-1">
         {routines.map((routine) => (
           <button
             className={[

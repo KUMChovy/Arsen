@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { RoutinePage } from './RoutinePage'
@@ -8,19 +8,17 @@ import { RoutinePage } from './RoutinePage'
 const routinePageMocks = vi.hoisted(() => ({
   createCatalogExercise: vi.fn(() => Promise.resolve('catalog-1')),
   createExerciseAsset: vi.fn(() => Promise.resolve('asset-uploaded')),
+  createRoutine: vi.fn(() => Promise.resolve('routine-created')),
+  setActiveRoutine: vi.fn(() => Promise.resolve()),
+  bundle: null as RoutinePageBundle | null,
+  routines: [] as RoutinePageRoutine[],
 }))
 
 vi.mock('../hooks', () => ({
-  useActiveRoutineBundle: () => ({
-    days: [day],
-    exercisesByDay: new Map([[day.id, []]]),
-    routine,
-    settings: { preferredUnit: 'kg' },
-    volumeTargets: [],
-  }),
+  useActiveRoutineBundle: () => routinePageMocks.bundle,
   useExerciseAssets: () => [],
   useExerciseCatalog: () => [],
-  useRoutines: () => [routine],
+  useRoutines: () => routinePageMocks.routines,
 }))
 
 vi.mock('../../workout/hooks', () => ({
@@ -32,7 +30,7 @@ vi.mock('../services', () => ({
   createCatalogExercise: routinePageMocks.createCatalogExercise,
   createDay: vi.fn(),
   createExerciseAsset: routinePageMocks.createExerciseAsset,
-  createRoutine: vi.fn(),
+  createRoutine: routinePageMocks.createRoutine,
   deleteCatalogExercise: vi.fn(),
   deleteDay: vi.fn(),
   deleteExercise: vi.fn(),
@@ -43,7 +41,7 @@ vi.mock('../services', () => ({
   renameRoutine: vi.fn(),
   reorderDays: vi.fn(),
   reorderExercises: vi.fn(),
-  setActiveRoutine: vi.fn(),
+  setActiveRoutine: routinePageMocks.setActiveRoutine,
   updateCatalogExercise: vi.fn(),
   updateDay: vi.fn(),
   updateExercise: vi.fn(),
@@ -58,6 +56,41 @@ describe('RoutinePage catalog image upload', () => {
     vi.clearAllMocks()
     routinePageMocks.createCatalogExercise.mockResolvedValue('catalog-1')
     routinePageMocks.createExerciseAsset.mockResolvedValue('asset-uploaded')
+    routinePageMocks.createRoutine.mockResolvedValue('routine-created')
+    routinePageMocks.setActiveRoutine.mockResolvedValue(undefined)
+    routinePageMocks.bundle = defaultBundle()
+    routinePageMocks.routines = [routine]
+  })
+
+  it('creates and activates a routine from the visible action', async () => {
+    render(
+      <MemoryRouter>
+        <RoutinePage />
+      </MemoryRouter>,
+    )
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Crear rutina' })[1]!)
+
+    await waitFor(() => {
+      expect(routinePageMocks.createRoutine).toHaveBeenCalledWith('Nueva rutina')
+      expect(routinePageMocks.setActiveRoutine).toHaveBeenCalledWith('routine-created')
+    })
+  })
+
+  it('guides empty routine state to create a new routine', () => {
+    routinePageMocks.bundle = null
+    routinePageMocks.routines = []
+
+    render(
+      <MemoryRouter>
+        <RoutinePage />
+      </MemoryRouter>,
+    )
+
+    const emptyState = screen.getByText('Crea tu primera rutina').closest('section')
+
+    expect(emptyState).not.toBeNull()
+    expect(within(emptyState!).getByRole('button', { name: 'Crear rutina' })).toBeInTheDocument()
   })
 
   it('rejects a non-image file without creating an asset', () => {
@@ -164,6 +197,19 @@ const routine = {
   isActive: true,
   name: 'Mi rutina actual',
   updatedAt: '2026-08-02T00:00:00.000Z',
+}
+
+type RoutinePageRoutine = typeof routine
+type RoutinePageBundle = ReturnType<typeof defaultBundle>
+
+function defaultBundle() {
+  return {
+    days: [day],
+    exercisesByDay: new Map([[day.id, []]]),
+    routine,
+    settings: { preferredUnit: 'kg' },
+    volumeTargets: [],
+  }
 }
 
 function deferred<T>() {

@@ -4,45 +4,58 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { WeightIncreaseRecommendation } from '../../../shared/calculations/progression'
 import { WorkoutPage } from './WorkoutPage'
-import type { RoutineExercise } from '../../routine/types'
-import type { ExerciseLog, SetLog } from '../types'
+import type { RoutineDay, RoutineExercise } from '../../routine/types'
+import type { ExerciseLog, SetLog, WorkoutSession } from '../types'
 import { confirmDanger } from '../../../shared/utils/alerts'
 import { completeSessionForDay, deleteMainSet, updateMainSet } from '../services'
+import { setActiveRoutine } from '../../routine/services'
 
 const workoutMocks = vi.hoisted(() => ({
+  setLogs: [] as SetLog[],
+  sessionStatus: 'draft' as WorkoutSession['status'],
+  rotationStatus: {
+    daysWithoutTraining: 0,
+    missedScheduledDay: false,
+    nextDay: null as RoutineDay | null,
+    sessionsWithMainSets: [],
+    shouldShow: false,
+  },
   weightIncreaseRecommendations: [] as WeightIncreaseRecommendation[],
 }))
 
 vi.mock('../../routine/hooks', () => ({
   useActiveRoutineBundle: () => ({
-    days: [day],
-    exercisesByDay: new Map([[day.id, [exercise, otherExercise]]]),
+    days: [day, day2],
+    exercisesByDay: new Map([
+      [day.id, [exercise, otherExercise]],
+      [day2.id, [day2Exercise]],
+    ]),
     routine,
     settings: {
       preferredUnit: 'kg',
     },
   }),
   useExerciseAssets: () => [],
-  useRoutines: () => [routine],
-  useWorkoutDayById: () => ({
-    day: {
-      description: 'Upper',
-      id: 'day-1',
-      name: 'Dia 1',
-    },
-    dayExercises: [exercise, otherExercise],
-    routine: {
-      id: 'routine-1',
-      name: 'Mi rutina actual',
-    },
-    settings: {
-      preferredUnit: 'kg',
-    },
-  }),
+  useRoutines: () => [routine, routine2],
+  useWorkoutDayById: (dayId: string | null) => {
+    const selectedDay = dayId === day2.id ? day2 : day
+    return {
+      day: selectedDay,
+      dayExercises: selectedDay.id === day2.id ? [day2Exercise] : [exercise, otherExercise],
+      routine: {
+        id: 'routine-1',
+        name: 'Mi rutina actual',
+      },
+      settings: {
+        preferredUnit: 'kg',
+      },
+    }
+  },
 }))
 
 vi.mock('../hooks', () => ({
   useWeightIncreaseRecommendations: () => workoutMocks.weightIncreaseRecommendations,
+  useWorkoutRotationStatus: () => workoutMocks.rotationStatus,
   useWorkoutProgress: () => ({
     completedCount: 0,
     dropSets: [],
@@ -56,10 +69,10 @@ vi.mock('../hooks', () => ({
       session: {
         id: 'session-1',
         notes: 'Sesion inicial',
-        status: 'draft',
+        status: workoutMocks.sessionStatus,
       },
     },
-    setLogs: [setLog, otherSetLog],
+    setLogs: workoutMocks.setLogs,
     setsByExerciseLogId: new Map([
       [exerciseLog.id, 1],
       [otherExerciseLog.id, 1],
@@ -90,10 +103,23 @@ vi.mock('../../../shared/utils/alerts', () => ({
 describe('WorkoutPage', () => {
   afterEach(() => {
     cleanup()
+    vi.useRealTimers()
+    window.localStorage.clear()
   })
 
   beforeEach(() => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    vi.setSystemTime(new Date('2026-07-20T12:00:00'))
     vi.clearAllMocks()
+    workoutMocks.setLogs = [setLog, otherSetLog]
+    workoutMocks.sessionStatus = 'draft'
+    workoutMocks.rotationStatus = {
+      daysWithoutTraining: 0,
+      missedScheduledDay: false,
+      nextDay: null,
+      sessionsWithMainSets: [],
+      shouldShow: false,
+    }
     workoutMocks.weightIncreaseRecommendations = []
   })
 
@@ -196,6 +222,174 @@ describe('WorkoutPage', () => {
       expect(deleteMainSet).toHaveBeenCalledWith('set-1')
     })
   })
+
+  it('keeps a manually selected workout day after same-day reload', () => {
+    workoutMocks.setLogs = []
+
+    render(<WorkoutPage />)
+    fireEvent.click(screen.getByRole('button', { name: /Cambiar rutina/i }))
+    fireEvent.change(screen.getByLabelText(/Dia de entrenamiento/i), { target: { value: 'day-2' } })
+    cleanup()
+
+    render(<WorkoutPage />)
+
+    expect(screen.getByText('Mi rutina actual - Dia 2')).toBeInTheDocument()
+  })
+
+  it('uses the weekday default when the stored manual day belongs to a previous date', () => {
+    window.localStorage.setItem(
+      'arsen.workoutDaySelection.v1',
+      JSON.stringify({ date: '2026-07-19', selectionsByRoutineId: { 'routine-1': 'day-2' } }),
+    )
+
+    render(<WorkoutPage />)
+
+    expect(screen.getByText('Mi rutina actual - Dia 1')).toBeInTheDocument()
+  })
+
+  it('shows when the manually selected day is off calendar', () => {
+    workoutMocks.setLogs = []
+
+    render(<WorkoutPage />)
+    fireEvent.click(screen.getByRole('button', { name: /Cambiar rutina/i }))
+    fireEvent.change(screen.getByLabelText(/Dia de entrenamiento/i), { target: { value: 'day-2' } })
+
+    expect(screen.getByText('Fuera de calendario')).toBeInTheDocument()
+  })
+
+  it('blocks routine changes in the sheet when today has registered sets', () => {
+    render(<WorkoutPage />)
+    fireEvent.click(screen.getByRole('button', { name: /Cambiar rutina/i }))
+    const routineSelect = screen.getByLabelText(/Rutina activa/i)
+
+    expect(routineSelect).toBeDisabled()
+    expect(screen.getByText(/No puedes cambiar este entreno/i)).toBeInTheDocument()
+    fireEvent.change(routineSelect, { target: { value: 'routine-2' } })
+    expect(setActiveRoutine).not.toHaveBeenCalled()
+  })
+
+  it('blocks routine changes when today has any registered set', () => {
+    workoutMocks.setLogs = [{ ...setLog, kind: 'warmup' }]
+
+    render(<WorkoutPage />)
+    fireEvent.click(screen.getByRole('button', { name: /Cambiar rutina/i }))
+
+    expect(screen.getByLabelText(/Rutina activa/i)).toBeDisabled()
+    expect(screen.getByText(/No puedes cambiar este entreno/i)).toBeInTheDocument()
+  })
+
+  it('blocks day changes in the sheet when today has registered sets', () => {
+    render(<WorkoutPage />)
+    fireEvent.click(screen.getByRole('button', { name: /Cambiar rutina/i }))
+    const daySelect = screen.getByLabelText(/Dia de entrenamiento/i)
+
+    expect(daySelect).toBeDisabled()
+    fireEvent.change(daySelect, { target: { value: 'day-2' } })
+    expect(screen.getByText('Mi rutina actual - Dia 1')).toBeInTheDocument()
+  })
+
+  it('changes routine when today has no registered sets', async () => {
+    workoutMocks.setLogs = []
+
+    render(<WorkoutPage />)
+    fireEvent.click(screen.getByRole('button', { name: /Cambiar rutina/i }))
+    fireEvent.change(screen.getByLabelText(/Rutina activa/i), { target: { value: 'routine-2' } })
+
+    await waitFor(() => {
+      expect(setActiveRoutine).toHaveBeenCalledWith('routine-2')
+    })
+  })
+
+  it('allows routine changes after finishing today session even if it has registered sets', async () => {
+    workoutMocks.sessionStatus = 'completed'
+
+    render(<WorkoutPage />)
+    fireEvent.click(screen.getByRole('button', { name: /Cambiar rutina/i }))
+    const routineSelect = screen.getByLabelText(/Rutina activa/i)
+
+    expect(routineSelect).not.toBeDisabled()
+    fireEvent.change(routineSelect, { target: { value: 'routine-2' } })
+
+    await waitFor(() => {
+      expect(setActiveRoutine).toHaveBeenCalledWith('routine-2')
+    })
+  })
+
+  it('selects the next logical rotation day from the sheet action', () => {
+    workoutMocks.setLogs = []
+    workoutMocks.rotationStatus = {
+      daysWithoutTraining: 0,
+      missedScheduledDay: false,
+      nextDay: day2,
+      sessionsWithMainSets: [],
+      shouldShow: false,
+    }
+
+    render(<WorkoutPage />)
+    fireEvent.click(screen.getByRole('button', { name: /Cambiar rutina/i }))
+    fireEvent.click(screen.getByRole('button', { name: /Continuar con el siguiente dia/i }))
+
+    expect(screen.getByText('Mi rutina actual - Dia 2')).toBeInTheDocument()
+  })
+
+  it('offers undo after changing day', () => {
+    workoutMocks.setLogs = []
+
+    render(<WorkoutPage />)
+    fireEvent.click(screen.getByRole('button', { name: /Cambiar rutina/i }))
+    fireEvent.change(screen.getByLabelText(/Dia de entrenamiento/i), { target: { value: 'day-2' } })
+
+    expect(screen.getByText(/Antes: Mi rutina actual - Dia 1/i)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /Deshacer/i }))
+    expect(screen.getByText('Mi rutina actual - Dia 1')).toBeInTheDocument()
+  })
+
+  it('dismisses the undo alert without reverting the selection', () => {
+    workoutMocks.setLogs = []
+
+    render(<WorkoutPage />)
+    fireEvent.click(screen.getByRole('button', { name: /Cambiar rutina/i }))
+    fireEvent.change(screen.getByLabelText(/Dia de entrenamiento/i), { target: { value: 'day-2' } })
+
+    fireEvent.click(screen.getByRole('button', { name: /Quitar aviso de cambio/i }))
+
+    expect(screen.queryByText(/Antes: Mi rutina actual - Dia 1/i)).not.toBeInTheDocument()
+    expect(screen.getByText('Mi rutina actual - Dia 2')).toBeInTheDocument()
+  })
+
+  it('shows missed-training notice with action to resume the logical next day', () => {
+    workoutMocks.setLogs = []
+    workoutMocks.rotationStatus = {
+      daysWithoutTraining: 3,
+      missedScheduledDay: false,
+      nextDay: day2,
+      sessionsWithMainSets: [],
+      shouldShow: true,
+    }
+
+    render(<WorkoutPage />)
+
+    expect(screen.getByText(/Llevas 3 dias sin entrenar/i)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /Retomar Dia 2/i }))
+    expect(screen.getByText('Mi rutina actual - Dia 2')).toBeInTheDocument()
+  })
+
+  it('does not show missed-training notice again after dismissal on the same date', () => {
+    workoutMocks.rotationStatus = {
+      daysWithoutTraining: 3,
+      missedScheduledDay: false,
+      nextDay: day2,
+      sessionsWithMainSets: [],
+      shouldShow: true,
+    }
+
+    render(<WorkoutPage />)
+    fireEvent.click(screen.getByRole('button', { name: /Descartar aviso de dias faltantes/i }))
+    cleanup()
+    render(<WorkoutPage />)
+
+    expect(screen.queryByText(/Llevas 3 dias sin entrenar/i)).not.toBeInTheDocument()
+  })
 })
 
 const exercise: RoutineExercise = {
@@ -246,6 +440,25 @@ const day = {
   weekday: 1,
 } as const
 
+const day2 = {
+  ...day,
+  description: 'Lower',
+  id: 'day-2',
+  name: 'Dia 2',
+  order: 1,
+  weekday: 2,
+} as const
+
+const day2Exercise: RoutineExercise = {
+  ...exercise,
+  canonicalName: 'sentadilla',
+  dayId: day2.id,
+  id: 'exercise-3',
+  mainMuscle: 'Piernas',
+  name: 'Sentadilla',
+  order: 0,
+}
+
 const routine = {
   createdAt: '2026-07-20T00:00:00.000Z',
   id: 'routine-1',
@@ -275,6 +488,13 @@ const exerciseLog: ExerciseLog = {
   },
   state: 'in_progress',
   updatedAt: '2026-07-20T00:00:00.000Z',
+}
+
+const routine2 = {
+  ...routine,
+  id: 'routine-2',
+  isActive: false,
+  name: 'Rutina alterna',
 }
 
 const otherExerciseLog: ExerciseLog = {

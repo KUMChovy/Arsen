@@ -1,6 +1,7 @@
 import { db } from '../../db/schema'
 import { getWeightIncreaseRecommendation } from '../../shared/calculations/progression'
 import type { RoutineExercise } from '../routine/types'
+import type { SessionWithMainSets } from './calculations/trainingRotation'
 
 export async function getWorkoutProgressForDay(date: string, dayId: string | undefined) {
   if (!dayId) return null
@@ -68,4 +69,27 @@ export async function getWeightIncreaseRecommendations(exercises: RoutineExercis
 
     return recommendation ? [recommendation] : []
   })
+}
+
+export async function getSessionsWithMainSets(): Promise<SessionWithMainSets[]> {
+  const [sessions, exerciseLogs, setLogs] = await Promise.all([
+    db.workoutSessions.toArray(),
+    db.exerciseLogs.toArray(),
+    db.setLogs.where('kind').equals('main').toArray(),
+  ])
+  const logById = new Map(exerciseLogs.map((log) => [log.id, log]))
+  const sessionIdsWithMainSets = new Set(
+    setLogs.flatMap((set) => {
+      const log = logById.get(set.exerciseLogId)
+      return log ? [log.sessionId] : []
+    }),
+  )
+
+  return sessions
+    .filter((session) => sessionIdsWithMainSets.has(session.id))
+    .map((session) => ({
+      date: session.date,
+      dayId: session.dayId,
+      routineId: session.routineId,
+    }))
 }

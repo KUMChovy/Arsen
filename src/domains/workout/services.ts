@@ -159,6 +159,7 @@ export async function registerMainSetForExercise(input: {
       updatedAt: new Date().toISOString(),
     }),
   ])
+  await syncSessionStatusFromExercises(sessionId)
 
   return { exerciseLogId, sessionId, setLogId }
 }
@@ -339,6 +340,7 @@ export async function updateMainSet(
     })
     await refreshExerciseState(set.exerciseLogId)
   })
+  await syncSessionStatusFromExerciseLog(set.exerciseLogId)
 }
 
 export async function updateWorkoutSession(
@@ -385,6 +387,7 @@ export async function moveMainSetToExercise(setLogId: string, routineExerciseId:
     await refreshExerciseState(set.exerciseLogId)
     await refreshExerciseState(nextLogId)
   })
+  await syncSessionStatusFromExercises(currentLog.sessionId)
 }
 
 export async function deleteMainSet(setLogId: string) {
@@ -396,6 +399,7 @@ export async function deleteMainSet(setLogId: string) {
     await db.setLogs.delete(setLogId)
     await refreshExerciseState(set.exerciseLogId)
   })
+  await syncSessionStatusFromExerciseLog(set.exerciseLogId)
 }
 
 export async function deleteWorkoutSession(sessionId: string) {
@@ -427,4 +431,29 @@ async function refreshExerciseState(exerciseLogId: string) {
     state: exerciseStateFromSets(mainSetCount, log.snapshot.targetSets, false),
     updatedAt: new Date().toISOString(),
   })
+}
+
+async function syncSessionStatusFromExerciseLog(exerciseLogId: string) {
+  const log = await db.exerciseLogs.get(exerciseLogId)
+  if (log) await syncSessionStatusFromExercises(log.sessionId)
+}
+
+async function syncSessionStatusFromExercises(sessionId: string) {
+  const session = await db.workoutSessions.get(sessionId)
+  if (!session) return
+
+  const exercises = await db.routineExercises.where('dayId').equals(session.dayId).toArray()
+  if (exercises.length === 0) return
+
+  const logs = await db.exerciseLogs.where('sessionId').equals(sessionId).toArray()
+  const logByExerciseId = new Map(logs.map((log) => [log.routineExerciseId, log]))
+  const isCompleted = exercises.every((exercise) => logByExerciseId.get(exercise.id)?.state === 'done')
+  const nextStatus = isCompleted ? 'completed' : 'draft'
+
+  if (session.status !== nextStatus) {
+    await db.workoutSessions.update(sessionId, {
+      status: nextStatus,
+      updatedAt: new Date().toISOString(),
+    })
+  }
 }

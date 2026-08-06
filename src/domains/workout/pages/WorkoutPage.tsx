@@ -16,12 +16,19 @@ import { useActiveRoutineBundle, useExerciseAssets, useRoutines, useWorkoutDayBy
 import type { Routine, RoutineDay, RoutineExercise } from '../../routine/types'
 import { RegisterSetSheet } from '../components/RegisterSetSheet'
 import { EditSetSheet } from '../components/EditSetSheet'
-import { useWeightIncreaseRecommendations, useWorkoutProgress } from '../hooks'
+import { getDefaultWorkoutDayId } from '../calculations/trainingRotation'
+import { useWeightIncreaseRecommendations, useWorkoutProgress, useWorkoutRotationStatus } from '../hooks'
 import { addDropSet, completeSessionForDay, deleteDropSet, deleteMainSet, skipRoutineExerciseForDay, updateDropSet, updateMainSet } from '../services'
 import { setActiveRoutine } from '../../routine/services'
 import type { ExerciseState, SetLog, WeightUnit } from '../types'
 
 type ExerciseFilter = 'all' | 'pending' | 'in_progress' | 'skipped' | 'done'
+type SelectionSnapshot = {
+  dayId: string | null
+  dayName: string
+  routineId: string
+  routineName: string
+}
 
 export function WorkoutPage() {
   const today = useMemo(() => new Date(), [])
@@ -32,11 +39,18 @@ export function WorkoutPage() {
   const imageSrcByAssetId = useMemo(() => new Map(exerciseAssets.map((asset) => [asset.id, asset.dataUrl])), [exerciseAssets])
   const routines = useRoutines() ?? []
   const days = bundle?.days ?? []
-  const defaultDayId = days.find((day) => day.weekday === selectedDate.getDay())?.id ?? days[0]?.id ?? null
+  const activeRoutineId = bundle?.routine.id
+  const defaultDayId = getDefaultWorkoutDayId(days, selectedDate.getDay())
   const [selectedDayId, setSelectedDayId] = useState<string | null>(null)
   const workoutDay = useWorkoutDayById(selectedDayId)
   const dayExercises = workoutDay?.dayExercises ?? []
   const dailyProgress = useWorkoutProgress(dateKey, workoutDay?.day.id, dayExercises)
+  const rotationStatus = useWorkoutRotationStatus({
+    activeRoutineId,
+    dateKey,
+    days,
+    todayWeekday: selectedDate.getDay(),
+  })
   const weightIncreaseRecommendations = useWeightIncreaseRecommendations(dayExercises)
   const [selectedExerciseId, setSelectedExerciseId] = useState<string | null>(null)
   const [currentExerciseId, setCurrentExerciseId] = useState<string | null>(null)
@@ -45,6 +59,8 @@ export function WorkoutPage() {
   const [editingSet, setEditingSet] = useState<{ exercise: RoutineExercise; set: SetLog } | null>(null)
   const [noteSheetExercise, setNoteSheetExercise] = useState<RoutineExercise | null>(null)
   const [routineSheetOpen, setRoutineSheetOpen] = useState(false)
+  const [lastSelectionChange, setLastSelectionChange] = useState<SelectionSnapshot | null>(null)
+  const [missedNoticeDismissed, setMissedNoticeDismissed] = useState(() => isMissedNoticeDismissed(dateKey))
   const [isPending, startTransition] = useTransition()
   const [message, setMessage] = useState<string | null>(null)
   const navigableExercises = useMemo(
@@ -60,6 +76,8 @@ export function WorkoutPage() {
   const completedCount = dailyProgress.completedCount
   const totalCount = dayExercises.length
   const preferredUnit = workoutDay?.settings.preferredUnit ?? 'kg'
+  const selectedWeekday = workoutDay?.day.weekday
+  const isOffCalendar = selectedWeekday !== undefined && selectedWeekday !== null && selectedWeekday !== selectedDate.getDay()
   const warmups = buildWarmupsForExercise(currentExercise, preferredUnit)
   const currentLoadNote = currentExercise
     ? buildEquipmentLoadNote({
@@ -70,6 +88,7 @@ export function WorkoutPage() {
         weightKg: currentExercise.currentWeightKg,
       })
     : null
+  const hasOpenRegisteredSetsToday = dailyProgress.setLogs.length > 0 && dailyProgress.progress?.session?.status !== 'completed'
   const mainSets = dailyProgress.setLogs.filter((set) => set.kind === 'main')
   const dailyVolume = Math.round(totalVolume(mainSets, dailyProgress.dropSets))
   const visibleExercises = useMemo(
@@ -90,8 +109,9 @@ export function WorkoutPage() {
 
   useEffect(() => {
     if (selectedDayId && days.some((day) => day.id === selectedDayId)) return
-    setSelectedDayId(defaultDayId)
-  }, [days, defaultDayId, selectedDayId])
+    const storedDayId = readStoredDaySelection(dateKey, activeRoutineId)
+    setSelectedDayId(storedDayId && days.some((day) => day.id === storedDayId) ? storedDayId : defaultDayId)
+  }, [activeRoutineId, dateKey, days, defaultDayId, selectedDayId])
 
   useEffect(() => {
     if (currentExerciseId && navigableExercises.some((exercise) => exercise.id === currentExerciseId)) return
@@ -102,6 +122,10 @@ export function WorkoutPage() {
     if (activeExerciseId && dayExercises.some((exercise) => exercise.id === activeExerciseId)) return
     setActiveExerciseId(currentExercise?.id ?? dayExercises[0]?.id ?? null)
   }, [activeExerciseId, currentExercise?.id, dayExercises])
+
+  useEffect(() => {
+    setMissedNoticeDismissed(isMissedNoticeDismissed(dateKey))
+  }, [dateKey])
 
   function runSetAction(action: () => Promise<void>, success: string) {
     startTransition(() => {
@@ -132,10 +156,15 @@ export function WorkoutPage() {
     runSetAction(() => deleteMainSet(set.id), 'Serie eliminada')
   }
 
-  function changeRoutine(routineId: string) {
+  async function changeRoutine(routineId: string) {
+    if (routineId === activeRoutineId) return
+    if (hasOpenRegisteredSetsToday) return
+    const previousSelection = currentSelectionSnapshot()
+
     startTransition(() => {
       setActiveRoutine(routineId)
         .then(() => {
+          setLastSelectionChange(previousSelection)
           setSelectedDayId(null)
           setSelectedExerciseId(null)
           setCurrentExerciseId(null)
@@ -144,6 +173,57 @@ export function WorkoutPage() {
         })
         .catch((error: unknown) => setMessage(error instanceof Error ? error.message : 'No se pudo cambiar rutina'))
     })
+  }
+
+  function changeDay(dayId: string) {
+    if (hasOpenRegisteredSetsToday) return
+    const previousSelection = currentSelectionSnapshot()
+    if (previousSelection?.dayId !== dayId) setLastSelectionChange(previousSelection)
+    setSelectedDayId(dayId)
+    writeStoredDaySelection(dateKey, activeRoutineId, dayId)
+    setSelectedExerciseId(null)
+    setCurrentExerciseId(null)
+    setActiveExerciseId(null)
+  }
+
+  function currentSelectionSnapshot(): SelectionSnapshot | null {
+    if (!activeRoutineId) return null
+
+    return {
+      dayId: workoutDay?.day.id ?? selectedDayId,
+      dayName: workoutDay?.day.name ?? 'Dia anterior',
+      routineId: activeRoutineId,
+      routineName: bundle?.routine.name ?? 'Rutina anterior',
+    }
+  }
+
+  function undoSelectionChange() {
+    if (!lastSelectionChange) return
+
+    const previousSelection = lastSelectionChange
+    setLastSelectionChange(null)
+    setSelectedExerciseId(null)
+    setCurrentExerciseId(null)
+    setActiveExerciseId(null)
+
+    if (previousSelection.routineId !== activeRoutineId) {
+      startTransition(() => {
+        setActiveRoutine(previousSelection.routineId)
+          .then(() => {
+            setSelectedDayId(previousSelection.dayId)
+            if (previousSelection.dayId) writeStoredDaySelection(dateKey, previousSelection.routineId, previousSelection.dayId)
+          })
+          .catch((error: unknown) => setMessage(error instanceof Error ? error.message : 'No se pudo deshacer'))
+      })
+    } else {
+      setSelectedDayId(previousSelection.dayId)
+      if (previousSelection.dayId) writeStoredDaySelection(dateKey, previousSelection.routineId, previousSelection.dayId)
+    }
+  }
+
+  function dismissMissedTrainingNotice() {
+    dismissMissedNotice(dateKey)
+    setMissedNoticeDismissed(true)
   }
 
   function goToPreviousExercise() {
@@ -207,6 +287,47 @@ export function WorkoutPage() {
           <span className="absolute right-1.5 top-1.5 size-2 rounded-full bg-arsen-acid" />
         </button>
       </PageHeader>
+
+      {isOffCalendar ? (
+        <div className="inline-flex min-h-8 items-center rounded-full border border-arsen-purple/40 bg-arsen-purple/15 px-3 text-xs font-extrabold text-arsen-purple2">
+          Fuera de calendario
+        </div>
+      ) : null}
+
+      {lastSelectionChange ? (
+        <div className="flex items-center justify-between gap-3 rounded-[10px] border border-arsen-purple/40 bg-arsen-purple/15 px-3 py-2 text-xs">
+          <span className="min-w-0 truncate text-arsen-purple2">
+            Antes: {lastSelectionChange.routineName} - {lastSelectionChange.dayName}
+          </span>
+          <div className="flex shrink-0 items-center gap-1">
+            <button className="font-extrabold text-arsen-acid" onClick={undoSelectionChange} type="button">
+              Deshacer
+            </button>
+            <button
+              aria-label="Quitar aviso de cambio"
+              className="grid size-8 place-items-center rounded-[9px] text-arsen-muted"
+              onClick={() => setLastSelectionChange(null)}
+              type="button"
+            >
+              <X aria-hidden="true" className="size-4" />
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {rotationStatus.shouldShow && !missedNoticeDismissed ? (
+        <MissedTrainingNotice
+          daysWithoutTraining={rotationStatus.daysWithoutTraining}
+          nextDay={rotationStatus.nextDay}
+          onDismiss={dismissMissedTrainingNotice}
+          onResume={() => {
+            if (rotationStatus.nextDay) {
+              changeDay(rotationStatus.nextDay.id)
+              dismissMissedTrainingNotice()
+            }
+          }}
+        />
+      ) : null}
 
       <div>
         <div className="mb-2 text-xs font-extrabold text-arsen-purple2">Ejercicio actual</div>
@@ -538,14 +659,14 @@ export function WorkoutPage() {
           activeRoutineId={bundle?.routine.id ?? ''}
           days={days}
           disabled={isPending}
-          onChangeDay={(dayId) => {
-            setSelectedDayId(dayId)
-            setSelectedExerciseId(null)
-            setCurrentExerciseId(null)
-            setActiveExerciseId(null)
-          }}
+          onChangeDay={changeDay}
           onChangeRoutine={changeRoutine}
           onClose={() => setRoutineSheetOpen(false)}
+          onContinueWithNextDay={() => {
+            if (rotationStatus.nextDay) changeDay(rotationStatus.nextDay.id)
+          }}
+          nextDay={rotationStatus.nextDay}
+          selectionChangeBlocked={hasOpenRegisteredSetsToday}
           routines={routines}
         />
       ) : null}
@@ -562,6 +683,50 @@ const exerciseFilters: Array<{ label: string; value: ExerciseFilter }> = [
   { label: 'Saltados', value: 'skipped' },
   { label: 'Hechos', value: 'done' },
 ]
+
+const daySelectionStorageKey = 'arsen.workoutDaySelection.v1'
+const missedNoticeDismissedStorageKey = 'arsen.missedTrainingNoticeDismissedDate.v1'
+
+function readStoredDaySelection(date: string, routineId: string | undefined) {
+  if (!routineId || typeof window === 'undefined') return null
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(daySelectionStorageKey) ?? 'null') as {
+      date?: string
+      selectionsByRoutineId?: Record<string, string>
+    } | null
+    if (parsed?.date !== date) return null
+    return parsed.selectionsByRoutineId?.[routineId] ?? null
+  } catch {
+    return null
+  }
+}
+
+function writeStoredDaySelection(date: string, routineId: string | undefined, dayId: string) {
+  if (!routineId || typeof window === 'undefined') return
+  const existing = (() => {
+    try {
+      return JSON.parse(window.localStorage.getItem(daySelectionStorageKey) ?? 'null') as {
+        date?: string
+        selectionsByRoutineId?: Record<string, string>
+      } | null
+    } catch {
+      return null
+    }
+  })()
+  const selectionsByRoutineId = existing?.date === date ? existing.selectionsByRoutineId ?? {} : {}
+  window.localStorage.setItem(
+    daySelectionStorageKey,
+    JSON.stringify({ date, selectionsByRoutineId: { ...selectionsByRoutineId, [routineId]: dayId } }),
+  )
+}
+
+function isMissedNoticeDismissed(date: string) {
+  return typeof window !== 'undefined' && window.localStorage.getItem(missedNoticeDismissedStorageKey) === date
+}
+
+function dismissMissedNotice(date: string) {
+  if (typeof window !== 'undefined') window.localStorage.setItem(missedNoticeDismissedStorageKey, date)
+}
 
 function buildWarmupsForExercise(exercise: RoutineExercise | null | undefined, unit: WeightUnit) {
   if (!exercise) return []
@@ -640,18 +805,24 @@ function RoutineDaySheet({
   activeRoutineId,
   days,
   disabled,
+  nextDay,
   onChangeDay,
   onChangeRoutine,
   onClose,
+  onContinueWithNextDay,
+  selectionChangeBlocked,
   routines,
 }: {
   activeDayId: string
   activeRoutineId: string
   days: RoutineDay[]
   disabled: boolean
+  nextDay: RoutineDay | null
   onChangeDay: (dayId: string) => void
   onChangeRoutine: (routineId: string) => void
   onClose: () => void
+  onContinueWithNextDay: () => void
+  selectionChangeBlocked: boolean
   routines: Routine[]
 }) {
   return (
@@ -672,19 +843,30 @@ function RoutineDaySheet({
 
         <Card className="space-y-3 p-3">
           <SelectField
-            disabled={disabled}
+            disabled={disabled || selectionChangeBlocked}
             label="Rutina activa"
             onChange={onChangeRoutine}
             options={routines.map((routine) => ({ label: routine.name, value: routine.id }))}
             value={activeRoutineId}
           />
+          {selectionChangeBlocked ? (
+            <div className="rounded-[10px] border border-arsen-acid/35 bg-arsen-acid/10 p-3 text-xs font-semibold text-arsen-ink">
+              <strong className="block text-arsen-acid">No puedes cambiar este entreno.</strong>
+              <span className="mt-1 block text-arsen-muted">
+                La sesion de hoy ya tiene series registradas. Finaliza o elimina esas series antes de cambiar la rutina o el dia.
+              </span>
+            </div>
+          ) : null}
           <SelectField
-            disabled={disabled || days.length === 0}
+            disabled={disabled || days.length === 0 || selectionChangeBlocked}
             label="Dia de entrenamiento"
             onChange={onChangeDay}
             options={days.map((day) => ({ label: day.name, value: day.id }))}
             value={activeDayId}
           />
+          <ActionButton className="w-full" disabled={disabled || !nextDay || selectionChangeBlocked} onClick={onContinueWithNextDay} tone="ghost" type="button">
+            Continuar con el siguiente dia
+          </ActionButton>
         </Card>
       </section>
     </div>
@@ -746,6 +928,42 @@ function WeightIncreaseCard({
           </div>
         ))}
       </div>
+    </Card>
+  )
+}
+
+function MissedTrainingNotice({
+  daysWithoutTraining,
+  nextDay,
+  onDismiss,
+  onResume,
+}: {
+  daysWithoutTraining: number
+  nextDay: RoutineDay | null
+  onDismiss: () => void
+  onResume: () => void
+}) {
+  return (
+    <Card className="border-arsen-acid/35 p-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <strong className="block text-sm text-arsen-acid">
+            {daysWithoutTraining > 0 ? `Llevas ${daysWithoutTraining} dias sin entrenar` : 'Tienes un dia programado pendiente'}
+          </strong>
+          <span className="mt-1 block text-xs text-arsen-muted">Retoma tu rotacion sin perseguir el calendario.</span>
+        </div>
+        <button
+          aria-label="Descartar aviso de dias faltantes"
+          className="grid size-8 shrink-0 place-items-center rounded-[9px] text-arsen-muted"
+          onClick={onDismiss}
+          type="button"
+        >
+          <X aria-hidden="true" className="size-4" />
+        </button>
+      </div>
+      <ActionButton className="mt-3 w-full" disabled={!nextDay} onClick={onResume} tone="acid" type="button">
+        Retomar {nextDay?.name ?? 'siguiente dia'}
+      </ActionButton>
     </Card>
   )
 }

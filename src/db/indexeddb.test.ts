@@ -15,12 +15,14 @@ import {
   getTrainingDates,
 } from '../domains/progress/repository'
 import {
+  deleteMainSet,
   deleteWorkoutSession,
   moveMainSetToExercise,
   registerMainSetForExercise,
   skipRoutineExerciseForDay,
   updateWorkoutSession,
 } from '../domains/workout/services'
+import { getSessionsWithMainSets } from '../domains/workout/repository'
 
 const now = '2026-07-20T00:00:00.000Z'
 
@@ -106,6 +108,99 @@ describe('IndexedDB integration', () => {
     await expect(db.dropSetLogs.where('setLogId').equals(first.setLogId).count()).resolves.toBe(1)
     await expect(db.exerciseLogs.get(first.exerciseLogId)).resolves.toMatchObject({ state: 'done' })
     await expect(db.routineExercises.get(exercise.id)).resolves.toMatchObject({ currentWeightKg: 62.5 })
+  })
+
+  it('loads only workout sessions that have main sets', async () => {
+    const exercise = routineExercise()
+    await db.routineExercises.put(exercise)
+    await db.workoutSessions.bulkPut([
+      {
+        createdAt: now,
+        date: '2026-07-19',
+        dayId: exercise.dayId,
+        displayUnit: 'kg',
+        id: 'session-empty',
+        notes: '',
+        routineId: exercise.routineId,
+        status: 'draft',
+        updatedAt: now,
+      },
+      {
+        createdAt: now,
+        date: '2026-07-20',
+        dayId: exercise.dayId,
+        displayUnit: 'kg',
+        id: 'session-trained',
+        notes: '',
+        routineId: exercise.routineId,
+        status: 'draft',
+        updatedAt: now,
+      },
+    ])
+    await db.exerciseLogs.bulkPut([
+      {
+        createdAt: now,
+        id: 'log-empty',
+        notes: '',
+        routineExerciseId: exercise.id,
+        sessionId: 'session-empty',
+        snapshot: exerciseSnapshot(exercise),
+        state: 'pending',
+        updatedAt: now,
+      },
+      {
+        createdAt: now,
+        id: 'log-trained',
+        notes: '',
+        routineExerciseId: exercise.id,
+        sessionId: 'session-trained',
+        snapshot: exerciseSnapshot(exercise),
+        state: 'in_progress',
+        updatedAt: now,
+      },
+    ])
+    await db.setLogs.put({
+      createdAt: now,
+      displayUnit: 'kg',
+      exerciseLogId: 'log-trained',
+      id: 'set-trained',
+      kind: 'main',
+      order: 0,
+      reps: 8,
+      rir: 1,
+      updatedAt: now,
+      weightKg: 60,
+    })
+
+    await expect(getSessionsWithMainSets()).resolves.toEqual([
+      {
+        date: '2026-07-20',
+        dayId: exercise.dayId,
+        routineId: exercise.routineId,
+      },
+    ])
+  })
+
+  it('auto-completes and reopens session status from exercise completion', async () => {
+    const exercise = { ...routineExercise(), targetSets: 1 }
+    await db.routineExercises.put(exercise)
+
+    const registered = await registerMainSetForExercise({
+      date: '2026-07-20',
+      dayId: exercise.dayId,
+      displayUnit: 'kg',
+      exercise,
+      reps: 8,
+      rir: 1,
+      routineId: exercise.routineId,
+      weightKg: 60,
+    })
+
+    await expect(db.workoutSessions.get(registered.sessionId)).resolves.toMatchObject({ status: 'completed' })
+
+    await deleteMainSet(registered.setLogId)
+
+    await expect(db.workoutSessions.get(registered.sessionId)).resolves.toMatchObject({ status: 'draft' })
   })
 
   it('deletes workout session with logs, sets, drop sets and skips', async () => {
@@ -756,6 +851,24 @@ function routineExercise(
     updatedAt: now,
     warmupProtocol: '',
     warmupSets: 0,
+  }
+}
+
+function exerciseSnapshot(exercise: RoutineExercise) {
+  return {
+    assetKind: exercise.assetKind,
+    barWeightKg: exercise.barWeightKg,
+    canonicalName: exercise.canonicalName,
+    customAssetId: exercise.customAssetId,
+    equipment: exercise.equipment,
+    loadMode: exercise.loadMode,
+    mainMuscle: exercise.mainMuscle,
+    name: exercise.name,
+    recommendedRir: exercise.recommendedRir,
+    repsMax: exercise.repsMax,
+    repsMin: exercise.repsMin,
+    restSeconds: exercise.restSeconds,
+    targetSets: exercise.targetSets,
   }
 }
 

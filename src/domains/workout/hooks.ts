@@ -1,8 +1,9 @@
 import { useMemo } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
-import type { RoutineExercise } from '../routine/types'
+import type { RoutineDay, RoutineExercise } from '../routine/types'
 import type { ExerciseState } from './types'
-import { getWeightIncreaseRecommendations, getWorkoutProgressForDay } from './repository'
+import { buildMissedTrainingNotice } from './calculations/trainingRotation'
+import { getSessionsWithMainSets, getWeightIncreaseRecommendations, getWorkoutProgressForDay } from './repository'
 
 export function useWorkoutProgress(date: string, dayId: string | undefined, exercises: RoutineExercise[]) {
   const progress = useLiveQuery(() => getWorkoutProgressForDay(date, dayId), [date, dayId], undefined)
@@ -54,4 +55,36 @@ export function useWeightIncreaseRecommendations(exercises: RoutineExercise[]) {
     .join('|')
 
   return useLiveQuery(() => getWeightIncreaseRecommendations(exercises), [exerciseKey], undefined) ?? []
+}
+
+export function useWorkoutRotationStatus(input: {
+  activeRoutineId: string | undefined
+  dateKey: string
+  days: RoutineDay[]
+  todayWeekday: number
+}) {
+  const sessionsWithMainSets = useLiveQuery(() => getSessionsWithMainSets(), [], [])
+
+  return useMemo(() => {
+    if (!input.activeRoutineId) {
+      return {
+        daysWithoutTraining: 0,
+        missedScheduledDay: false,
+        nextDay: null,
+        sessionsWithMainSets: sessionsWithMainSets ?? [],
+        shouldShow: false,
+      }
+    }
+
+    return {
+      ...buildMissedTrainingNotice({
+        activeRoutineId: input.activeRoutineId,
+        days: input.days,
+        sessionsWithMainSets: sessionsWithMainSets ?? [],
+        todayDate: input.dateKey,
+        todayWeekday: input.todayWeekday,
+      }),
+      sessionsWithMainSets: sessionsWithMainSets ?? [],
+    }
+  }, [input.activeRoutineId, input.dateKey, input.days, input.todayWeekday, sessionsWithMainSets])
 }

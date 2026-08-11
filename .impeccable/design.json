@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-08-01T15:06:40.3360822-06:00",
+  "generatedAt": "2026-08-10T00:22:51.1637230-06:00",
   "title": "Design System: Arsen",
   "extensions": {
     "colorMeta": {
@@ -49,6 +49,81 @@
           "oklch(0.95 0.016 280)"
         ]
       },
+      "arsen-surface2": {
+        "role": "neutral",
+        "displayName": "Raised Charcoal",
+        "canonical": "oklch(0.205 0.018 280)",
+        "tonalRamp": [
+          "oklch(0.18 0.018 280)",
+          "oklch(0.28 0.018 280)",
+          "oklch(0.38 0.018 280)",
+          "oklch(0.50 0.018 280)",
+          "oklch(0.62 0.018 280)",
+          "oklch(0.74 0.018 280)",
+          "oklch(0.86 0.018 280)",
+          "oklch(0.95 0.018 280)"
+        ]
+      },
+      "arsen-line": {
+        "role": "neutral",
+        "displayName": "Violet Line",
+        "canonical": "oklch(0.34 0.026 285)",
+        "tonalRamp": [
+          "oklch(0.16 0.026 285)",
+          "oklch(0.26 0.026 285)",
+          "oklch(0.34 0.026 285)",
+          "oklch(0.46 0.026 285)",
+          "oklch(0.58 0.026 285)",
+          "oklch(0.70 0.026 285)",
+          "oklch(0.84 0.026 285)",
+          "oklch(0.95 0.026 285)"
+        ]
+      },
+      "arsen-ink": {
+        "role": "neutral",
+        "displayName": "Cool Ink",
+        "canonical": "oklch(0.96 0.005 280)",
+        "tonalRamp": [
+          "oklch(0.18 0.005 280)",
+          "oklch(0.30 0.005 280)",
+          "oklch(0.44 0.005 280)",
+          "oklch(0.58 0.005 280)",
+          "oklch(0.72 0.005 280)",
+          "oklch(0.84 0.005 280)",
+          "oklch(0.92 0.005 280)",
+          "oklch(0.96 0.005 280)"
+        ]
+      },
+      "arsen-muted": {
+        "role": "neutral",
+        "displayName": "Muted Steel",
+        "canonical": "oklch(0.73 0.012 280)",
+        "tonalRamp": [
+          "oklch(0.16 0.012 280)",
+          "oklch(0.28 0.012 280)",
+          "oklch(0.40 0.012 280)",
+          "oklch(0.52 0.012 280)",
+          "oklch(0.64 0.012 280)",
+          "oklch(0.73 0.012 280)",
+          "oklch(0.84 0.012 280)",
+          "oklch(0.95 0.012 280)"
+        ]
+      },
+      "arsen-dim": {
+        "role": "neutral",
+        "displayName": "Dim Steel",
+        "canonical": "oklch(0.54 0.015 280)",
+        "tonalRamp": [
+          "oklch(0.16 0.015 280)",
+          "oklch(0.26 0.015 280)",
+          "oklch(0.36 0.015 280)",
+          "oklch(0.46 0.015 280)",
+          "oklch(0.54 0.015 280)",
+          "oklch(0.66 0.015 280)",
+          "oklch(0.80 0.015 280)",
+          "oklch(0.94 0.015 280)"
+        ]
+      },
       "arsen-purple": {
         "role": "primary",
         "displayName": "Training Purple",
@@ -62,6 +137,21 @@
           "oklch(0.74 0.16 295)",
           "oklch(0.86 0.16 295)",
           "oklch(0.95 0.10 295)"
+        ]
+      },
+      "arsen-purple2": {
+        "role": "primary",
+        "displayName": "Lift Violet",
+        "canonical": "oklch(0.72 0.13 300)",
+        "tonalRamp": [
+          "oklch(0.16 0.13 300)",
+          "oklch(0.28 0.13 300)",
+          "oklch(0.40 0.13 300)",
+          "oklch(0.52 0.13 300)",
+          "oklch(0.64 0.13 300)",
+          "oklch(0.72 0.13 300)",
+          "oklch(0.86 0.13 300)",
+          "oklch(0.95 0.08 300)"
         ]
       },
       "arsen-acid": {
@@ -78,12 +168,50 @@
           "oklch(0.86 0.20 125)",
           "oklch(0.95 0.12 125)"
         ]
+      },
+      "arsen-acid2": {
+        "role": "secondary",
+        "displayName": "Acid Deep",
+        "canonical": "oklch(0.77 0.20 122)",
+        "tonalRamp": [
+          "oklch(0.16 0.20 122)",
+          "oklch(0.28 0.20 122)",
+          "oklch(0.40 0.20 122)",
+          "oklch(0.52 0.20 122)",
+          "oklch(0.64 0.20 122)",
+          "oklch(0.77 0.20 122)",
+          "oklch(0.86 0.20 122)",
+          "oklch(0.95 0.12 122)"
+        ]
+      },
+      "on-acid": {
+        "role": "neutral",
+        "displayName": "On Acid",
+        "canonical": "#142100",
+        "tonalRamp": [
+          "#142100",
+          "oklch(0.24 0.05 125)",
+          "oklch(0.34 0.05 125)",
+          "oklch(0.46 0.05 125)",
+          "oklch(0.58 0.05 125)",
+          "oklch(0.70 0.05 125)",
+          "oklch(0.84 0.05 125)",
+          "oklch(0.95 0.03 125)"
+        ]
       }
     },
     "typographyMeta": {
       "display": {
         "displayName": "Page Display",
         "purpose": "Page titles in the mobile shell."
+      },
+      "headline": {
+        "displayName": "Training Headline",
+        "purpose": "Current exercise names and major card titles."
+      },
+      "title": {
+        "displayName": "Sheet Title",
+        "purpose": "Bottom sheet headings and section-level titles."
       },
       "body": {
         "displayName": "Dense Body",

@@ -44,6 +44,7 @@ export const routineDaySchema = z
 export const routineExerciseSchema = z
   .object({
     assetKind: z.string().nullable().optional().default(null),
+    bundledAssetId: z.string().nullable().optional().default(null),
     canonicalName: z.string(),
     createdAt: z.string(),
     currentWeightKg: z.number().optional().default(0),
@@ -96,6 +97,7 @@ export const exerciseCatalogItemSchema = z
   .object({
     aliases: z.array(z.string()),
     assetKind: z.string().nullable().optional().default(null),
+    bundledAssetId: z.string().nullable().optional().default(null),
     canonicalName: z.string(),
     createdAt: z.string(),
     customAssetId: z.string().nullable().optional().default(null),
@@ -175,6 +177,7 @@ export const exerciseLogSchema = z
     snapshot: z
       .object({
         assetKind: z.string().nullable().optional().default(null),
+        bundledAssetId: z.string().nullable().optional().default(null),
         canonicalName: z.string(),
         customAssetId: z.string().nullable().optional().default(null),
         equipment: z.string(),

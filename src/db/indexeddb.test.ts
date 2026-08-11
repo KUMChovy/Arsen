@@ -619,7 +619,9 @@ describe('IndexedDB integration', () => {
     expect(await getTrainingDates({ canonicalName: 'press-banca' })).toEqual(['2026-08-03', '2026-08-02'])
     expect(await getProgressExerciseOptions({ dayId: dayA.id })).toEqual([
       {
+        bundledAssetId: null,
         canonicalName: 'remo-barra',
+        mainMuscle: 'Pecho',
         name: 'Remo barra',
         sessions: 1,
       },
@@ -636,7 +638,9 @@ describe('IndexedDB integration', () => {
 
     const detail = await getSessionDetail(sessionB.sessionId, { canonicalName: 'press-banca' })
 
-    expect(detail?.exercises.map((exercise) => exercise.exerciseName)).toEqual(['Press banca'])
+    expect(detail?.exercises.map((exercise) => ({ bundledAssetId: exercise.bundledAssetId, exerciseName: exercise.exerciseName }))).toEqual([
+      { bundledAssetId: null, exerciseName: 'Press banca' },
+    ])
   })
 
   it('loads session detail and moves a set to another exercise recipe', async () => {
@@ -697,6 +701,7 @@ describe('IndexedDB integration', () => {
     })
     const catalogItemId = await createCatalogExercise({
       assetKind: 'row',
+      bundledAssetId: 'remo-con-barra--espalda',
       customAssetId,
       equipment: 'Barra',
       mainMuscle: 'Espalda',
@@ -708,6 +713,7 @@ describe('IndexedDB integration', () => {
 
     expect(exercise).toMatchObject({
       assetKind: 'row',
+      bundledAssetId: 'remo-con-barra--espalda',
       customAssetId,
     })
 
@@ -725,6 +731,7 @@ describe('IndexedDB integration', () => {
     await expect(db.exerciseLogs.get(registered.exerciseLogId)).resolves.toMatchObject({
       snapshot: {
         assetKind: 'row',
+        bundledAssetId: 'remo-con-barra--espalda',
         customAssetId,
       },
     })
@@ -738,6 +745,7 @@ describe('IndexedDB integration', () => {
     })
     const catalogItemId = await createCatalogExercise({
       assetKind: 'press',
+      bundledAssetId: 'press-plano--pecho',
       customAssetId,
       equipment: 'Barra',
       mainMuscle: 'Pecho',
@@ -752,6 +760,7 @@ describe('IndexedDB integration', () => {
 
     await expect(db.exerciseCatalog.get(catalogItemId)).resolves.toMatchObject({
       assetKind: 'press',
+      bundledAssetId: 'press-plano--pecho',
       customAssetId,
       name: 'Press banca pausado',
     })
@@ -827,6 +836,7 @@ function routineExercise(
 ): RoutineExercise {
   return {
     assetKind: null,
+    bundledAssetId: null,
     canonicalName: overrides.canonicalName ?? 'press-inclinado',
     createdAt: now,
     currentWeightKg: 50,
@@ -858,6 +868,7 @@ function exerciseSnapshot(exercise: RoutineExercise) {
   return {
     assetKind: exercise.assetKind,
     barWeightKg: exercise.barWeightKg,
+    bundledAssetId: exercise.bundledAssetId,
     canonicalName: exercise.canonicalName,
     customAssetId: exercise.customAssetId,
     equipment: exercise.equipment,
@@ -878,6 +889,7 @@ function catalogExercise(
   return {
     aliases: [],
     assetKind: null,
+    bundledAssetId: null,
     canonicalName: 'sentadilla',
     createdAt: now,
     customAssetId: overrides.customAssetId ?? null,

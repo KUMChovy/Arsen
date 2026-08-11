@@ -8,6 +8,7 @@ import { normalizeMuscleGroup } from './utils/muscles'
 
 export type ExerciseInput = {
   assetKind?: string | null
+  bundledAssetId?: string | null
   name: string
   customAssetId?: string | null
   mainMuscle: string
@@ -29,6 +30,7 @@ export type ExerciseInput = {
 export type CatalogExerciseInput = {
   aliases?: string[]
   assetKind?: string | null
+  bundledAssetId?: string | null
   barWeightKg?: number
   equipment?: Equipment
   loadMode?: LoadMode
@@ -301,6 +303,7 @@ export async function createExercise(routineId: string, dayId: string, input: Ex
   })
   const exercise: RoutineExercise = {
     assetKind: input.assetKind ?? null,
+    bundledAssetId: input.bundledAssetId ?? null,
     customAssetId: input.customAssetId ?? null,
     id: createId('exercise'),
     routineId,
@@ -347,6 +350,7 @@ export async function addCatalogExerciseToDay(routineId: string, dayId: string, 
   })
   const exercise: RoutineExercise = {
     assetKind: catalogItem.assetKind ?? null,
+    bundledAssetId: catalogItem.bundledAssetId ?? null,
     customAssetId: catalogItem.customAssetId ?? null,
     id: createId('exercise'),
     routineId,
@@ -391,6 +395,7 @@ export async function updateExercise(exerciseId: string, input: ExerciseInput) {
 
   await db.routineExercises.update(exerciseId, {
     assetKind: input.assetKind === undefined ? existing?.assetKind ?? null : input.assetKind,
+    bundledAssetId: input.bundledAssetId === undefined ? existing?.bundledAssetId ?? null : input.bundledAssetId,
     customAssetId: input.customAssetId === undefined ? existing?.customAssetId ?? null : input.customAssetId,
     name,
     canonicalName: canonicalName(name),
@@ -481,6 +486,7 @@ export async function createCatalogExercise(input: CatalogExerciseInput) {
   const catalogItem: ExerciseCatalogItem = {
     aliases: input.aliases ?? [],
     assetKind: input.assetKind ?? null,
+    bundledAssetId: input.bundledAssetId ?? null,
     canonicalName: canonicalName(name),
     createdAt: now,
     defaultRecommendedRir: 2,
@@ -518,6 +524,7 @@ export async function updateCatalogExercise(catalogItemId: string, input: Catalo
   await db.exerciseCatalog.update(catalogItemId, {
     aliases: input.aliases ?? [],
     assetKind: input.assetKind === undefined ? existing?.assetKind ?? null : input.assetKind,
+    bundledAssetId: input.bundledAssetId === undefined ? existing?.bundledAssetId ?? null : input.bundledAssetId,
     canonicalName: canonicalName(name),
     equipment: loadSettings.equipment,
     loadMode: loadSettings.loadMode,

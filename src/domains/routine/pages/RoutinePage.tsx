@@ -38,6 +38,7 @@ import { ActionButton } from '../../../shared/components/ActionButton'
 import { Card } from '../../../shared/components/Card'
 import { ExerciseArt } from '../../../shared/components/ExerciseArt'
 import { PageHeader } from '../../../shared/components/PageHeader'
+import { getBundledExerciseAsset } from '../../../shared/assets/exerciseImages'
 import type { WeightIncreaseRecommendation } from '../../../shared/calculations/progression'
 import { defaultLoadSettingsForEquipment, loadSettingsForEquipment } from '../../../shared/calculations/equipmentLoad'
 import { normalizeWarmupProtocol, warmupProtocolLabel, type WarmupProtocol } from '../../../shared/calculations/warmups'
@@ -674,7 +675,7 @@ function ExerciseEditRow({
       <GripVertical aria-hidden="true" className="size-4 justify-self-center text-arsen-dim" />
       <ExerciseArt
         alt={exercise.name}
-        assetKind={exercise.assetKind}
+        bundledAssetId={exercise.bundledAssetId}
         className="size-12"
         customImageSrc={exercise.customAssetId ? imageSrcByAssetId.get(exercise.customAssetId) : null}
         muscle={exercise.mainMuscle}
@@ -737,7 +738,7 @@ function CatalogPanel({
           <Card className="grid grid-cols-[52px_minmax(0,1fr)_auto] items-center gap-4 p-2" key={item.id}>
             <ExerciseArt
               alt={item.name}
-              assetKind={item.assetKind}
+              bundledAssetId={item.bundledAssetId}
               className="size-[52px]"
               customImageSrc={item.customAssetId ? imageSrcByAssetId.get(item.customAssetId) : null}
               muscle={item.mainMuscle}
@@ -789,7 +790,7 @@ function CatalogPickerSheet({
             <Card className="grid grid-cols-[52px_minmax(0,1fr)_auto] items-center gap-4 p-2">
               <ExerciseArt
                 alt={item.name}
-                assetKind={item.assetKind}
+                bundledAssetId={item.bundledAssetId}
                 className="size-[52px]"
                 customImageSrc={item.customAssetId ? imageSrcByAssetId.get(item.customAssetId) : null}
                 muscle={item.mainMuscle}
@@ -841,7 +842,8 @@ function CatalogExerciseEditorSheet({
   const selectedWarmupProtocol = normalizeWarmupProtocol(form.warmupProtocol)
   const maxImageBytes = 2 * 1024 * 1024
   const selectedAsset = form.customAssetId ? assets.find((asset) => asset.id === form.customAssetId) ?? null : null
-  const selectedImageLabel = selectedAsset?.name ?? includedArtLabel(form.assetKind)
+  const selectedBundledAsset = getBundledExerciseAsset(form.bundledAssetId)
+  const selectedImageLabel = selectedAsset?.name ?? selectedBundledAsset?.name ?? 'Auto'
 
   async function uploadCustomImage(file: File) {
     const requestId = ++uploadRequestId.current
@@ -862,7 +864,7 @@ function CatalogExerciseEditorSheet({
         mimeType: file.type,
         name: file.name,
       })
-      if (requestId === uploadRequestId.current) setForm((current) => ({ ...current, customAssetId }))
+      if (requestId === uploadRequestId.current) setForm((current) => ({ ...current, bundledAssetId: null, customAssetId }))
     } catch (error: unknown) {
       if (requestId === uploadRequestId.current) {
         setImageError(error instanceof Error ? error.message : 'No se pudo cargar la imagen')
@@ -942,7 +944,7 @@ function CatalogExerciseEditorSheet({
         >
           <ExerciseArt
             alt={form.name || 'Imagen del ejercicio'}
-            assetKind={form.assetKind}
+            bundledAssetId={form.bundledAssetId}
             className="size-[52px]"
             customImageSrc={selectedAsset?.dataUrl ?? null}
             muscle={form.mainMuscle}
@@ -959,7 +961,8 @@ function CatalogExerciseEditorSheet({
         onClick={() =>
           onSave({
             aliases: form.aliases.split(',').map((alias) => alias.trim()).filter(Boolean),
-            assetKind: form.assetKind,
+            assetKind: null,
+            bundledAssetId: form.bundledAssetId,
             customAssetId: form.customAssetId,
             ...loadInputFromForm(form, displayUnit),
             mainMuscle: form.mainMuscle,
@@ -974,35 +977,21 @@ function CatalogExerciseEditorSheet({
         Guardar
       </ActionButton>
       {imageSheetOpen ? (
-        <SheetFrame onClose={() => setImageSheetOpen(false)} title="Imagen del ejercicio">
-          <ExerciseImageSelector
-            assets={assets}
-            disabled={disabled || isImageUploadPending}
-            error={imageError}
-            mainMuscle={form.mainMuscle}
-            onChange={updateImageSelection}
-            onUpload={uploadCustomImage}
-            selection={{ assetKind: form.assetKind, customAssetId: form.customAssetId }}
-          />
-        </SheetFrame>
+        <ExerciseImageSelector
+          assets={assets}
+          disabled={disabled || isImageUploadPending}
+          error={imageError}
+          mainMuscle={form.mainMuscle}
+          onChange={updateImageSelection}
+          onClose={() => setImageSheetOpen(false)}
+          onUpload={uploadCustomImage}
+          selection={{ bundledAssetId: form.bundledAssetId, customAssetId: form.customAssetId }}
+        />
       ) : null}
       {progressionInfoOpen ? <DoubleProgressionInfoSheet onClose={() => setProgressionInfoOpen(false)} /> : null}
       {warmupInfoOpen ? <WarmupProtocolInfoSheet onClose={() => setWarmupInfoOpen(false)} protocol={selectedWarmupProtocol} /> : null}
     </SheetFrame>
   )
-}
-
-function includedArtLabel(assetKind: string | null) {
-  const labels: Record<string, string> = {
-    hackSquat: 'Hack',
-    latPulldown: 'Jalon',
-    pecDeck: 'Pec deck',
-    press: 'Press',
-    row: 'Remo',
-    shoulderPress: 'Hombro',
-  }
-
-  return assetKind ? labels[assetKind] ?? 'Auto' : 'Auto'
 }
 
 function readFileAsDataUrl(file: File) {
@@ -1091,7 +1080,7 @@ function RoutineExerciseRecipeSheet({
         <Card className="grid grid-cols-[52px_minmax(0,1fr)] items-center gap-4 p-2">
           <ExerciseArt
             alt={form.name}
-            assetKind={visualReference?.assetKind}
+            bundledAssetId={visualReference?.bundledAssetId}
             className="size-[52px]"
             customImageSrc={visualReference?.customAssetId ? imageSrcByAssetId.get(visualReference.customAssetId) : null}
             muscle={form.mainMuscle}
@@ -1189,7 +1178,7 @@ type CatalogExerciseForm = Pick<
   'barWeight' | 'equipment' | 'loadMode' | 'mainMuscle' | 'name' | 'technicalNotes' | 'warmupProtocol'
 > & {
   aliases: string
-  assetKind: string | null
+  bundledAssetId: string | null
   customAssetId: string | null
 }
 
@@ -1248,7 +1237,7 @@ function catalogItemToForm(item: ExerciseCatalogItem | null, displayUnit: Weight
 
   return {
     aliases: item?.aliases.join(', ') ?? '',
-    assetKind: item?.assetKind ?? null,
+    bundledAssetId: item?.bundledAssetId ?? null,
     barWeight: String(kgToUnit(loadSettings.barWeightKg, displayUnit)),
     equipment: loadSettings.equipment,
     loadMode: loadSettings.loadMode,

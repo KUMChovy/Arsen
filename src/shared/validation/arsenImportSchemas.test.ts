@@ -194,6 +194,7 @@ describe('Arsen import schemas', () => {
     if (!result.success) return
     expect(result.data.tables.routineExercises[0]).toMatchObject({
       assetKind: null,
+      bundledAssetId: null,
       customAssetId: null,
     })
     expect(result.data.tables.routineExercises[0]).toMatchObject({
@@ -230,6 +231,7 @@ describe('Arsen import schemas', () => {
           {
             aliases: [],
             assetKind: 'row',
+            bundledAssetId: 'remo-con-barra--espalda',
             canonicalName: 'remo-barra',
             createdAt: '2026-01-01T00:00:00.000Z',
             customAssetId: 'asset-1',
@@ -249,6 +251,7 @@ describe('Arsen import schemas', () => {
           {
             ...exercise,
             assetKind: 'row',
+            bundledAssetId: 'remo-con-barra--espalda',
             customAssetId: 'asset-1',
           },
         ],
@@ -261,6 +264,7 @@ describe('Arsen import schemas', () => {
             sessionId: 'session-1',
             snapshot: {
               assetKind: 'row',
+              bundledAssetId: 'remo-con-barra--espalda',
               canonicalName: 'remo-barra',
               customAssetId: 'asset-1',
               equipment: 'Barra',
@@ -309,6 +313,9 @@ describe('Arsen import schemas', () => {
     expect(result.success).toBe(true)
     if (!result.success) return
     expect(result.data.tables.exerciseLogs[0]?.snapshot).toMatchObject({
+      assetKind: null,
+      bundledAssetId: null,
+      customAssetId: null,
       repsMax: 10,
       repsMin: 8,
     })

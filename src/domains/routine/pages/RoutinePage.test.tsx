@@ -124,7 +124,7 @@ describe('RoutinePage catalog image upload', () => {
         name: 'press.png',
       })
     })
-    expect(screen.getByRole('button', { name: 'Quitar imagen propia' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Usar imagen' })).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Guardar' }))
 
@@ -132,6 +132,7 @@ describe('RoutinePage catalog image upload', () => {
       expect(routinePageMocks.createCatalogExercise).toHaveBeenCalledWith(
         expect.objectContaining({
           assetKind: null,
+          bundledAssetId: null,
           customAssetId: 'asset-uploaded',
         }),
       )
@@ -149,11 +150,10 @@ describe('RoutinePage catalog image upload', () => {
       expect(routinePageMocks.createExerciseAsset).toHaveBeenCalledTimes(1)
     })
     expect(screen.getByRole('button', { name: 'Guardar' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: /Press/ })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /^Press inclinado$/ })).toBeDisabled()
 
     uploadResult.resolve('asset-new')
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Quitar imagen propia' })).toBeInTheDocument()
       expect(screen.getByRole('button', { name: 'Guardar' })).toBeEnabled()
     })
 

@@ -79,6 +79,7 @@ describe('RoutineDayDetailPage', () => {
 
 const exercise: RoutineExercise = {
   assetKind: null,
+  bundledAssetId: null,
   canonicalName: 'press-inclinado',
   createdAt: '2026-07-20T00:00:00.000Z',
   customAssetId: null,

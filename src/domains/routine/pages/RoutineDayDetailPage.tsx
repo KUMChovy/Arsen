@@ -88,7 +88,7 @@ function ExerciseDetailCard({
         <button className="grid w-full grid-cols-[52px_minmax(0,1fr)_auto] items-center gap-4 text-left" onClick={onToggle} type="button">
           <ExerciseArt
             alt={exercise.name}
-            assetKind={exercise.assetKind}
+            bundledAssetId={exercise.bundledAssetId}
             className="size-[52px]"
             customImageSrc={exercise.customAssetId ? imageSrcByAssetId.get(exercise.customAssetId) : null}
             muscle={exercise.mainMuscle}

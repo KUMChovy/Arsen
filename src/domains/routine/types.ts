@@ -38,6 +38,7 @@ export type RoutineExercise = {
   dayId: string
   sourceExerciseId: string | null
   assetKind: string | null
+  bundledAssetId: string | null
   customAssetId: string | null
   name: string
   canonicalName: string
@@ -77,6 +78,7 @@ export type ExerciseCatalogItem = {
   defaultRecommendedRir: number
   defaultRestSeconds: number
   assetKind: string | null
+  bundledAssetId: string | null
   customAssetId: string | null
   createdAt: string
   updatedAt: string

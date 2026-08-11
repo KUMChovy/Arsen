@@ -9,8 +9,15 @@ describe('ExerciseArt', () => {
     cleanup()
   })
 
-  it('uses a custom image before assetKind and muscle fallback', () => {
-    render(<ExerciseArt alt="Remo" assetKind="press" customImageSrc="data:image/png;base64,AAAA" muscle="Pecho" />)
+  it('uses a custom image before bundled and muscle fallback', () => {
+    render(
+      <ExerciseArt
+        alt="Remo"
+        bundledAssetId="press-inclinado--pecho"
+        customImageSrc="data:image/png;base64,AAAA"
+        muscle="Pecho"
+      />,
+    )
 
     const art = screen.getByRole('img', { name: 'Remo' })
 
@@ -27,27 +34,27 @@ describe('ExerciseArt', () => {
     expect(art).not.toHaveClass('size-[66px]')
   })
 
-  it('uses a valid assetKind before muscle fallback', () => {
-    render(<ExerciseArt alt="Remo" assetKind="row" muscle="Pecho" />)
+  it('uses a valid bundled asset before muscle fallback', () => {
+    render(<ExerciseArt alt="Press inclinado" bundledAssetId="press-inclinado--pecho" muscle="Piernas" />)
 
-    const art = screen.getByRole('img', { name: 'Remo' })
+    const art = screen.getByRole('img', { name: 'Press inclinado' })
 
-    expect(art.getAttribute('style')).toContain('40% 50%')
+    expect(art.getAttribute('style')).toContain('press-inclinado')
   })
 
-  it('falls back to normalized muscle art when assetKind is unknown', () => {
-    render(<ExerciseArt alt="Dominante" assetKind="unknown" muscle="Piernas" />)
+  it('falls back to muscle art when bundled asset is unknown', () => {
+    render(<ExerciseArt alt="Dominante" bundledAssetId="missing--pecho" muscle="Piernas" />)
 
     const art = screen.getByRole('img', { name: 'Dominante' })
 
-    expect(art.getAttribute('style')).toContain('100% 50%')
+    expect(art.getAttribute('style')).toContain('piernas')
   })
 
-  it('falls back when assetKind is an inherited object key', () => {
-    render(<ExerciseArt alt="Dominante" assetKind="toString" muscle="Piernas" />)
+  it('uses a neutral local fallback when no usable image data exists', () => {
+    render(<ExerciseArt alt="Sin dato" bundledAssetId="missing--pecho" muscle={null} />)
 
-    const art = screen.getByRole('img', { name: 'Dominante' })
+    const art = screen.getByRole('img', { name: 'Sin dato' })
 
-    expect(art.getAttribute('style')).toContain('100% 50%')
+    expect(art).toHaveAttribute('data-image-source', 'placeholder')
   })
 })

@@ -345,7 +345,7 @@ export function WorkoutPage() {
             <div className="grid size-[72px] place-items-center overflow-hidden rounded-[14px] border border-arsen-purple/45 bg-arsen-purple/10 p-1">
               <ExerciseArt
                 alt={currentExercise?.name ?? 'Ejercicio'}
-                assetKind={currentExercise?.assetKind}
+                bundledAssetId={currentExercise?.bundledAssetId}
                 className="size-16"
                 customImageSrc={currentExercise?.customAssetId ? imageSrcByAssetId.get(currentExercise.customAssetId) : null}
                 muscle={currentExercise?.mainMuscle}
@@ -525,7 +525,7 @@ export function WorkoutPage() {
                   >
                     <ExerciseArt
                       alt={exercise.name}
-                      assetKind={exercise.assetKind}
+                      bundledAssetId={exercise.bundledAssetId}
                       className="size-[52px]"
                       customImageSrc={exercise.customAssetId ? imageSrcByAssetId.get(exercise.customAssetId) : null}
                       muscle={exercise.mainMuscle}

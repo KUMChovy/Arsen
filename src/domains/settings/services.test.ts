@@ -100,6 +100,7 @@ async function seedProgressData(input: { dayName: string; exerciseName: string; 
   }
   const exercise: RoutineExercise = {
     assetKind: null,
+    bundledAssetId: null,
     barWeightKg: 20,
     canonicalName: 'press-inclinado',
     createdAt: now,

@@ -10,8 +10,10 @@ export type ProgressPoint = {
 export type ProgressOverview = {
   bestSetLabel: string
   bestMarks: ProgressBestMark[]
+  bundledAssetId: string | null
   chartData: ProgressPoint[]
   exerciseName: string
+  mainMuscle: string | null
   lastSessionDate: string | null
   maxWeightKg: number
   recentSessions: RecentSessionSummary[]
@@ -21,7 +23,9 @@ export type ProgressOverview = {
 }
 
 export type ProgressExerciseOption = {
+  bundledAssetId: string | null
   canonicalName: string
+  mainMuscle: string | null
   name: string
   sessions: number
 }
@@ -55,6 +59,7 @@ export type ProgressBestMark = {
 }
 
 export type SessionExerciseDetail = {
+  bundledAssetId: string | null
   exerciseLogId: string
   exerciseName: string
   mainMuscle: string
@@ -114,7 +119,9 @@ export async function getProgressOverview(filters: ProgressOverviewFilters = {})
   const filteredExerciseLogIds = new Set(filteredExerciseLogs.map((log) => log.id))
   const filteredSessionIds = new Set(filteredExerciseLogs.map((log) => log.sessionId))
   const firstExerciseLog = filteredExerciseLogs[0]
+  const bundledAssetId = firstExerciseLog?.snapshot.bundledAssetId ?? null
   const exerciseName = firstExerciseLog?.snapshot.name ?? 'Sin registros'
+  const mainMuscle = firstExerciseLog?.snapshot.mainMuscle ?? null
   const mainSets = setLogs.filter((set) => set.kind === 'main' && filteredExerciseLogIds.has(set.exerciseLogId))
   const best = bestSet(mainSets)
   const bestSetLabel = best ? `${best.weightKg} kg x ${best.reps}` : 'Sin series'
@@ -210,8 +217,10 @@ export async function getProgressOverview(filters: ProgressOverviewFilters = {})
   return {
     bestMarks,
     bestSetLabel,
+    bundledAssetId,
     chartData,
     exerciseName,
+    mainMuscle,
     lastSessionDate: recentSessions[0]?.date ?? null,
     maxWeightKg,
     recentSessions,
@@ -249,7 +258,9 @@ export async function getProgressExerciseOptions(filters: Pick<ProgressOverviewF
     sessions.add(log.sessionId)
     sessionsByExercise.set(key, sessions)
     options.set(key, {
+      bundledAssetId: log.snapshot.bundledAssetId ?? null,
       canonicalName: key,
+      mainMuscle: log.snapshot.mainMuscle ?? null,
       name: log.snapshot.name,
       sessions: sessions.size,
     })
@@ -313,6 +324,7 @@ export async function getSessionDetail(sessionId: string, filters: ProgressOverv
     dayId: session.dayId,
     dayName: day?.name ?? 'Dia eliminado',
     exercises: visibleExerciseLogs.map((log) => ({
+      bundledAssetId: log.snapshot.bundledAssetId ?? null,
       exerciseLogId: log.id,
       exerciseName: log.snapshot.name,
       mainMuscle: log.snapshot.mainMuscle,

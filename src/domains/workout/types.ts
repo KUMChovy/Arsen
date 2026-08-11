@@ -20,6 +20,7 @@ export type ExerciseSnapshot = {
   mainMuscle: string
   equipment: string
   assetKind?: string | null
+  bundledAssetId?: string | null
   customAssetId?: string | null
   loadMode?: 'single' | 'split'
   barWeightKg?: number

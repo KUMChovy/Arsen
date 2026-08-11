@@ -53,6 +53,7 @@ export async function ensureExerciseLog(sessionId: string, exercise: RoutineExer
     notes: '',
     snapshot: {
       assetKind: exercise.assetKind,
+      bundledAssetId: exercise.bundledAssetId,
       customAssetId: exercise.customAssetId,
       name: exercise.name,
       canonicalName: exercise.canonicalName,

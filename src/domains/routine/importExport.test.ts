@@ -82,6 +82,7 @@ function asset(id: string, name: string, dataUrl: string): ExerciseAsset {
 function exercise(id: string, routineId: string, dayId: string, customAssetId: string): RoutineExercise {
   return {
     assetKind: null,
+    bundledAssetId: null,
     barWeightKg: 20,
     canonicalName: id,
     createdAt: now,

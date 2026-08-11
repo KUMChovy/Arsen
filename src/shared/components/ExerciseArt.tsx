@@ -1,60 +1,42 @@
-import exerciseSprite from '../../assets/arsen-exercise-sprite.png'
-import muscleSprite from '../../assets/arsen-muscle-groups-sprite.png'
-import type { MuscleGroup } from '../../domains/routine/types'
-import { normalizeMuscleGroup } from '../../domains/routine/utils/muscles'
-
-export type ExerciseArtKind = 'press' | 'pecDeck' | 'row' | 'hackSquat' | 'latPulldown' | 'shoulderPress'
+import { getBundledExerciseAsset, getMuscleAsset } from '../assets/exerciseImages'
 
 type ExerciseArtProps = {
   alt: string
-  assetKind?: string | null
+  bundledAssetId?: string | null
   className?: string
   customImageSrc?: string | null
   muscle?: string | null
 }
 
-const positions: Record<ExerciseArtKind, string> = {
-  press: '0% 50%',
-  pecDeck: '20% 50%',
-  row: '40% 50%',
-  hackSquat: '60% 50%',
-  latPulldown: '80% 50%',
-  shoulderPress: '100% 50%',
-}
+const placeholderArt =
+  'radial-gradient(circle at 50% 38%, color-mix(in oklab, var(--color-arsen-purple) 30%, transparent), color-mix(in oklab, var(--color-arsen-ink) 4%, transparent) 42%, transparent 68%)'
 
-const musclePositions: Record<MuscleGroup, string> = {
-  Abdomen: '80% 50%',
-  Brazos: '60% 50%',
-  Espalda: '20% 50%',
-  Hombros: '40% 50%',
-  Pecho: '0% 50%',
-  Piernas: '100% 50%',
-}
-
-function isExerciseArtKind(value: string | null | undefined): value is ExerciseArtKind {
-  return typeof value === 'string' && Object.hasOwn(positions, value)
-}
-
-export function ExerciseArt({ alt, assetKind, className = 'size-[66px]', customImageSrc, muscle }: ExerciseArtProps) {
-  const normalizedMuscle = muscle ? normalizeMuscleGroup(muscle) : null
-  const resolvedKind = isExerciseArtKind(assetKind) ? assetKind : null
+export function ExerciseArt({ alt, bundledAssetId, className = 'size-[66px]', customImageSrc, muscle }: ExerciseArtProps) {
+  const bundledAsset = getBundledExerciseAsset(bundledAssetId)
+  const muscleSrc = getMuscleAsset(muscle)
+  const imageSource = customImageSrc ? 'custom' : bundledAsset ? 'bundled' : muscleSrc ? 'muscle' : 'placeholder'
   const backgroundImage = customImageSrc
     ? `url(${customImageSrc})`
-    : `url(${resolvedKind || !normalizedMuscle ? exerciseSprite : muscleSprite})`
+    : bundledAsset
+      ? `url(${bundledAsset.url})`
+      : muscleSrc
+        ? `url(${muscleSrc})`
+        : placeholderArt
 
   return (
     <div
       aria-label={alt}
       className={[
-        'shrink-0 overflow-hidden rounded-[10px] border border-arsen-purple/40 bg-arsen-bg2 bg-no-repeat shadow-[inset_0_0_18px_rgb(153_83_255_/_0.18)]',
+        'shrink-0 overflow-hidden rounded-[10px] border border-arsen-purple/40 bg-arsen-bg2 bg-no-repeat shadow-inner shadow-arsen-purple/10',
         className,
       ].join(' ')}
+      data-image-source={imageSource}
       role="img"
       style={{
         backgroundImage,
-        backgroundPosition: customImageSrc ? 'center' : resolvedKind ? positions[resolvedKind] : normalizedMuscle ? musclePositions[normalizedMuscle] : positions.press,
+        backgroundPosition: 'center',
         backgroundRepeat: 'no-repeat',
-        backgroundSize: customImageSrc ? 'cover' : resolvedKind ? '600% 100%' : '640% 108%',
+        backgroundSize: imageSource === 'placeholder' ? '100% 100%' : 'cover',
       }}
     />
   )

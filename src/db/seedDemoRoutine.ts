@@ -1,6 +1,7 @@
 import type { Equipment, RoutineDay, RoutineExercise } from '../domains/routine/types'
 import type { AppSettings } from '../domains/settings/types'
 import { loadSettingsForEquipment } from '../shared/calculations/equipmentLoad'
+import { bundledAssetIdForExercise } from '../shared/assets/exerciseImages'
 import { createId } from '../shared/utils/id'
 import { canonicalName } from '../shared/utils/normalize'
 import { db } from './schema'
@@ -37,7 +38,8 @@ export async function ensureDemoData() {
     const loadSettings = loadSettingsForEquipment({ equipment: inferEquipment(exercise.name) })
 
     return {
-      assetKind: assetKindForExercise(canonicalName(exercise.name)),
+      assetKind: null,
+      bundledAssetId: bundledAssetIdForExercise(exercise.name, exercise.mainMuscle),
       customAssetId: null,
       id: exercise.id,
       routineId,
@@ -84,7 +86,8 @@ export async function ensureDemoData() {
         defaultRepsMax: exercise.repsMax,
         defaultRecommendedRir: exercise.recommendedRir,
         defaultRestSeconds: exercise.restSeconds,
-        assetKind: assetKindForExercise(exercise.canonicalName),
+        assetKind: null,
+        bundledAssetId: bundledAssetIdForExercise(exercise.name, exercise.mainMuscle),
         customAssetId: null,
         createdAt: now,
         updatedAt: now,
@@ -143,15 +146,4 @@ function inferEquipment(name: string): Equipment {
   }
 
   return 'Otro'
-}
-
-function assetKindForExercise(value: string) {
-  if (value.includes('pec-deck')) return 'pecDeck'
-  if (value.includes('remo')) return 'row'
-  if (value.includes('hack') || value.includes('prensa')) return 'hackSquat'
-  if (value.includes('jalon') || value.includes('pullover')) return 'latPulldown'
-  if (value.includes('militar') || value.includes('hombro')) return 'shoulderPress'
-  if (value.includes('press')) return 'press'
-
-  return null
 }

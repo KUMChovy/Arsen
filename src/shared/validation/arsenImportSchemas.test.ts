@@ -210,7 +210,48 @@ describe('Arsen import schemas', () => {
       defaultRepsMax: 10,
       defaultRepsMin: 8,
       loadMode: 'split',
+      origin: 'user',
+      sinfulShellContentLocked: false,
+      sinfulShellId: null,
       technicalNotes: '',
+    })
+  })
+
+  it('preserves Sinful Shell catalog origin and lock fields', () => {
+    const result = backupSchema.safeParse({
+      tables: {
+        exerciseCatalog: [
+          {
+            aliases: [],
+            assetKind: null,
+            bundledAssetId: 'press-inclinado--pecho',
+            canonicalName: 'press-inclinado',
+            createdAt: '2026-01-01T00:00:00.000Z',
+            defaultRecommendedRir: 2,
+            defaultRepsMax: 10,
+            defaultRepsMin: 8,
+            defaultRestSeconds: 120,
+            defaultTargetSets: 4,
+            equipment: 'Barra',
+            id: 'catalog-sinful',
+            mainMuscle: 'Pecho',
+            name: 'Press inclinado',
+            origin: 'sinful-shell',
+            sinfulShellContentLocked: true,
+            sinfulShellId: 'sinful-shell-press-inclinado',
+            technicalNotes: 'Músculo principal: pectoral superior.',
+            updatedAt: '2026-01-01T00:00:00.000Z',
+          },
+        ],
+      },
+    })
+
+    expect(result.success).toBe(true)
+    if (!result.success) return
+    expect(result.data.tables.exerciseCatalog[0]).toMatchObject({
+      origin: 'sinful-shell',
+      sinfulShellContentLocked: true,
+      sinfulShellId: 'sinful-shell-press-inclinado',
     })
   })
 

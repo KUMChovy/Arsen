@@ -3,6 +3,7 @@ export type Weekday = 0 | 1 | 2 | 3 | 4 | 5 | 6
 export type Equipment = 'Barra' | 'Mancuerna' | 'Maquina' | 'Maquina de polea' | 'Peso corporal' | 'Otro'
 export type LoadMode = 'single' | 'split'
 export type MuscleGroup = 'Pecho' | 'Espalda' | 'Hombros' | 'Brazos' | 'Abdomen' | 'Piernas'
+export type CatalogOrigin = 'user' | 'sinful-shell'
 
 export type ExerciseAsset = {
   id: string
@@ -80,6 +81,9 @@ export type ExerciseCatalogItem = {
   assetKind: string | null
   bundledAssetId: string | null
   customAssetId: string | null
+  origin?: CatalogOrigin
+  sinfulShellId?: string | null
+  sinfulShellContentLocked?: boolean
   createdAt: string
   updatedAt: string
 }

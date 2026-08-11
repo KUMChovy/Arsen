@@ -49,6 +49,8 @@ import { useWeightIncreaseRecommendations } from '../../workout/hooks'
 import type { WeightUnit } from '../../workout/types'
 import { WarmupProtocolInfoSheet } from '../components/WarmupProtocolInfoSheet'
 import { ExerciseImageSelector, type ExerciseImageSelection } from '../components/ExerciseImageSelector'
+import { SinfulShellBrowserSheet } from '../components/SinfulShellBrowserSheet'
+import { sinfulShellCatalog, type SinfulShellExercise } from '../data/sinfulShellCatalog'
 import type { Equipment, ExerciseAsset, ExerciseCatalogItem, LoadMode, MuscleGroup, Routine, RoutineDay, RoutineExercise } from '../types'
 import { useActiveRoutineBundle, useExerciseAssets, useExerciseCatalog, useRoutines } from '../hooks'
 import { exportRoutineJson, importRoutineJson } from '../importExport'
@@ -79,11 +81,15 @@ import { dominantMuscleForExercises } from '../utils/dominantMuscle'
 import { muscleGroups, normalizeMuscleGroup } from '../utils/muscles'
 
 type Mode = 'view' | 'edit' | 'catalog'
-type CatalogSheetState = { item: ExerciseCatalogItem | null } | null
+type CatalogSheetState =
+  | { item: ExerciseCatalogItem | null; sourceSinfulShellExercise?: null }
+  | { item: null; sourceSinfulShellExercise: SinfulShellExercise }
+  | null
 type RecipeSheetState =
   | { catalogItem: ExerciseCatalogItem; exercise: null; mode: 'add' }
   | { catalogItem: null; exercise: RoutineExercise; mode: 'edit' }
   | null
+type SinfulShellSheetState = { mode: 'catalog' | 'routine-add' } | null
 
 const equipmentOptions: Equipment[] = ['Barra', 'Mancuerna', 'Maquina', 'Maquina de polea', 'Peso corporal', 'Otro']
 const warmupProtocolOptions: WarmupProtocol[] = ['none', 'hypertrophy', 'strength', 'progressive', 'heavy_low_volume']
@@ -112,6 +118,7 @@ export function RoutinePage() {
   const [catalogSheet, setCatalogSheet] = useState<CatalogSheetState>(null)
   const [recipeSheet, setRecipeSheet] = useState<RecipeSheetState>(null)
   const [catalogPickerOpen, setCatalogPickerOpen] = useState(false)
+  const [sinfulShellOpen, setSinfulShellOpen] = useState<SinfulShellSheetState>(null)
   const [isPending, startTransition] = useTransition()
   const [actionMessage, setActionMessage] = useState<string | null>(null)
 
@@ -240,6 +247,7 @@ export function RoutinePage() {
             runRoutineAction(() => deleteCatalogExercise(catalogItemId), 'Ejercicio eliminado del catalogo')
           }}
           onEdit={(item) => setCatalogSheet({ item })}
+          onOpenSinfulShell={() => setSinfulShellOpen({ mode: 'catalog' })}
         />
       ) : null}
 
@@ -262,6 +270,7 @@ export function RoutinePage() {
           imageSrcByAssetId={imageSrcByAssetId}
           onClose={() => setCatalogPickerOpen(false)}
           onCreateCatalog={() => setCatalogSheet({ item: null })}
+          onOpenSinfulShell={() => setSinfulShellOpen({ mode: 'routine-add' })}
           onSelect={(item) => {
             setCatalogPickerOpen(false)
             setRecipeSheet({ catalogItem: item, exercise: null, mode: 'add' })
@@ -283,6 +292,30 @@ export function RoutinePage() {
               : () => createCatalogExercise(input)
             runRoutineAction(action, catalogSheet.item ? 'Ejercicio de catalogo guardado' : 'Ejercicio creado en catalogo')
             setCatalogSheet(null)
+          }}
+          sourceSinfulShellExercise={catalogSheet.sourceSinfulShellExercise ?? null}
+        />
+      ) : null}
+
+      {sinfulShellOpen ? (
+        <SinfulShellBrowserSheet
+          catalog={catalog}
+          disabled={isPending}
+          mode={sinfulShellOpen.mode}
+          onAddCopy={(exercise) => {
+            setSinfulShellOpen(null)
+            setCatalogPickerOpen(false)
+            setCatalogSheet({ item: null, sourceSinfulShellExercise: exercise })
+          }}
+          onAddCopyToRoutine={(item) => {
+            setSinfulShellOpen(null)
+            setCatalogPickerOpen(false)
+            setRecipeSheet({ catalogItem: item, exercise: null, mode: 'add' })
+          }}
+          onClose={() => setSinfulShellOpen(null)}
+          onViewCatalogCopy={(item) => {
+            setSinfulShellOpen(null)
+            setCatalogSheet({ item })
           }}
         />
       ) : null}
@@ -708,6 +741,7 @@ function CatalogPanel({
   onCreate,
   onDelete,
   onEdit,
+  onOpenSinfulShell,
 }: {
   catalog: ExerciseCatalogItem[]
   disabled: boolean
@@ -715,12 +749,27 @@ function CatalogPanel({
   onCreate: () => void
   onDelete: (catalogItemId: string) => void
   onEdit: (item: ExerciseCatalogItem) => void
+  onOpenSinfulShell: () => void
 }) {
   const [query, setQuery] = useState('')
   const filtered = useMemo(() => filterCatalog(catalog, query), [catalog, query])
 
   return (
     <section className="space-y-3">
+      <button
+        className="grid w-full grid-cols-[minmax(0,1fr)_42px] items-center gap-3 rounded-[12px] border border-arsen-purple/30 bg-arsen-purple/10 p-3 text-left transition hover:border-arsen-purple/50 disabled:opacity-40"
+        disabled={disabled}
+        onClick={onOpenSinfulShell}
+        type="button"
+      >
+        <span className="min-w-0">
+          <strong className="block truncate text-sm text-arsen-ink">Explorar Sinful Shell</strong>
+          <span className="mt-1 block truncate text-xs font-semibold text-arsen-muted">{sinfulShellCatalog.length} ejercicios incluidos</span>
+        </span>
+        <span className="grid size-10 place-items-center rounded-[10px] bg-arsen-purple/20 text-arsen-purple2">
+          <ListPlus aria-hidden="true" className="size-5" />
+        </span>
+      </button>
       <div className="grid grid-cols-[1fr_auto] gap-2">
         <SearchBox onChange={setQuery} placeholder="Buscar en catalogo" value={query} />
         <button
@@ -768,6 +817,7 @@ function CatalogPickerSheet({
   imageSrcByAssetId,
   onClose,
   onCreateCatalog,
+  onOpenSinfulShell,
   onSelect,
   selectedDay,
 }: {
@@ -775,6 +825,7 @@ function CatalogPickerSheet({
   imageSrcByAssetId: Map<string, string>
   onClose: () => void
   onCreateCatalog: () => void
+  onOpenSinfulShell: () => void
   onSelect: (item: ExerciseCatalogItem) => void
   selectedDay: RoutineDay
 }) {
@@ -783,6 +834,16 @@ function CatalogPickerSheet({
 
   return (
     <SheetFrame onClose={onClose} title={`Agregar a ${selectedDay.name}`}>
+      <div className="mb-3 grid gap-2">
+        <ActionButton className="w-full" onClick={onOpenSinfulShell} tone="acid">
+          <ListPlus aria-hidden="true" className="size-5" />
+          Agregar desde Sinful Shell
+        </ActionButton>
+        <ActionButton className="w-full" onClick={onCreateCatalog} tone="ghost">
+          <PlusCircle aria-hidden="true" className="size-5" />
+          Crear ejercicio propio
+        </ActionButton>
+      </div>
       <SearchBox onChange={setQuery} placeholder="Buscar ejercicio" value={query} />
       <div className="mt-3 space-y-2">
         {filtered.map((item) => (
@@ -808,10 +869,6 @@ function CatalogPickerSheet({
             </Card>
           </button>
         ))}
-        <ActionButton className="w-full" onClick={onCreateCatalog} tone="ghost">
-          <PlusCircle aria-hidden="true" className="size-5" />
-          Crear nuevo en catalogo
-        </ActionButton>
       </div>
     </SheetFrame>
   )
@@ -824,6 +881,7 @@ function CatalogExerciseEditorSheet({
   item,
   onClose,
   onSave,
+  sourceSinfulShellExercise,
 }: {
   assets: ExerciseAsset[]
   disabled: boolean
@@ -831,8 +889,9 @@ function CatalogExerciseEditorSheet({
   item: ExerciseCatalogItem | null
   onClose: () => void
   onSave: (input: CatalogExerciseInput) => void
+  sourceSinfulShellExercise: SinfulShellExercise | null
 }) {
-  const [form, setForm] = useState(() => catalogItemToForm(item, displayUnit))
+  const [form, setForm] = useState(() => catalogItemToForm(item, displayUnit, sourceSinfulShellExercise))
   const [imageError, setImageError] = useState<string | null>(null)
   const [imageSheetOpen, setImageSheetOpen] = useState(false)
   const [isImageUploadPending, setIsImageUploadPending] = useState(false)
@@ -843,7 +902,9 @@ function CatalogExerciseEditorSheet({
   const maxImageBytes = 2 * 1024 * 1024
   const selectedAsset = form.customAssetId ? assets.find((asset) => asset.id === form.customAssetId) ?? null : null
   const selectedBundledAsset = getBundledExerciseAsset(form.bundledAssetId)
-  const selectedImageLabel = selectedAsset?.name ?? selectedBundledAsset?.name ?? 'Auto'
+  const isSinfulShellLocked = Boolean(sourceSinfulShellExercise || item?.sinfulShellContentLocked)
+  const selectedImageLabel = isSinfulShellLocked ? 'Sinful Shell' : selectedAsset?.name ?? selectedBundledAsset?.name ?? 'Auto'
+  const sheetTitle = sourceSinfulShellExercise ? 'Agregar a mi catalogo' : item ? 'Editar catalogo' : 'Crear ejercicio'
 
   async function uploadCustomImage(file: File) {
     const requestId = ++uploadRequestId.current
@@ -882,78 +943,121 @@ function CatalogExerciseEditorSheet({
   }
 
   return (
-    <SheetFrame onClose={onClose} title={item ? 'Editar catalogo' : 'Crear ejercicio'}>
+    <SheetFrame onClose={onClose} title={sheetTitle}>
       <div className="space-y-3">
-        <TextField label="Nombre" onChange={(value) => setForm((current) => ({ ...current, name: value }))} value={form.name} />
-        <div className="grid grid-cols-2 gap-2">
-          <MuscleSelect onChange={(value) => setForm((current) => ({ ...current, mainMuscle: value }))} value={form.mainMuscle} />
-          <EquipmentSelect onChange={(value) => setForm((current) => applyEquipmentDefaults(current, value, displayUnit))} value={form.equipment} />
-        </div>
-        <LoadSettingsFields
-          barWeight={form.barWeight}
-          displayUnit={displayUnit}
-          equipment={form.equipment}
-          loadMode={form.loadMode}
-          onChange={(value) => setForm((current) => ({ ...current, ...value }))}
-        />
-        <button
-          aria-label="Ver explicacion de progresion doble"
-          className="grid min-h-16 w-full grid-cols-[36px_1fr_28px] items-center gap-3 rounded-[12px] border border-arsen-acid/30 bg-arsen-acid/10 p-3 text-left transition hover:border-arsen-acid/60 hover:bg-arsen-acid/15"
-          onClick={() => setProgressionInfoOpen(true)}
-          type="button"
-        >
-          <span className="grid size-9 place-items-center rounded-[10px] bg-arsen-acid/15 text-arsen-acid">
-            <TrendingUp aria-hidden="true" className="size-5" />
-          </span>
-          <span className="min-w-0">
-            <strong className="block text-sm text-arsen-acid">Progresion doble</strong>
-            <span className="mt-1 block text-xs font-semibold text-arsen-muted">
-              Arsen siempre usa esta regla para recomendar cuando subir peso.
-            </span>
-          </span>
-          <Info aria-hidden="true" className="size-5 text-arsen-purple2" />
-        </button>
-        <div className="grid grid-cols-[1fr_42px] items-end gap-2">
-          <WarmupProtocolSelect
-            onChange={(value) => setForm((current) => ({ ...current, warmupProtocol: value }))}
-            value={selectedWarmupProtocol}
-          />
-          <button
-            aria-label="Ver descripcion del calentamiento"
-            className="grid min-h-11 place-items-center rounded-[10px] border border-white/10 bg-arsen-surface text-arsen-purple2"
-            onClick={() => setWarmupInfoOpen(true)}
-            type="button"
-          >
-            <Info aria-hidden="true" className="size-5" />
-          </button>
-        </div>
-        <TextField label="Aliases" onChange={(value) => setForm((current) => ({ ...current, aliases: value }))} value={form.aliases} />
-        <label className="block">
-          <span className="mb-1 block text-xs font-bold text-arsen-muted">Indicaciones</span>
-          <textarea
-            className="min-h-20 w-full rounded-[10px] border border-white/10 bg-arsen-surface px-3 py-2 text-sm font-semibold text-arsen-ink"
-            onChange={(event) => setForm((current) => ({ ...current, technicalNotes: event.target.value }))}
-            value={form.technicalNotes}
-          />
-        </label>
-        <button
-          className="grid min-h-16 w-full grid-cols-[52px_minmax(0,1fr)] items-center gap-4 rounded-[12px] border border-white/10 bg-arsen-surface p-2 text-left transition hover:border-arsen-purple/45 disabled:opacity-50"
-          disabled={disabled || isImageUploadPending}
-          onClick={() => setImageSheetOpen(true)}
-          type="button"
-        >
-          <ExerciseArt
-            alt={form.name || 'Imagen del ejercicio'}
-            bundledAssetId={form.bundledAssetId}
-            className="size-[52px]"
-            customImageSrc={selectedAsset?.dataUrl ?? null}
-            muscle={form.mainMuscle}
-          />
-          <span className="min-w-0">
-            <span className="block text-xs font-bold text-arsen-muted">Imagen del ejercicio</span>
-            <strong className="mt-1 block truncate text-sm text-arsen-ink">{selectedImageLabel}</strong>
-          </span>
-        </button>
+        {isSinfulShellLocked ? (
+          <>
+            <div className="grid grid-cols-[64px_minmax(0,1fr)] items-center gap-3 rounded-[12px] border border-white/10 bg-arsen-surface p-3">
+              <ExerciseArt
+                alt={form.name || 'Imagen del ejercicio'}
+                bundledAssetId={form.bundledAssetId}
+                className="size-16"
+                customImageSrc={null}
+                muscle={form.mainMuscle}
+              />
+              <div className="min-w-0">
+                <h3 className="truncate text-sm font-black text-arsen-ink">{form.name}</h3>
+                <p className="mt-1 truncate text-xs font-semibold text-arsen-muted">{form.mainMuscle}</p>
+              </div>
+            </div>
+            <div className="rounded-[12px] border border-arsen-purple/30 bg-arsen-purple/10 p-3">
+              <p className="text-xs font-extrabold leading-relaxed text-arsen-ink">{form.technicalNotes}</p>
+            </div>
+            <EquipmentSelect onChange={(value) => setForm((current) => applyEquipmentDefaults(current, value, displayUnit))} value={form.equipment} />
+            <LoadSettingsFields
+              barWeight={form.barWeight}
+              displayUnit={displayUnit}
+              equipment={form.equipment}
+              loadMode={form.loadMode}
+              onChange={(value) => setForm((current) => ({ ...current, ...value }))}
+            />
+            <TextField label="Aliases" onChange={(value) => setForm((current) => ({ ...current, aliases: value }))} value={form.aliases} />
+            <WarmupProtocolSelect
+              onChange={(value) => setForm((current) => ({ ...current, warmupProtocol: value }))}
+              value={selectedWarmupProtocol}
+            />
+          </>
+        ) : (
+          <>
+            <TextField
+              label="Nombre"
+              onChange={(value) => setForm((current) => ({ ...current, name: value }))}
+              value={form.name}
+            />
+            <div className="grid grid-cols-2 gap-2">
+              <MuscleSelect
+                onChange={(value) => setForm((current) => ({ ...current, mainMuscle: value }))}
+                value={form.mainMuscle}
+              />
+              <EquipmentSelect onChange={(value) => setForm((current) => applyEquipmentDefaults(current, value, displayUnit))} value={form.equipment} />
+            </div>
+            <LoadSettingsFields
+              barWeight={form.barWeight}
+              displayUnit={displayUnit}
+              equipment={form.equipment}
+              loadMode={form.loadMode}
+              onChange={(value) => setForm((current) => ({ ...current, ...value }))}
+            />
+            <button
+              aria-label="Ver explicacion de progresion doble"
+              className="grid min-h-16 w-full grid-cols-[36px_1fr_28px] items-center gap-3 rounded-[12px] border border-arsen-acid/30 bg-arsen-acid/10 p-3 text-left transition hover:border-arsen-acid/60 hover:bg-arsen-acid/15"
+              onClick={() => setProgressionInfoOpen(true)}
+              type="button"
+            >
+              <span className="grid size-9 place-items-center rounded-[10px] bg-arsen-acid/15 text-arsen-acid">
+                <TrendingUp aria-hidden="true" className="size-5" />
+              </span>
+              <span className="min-w-0">
+                <strong className="block text-sm text-arsen-acid">Progresion doble</strong>
+                <span className="mt-1 block text-xs font-semibold text-arsen-muted">
+                  Arsen siempre usa esta regla para recomendar cuando subir peso.
+                </span>
+              </span>
+              <Info aria-hidden="true" className="size-5 text-arsen-purple2" />
+            </button>
+            <div className="grid grid-cols-[1fr_42px] items-end gap-2">
+              <WarmupProtocolSelect
+                onChange={(value) => setForm((current) => ({ ...current, warmupProtocol: value }))}
+                value={selectedWarmupProtocol}
+              />
+              <button
+                aria-label="Ver descripcion del calentamiento"
+                className="grid min-h-11 place-items-center rounded-[10px] border border-white/10 bg-arsen-surface text-arsen-purple2"
+                onClick={() => setWarmupInfoOpen(true)}
+                type="button"
+              >
+                <Info aria-hidden="true" className="size-5" />
+              </button>
+            </div>
+            <TextField label="Aliases" onChange={(value) => setForm((current) => ({ ...current, aliases: value }))} value={form.aliases} />
+            <label className="block">
+              <span className="mb-1 block text-xs font-bold text-arsen-muted">Indicaciones</span>
+              <textarea
+                className="min-h-20 w-full rounded-[10px] border border-white/10 bg-arsen-surface px-3 py-2 text-sm font-semibold text-arsen-ink"
+                onChange={(event) => setForm((current) => ({ ...current, technicalNotes: event.target.value }))}
+                value={form.technicalNotes}
+              />
+            </label>
+            <button
+              className="grid min-h-16 w-full grid-cols-[52px_minmax(0,1fr)] items-center gap-4 rounded-[12px] border border-white/10 bg-arsen-surface p-2 text-left transition hover:border-arsen-purple/45 disabled:opacity-50"
+              disabled={disabled || isImageUploadPending}
+              onClick={() => setImageSheetOpen(true)}
+              type="button"
+            >
+              <ExerciseArt
+                alt={form.name || 'Imagen del ejercicio'}
+                bundledAssetId={form.bundledAssetId}
+                className="size-[52px]"
+                customImageSrc={selectedAsset?.dataUrl ?? null}
+                muscle={form.mainMuscle}
+              />
+              <span className="min-w-0">
+                <span className="block text-xs font-bold text-arsen-muted">Imagen del ejercicio</span>
+                <strong className="mt-1 block truncate text-sm text-arsen-ink">{selectedImageLabel}</strong>
+              </span>
+            </button>
+          </>
+        )}
       </div>
       <ActionButton
         className="mt-4 w-full"
@@ -962,11 +1066,13 @@ function CatalogExerciseEditorSheet({
           onSave({
             aliases: form.aliases.split(',').map((alias) => alias.trim()).filter(Boolean),
             assetKind: null,
-            bundledAssetId: form.bundledAssetId,
-            customAssetId: form.customAssetId,
+            bundledAssetId: isSinfulShellLocked ? sourceSinfulShellExercise?.bundledAssetId ?? item?.bundledAssetId ?? null : form.bundledAssetId,
+            customAssetId: isSinfulShellLocked ? null : form.customAssetId,
             ...loadInputFromForm(form, displayUnit),
             mainMuscle: form.mainMuscle,
+            mode: sourceSinfulShellExercise ? 'create-from-sinful-shell' : 'manual',
             name: form.name,
+            sinfulShellId: sourceSinfulShellExercise?.id ?? item?.sinfulShellId ?? null,
             technicalNotes: form.technicalNotes,
             warmupProtocol: selectedWarmupProtocol,
           })
@@ -976,7 +1082,7 @@ function CatalogExerciseEditorSheet({
         <Check aria-hidden="true" className="size-5" />
         Guardar
       </ActionButton>
-      {imageSheetOpen ? (
+      {imageSheetOpen && !isSinfulShellLocked ? (
         <ExerciseImageSelector
           assets={assets}
           disabled={disabled || isImageUploadPending}
@@ -1228,7 +1334,11 @@ function formToExerciseInput(form: ExerciseForm, displayUnit: WeightUnit): Exerc
   }
 }
 
-function catalogItemToForm(item: ExerciseCatalogItem | null, displayUnit: WeightUnit): CatalogExerciseForm {
+function catalogItemToForm(
+  item: ExerciseCatalogItem | null,
+  displayUnit: WeightUnit,
+  sourceSinfulShellExercise?: SinfulShellExercise | null,
+): CatalogExerciseForm {
   const loadSettings = loadSettingsForEquipment({
     barWeightKg: item?.barWeightKg,
     equipment: item?.equipment ?? 'Barra',
@@ -1236,15 +1346,15 @@ function catalogItemToForm(item: ExerciseCatalogItem | null, displayUnit: Weight
   })
 
   return {
-    aliases: item?.aliases.join(', ') ?? '',
-    bundledAssetId: item?.bundledAssetId ?? null,
+    aliases: item?.aliases.join(', ') ?? sourceSinfulShellExercise?.aliases.join(', ') ?? '',
+    bundledAssetId: sourceSinfulShellExercise?.bundledAssetId ?? item?.bundledAssetId ?? null,
     barWeight: String(kgToUnit(loadSettings.barWeightKg, displayUnit)),
     equipment: loadSettings.equipment,
     loadMode: loadSettings.loadMode,
-    mainMuscle: normalizeMuscleGroup(item?.mainMuscle),
-    name: item?.name ?? '',
+    mainMuscle: sourceSinfulShellExercise?.mainMuscle ?? normalizeMuscleGroup(item?.mainMuscle),
+    name: sourceSinfulShellExercise?.name ?? item?.name ?? '',
     customAssetId: item?.customAssetId ?? null,
-    technicalNotes: item?.technicalNotes ?? '',
+    technicalNotes: sourceSinfulShellExercise?.technicalNotes ?? item?.technicalNotes ?? '',
     warmupProtocol: normalizeWarmupProtocol(item?.warmupProtocol),
   }
 }
@@ -1358,11 +1468,13 @@ function SearchBox({ onChange, placeholder, value }: { onChange: (value: string)
 }
 
 function TextField({
+  disabled = false,
   label,
   onChange,
   type = 'text',
   value,
 }: {
+  disabled?: boolean
   label: string
   onChange: (value: string) => void
   type?: 'number' | 'text'
@@ -1372,7 +1484,8 @@ function TextField({
     <label className="block">
       <span className="mb-1 block text-xs font-bold text-arsen-muted">{label}</span>
       <input
-        className="min-h-11 w-full rounded-[10px] border border-white/10 bg-arsen-surface px-3 text-sm font-extrabold text-arsen-ink"
+        className="min-h-11 w-full rounded-[10px] border border-white/10 bg-arsen-surface px-3 text-sm font-extrabold text-arsen-ink disabled:opacity-60"
+        disabled={disabled}
         inputMode={type === 'number' ? 'decimal' : undefined}
         onChange={(event) => onChange(event.target.value)}
         type={type}
@@ -1382,12 +1495,21 @@ function TextField({
   )
 }
 
-function MuscleSelect({ onChange, value }: { onChange: (value: MuscleGroup) => void; value: MuscleGroup }) {
+function MuscleSelect({
+  disabled = false,
+  onChange,
+  value,
+}: {
+  disabled?: boolean
+  onChange: (value: MuscleGroup) => void
+  value: MuscleGroup
+}) {
   return (
     <label className="block">
       <span className="mb-1 block text-xs font-bold text-arsen-muted">Musculo</span>
       <select
-        className="min-h-11 w-full rounded-[10px] border border-white/10 bg-arsen-surface px-3 text-sm font-extrabold text-arsen-ink"
+        className="min-h-11 w-full rounded-[10px] border border-white/10 bg-arsen-surface px-3 text-sm font-extrabold text-arsen-ink disabled:opacity-60"
+        disabled={disabled}
         onChange={(event) => onChange(event.target.value as MuscleGroup)}
         value={value}
       >

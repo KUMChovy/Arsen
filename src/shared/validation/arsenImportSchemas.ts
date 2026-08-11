@@ -17,6 +17,7 @@ const weekdaySchema = z.union([
 const weightUnitSchema = z.enum(['kg', 'lb'])
 const exerciseStateSchema = z.enum(['pending', 'in_progress', 'skipped', 'done'])
 const setKindSchema = z.enum(['main', 'warmup'])
+const catalogOriginSchema = z.enum(['user', 'sinful-shell'])
 
 export const routineSchema = z
   .object({
@@ -112,6 +113,9 @@ export const exerciseCatalogItemSchema = z
     loadMode: loadModeSchema.optional(),
     mainMuscle: z.string(),
     name: z.string(),
+    origin: catalogOriginSchema.optional().default('user'),
+    sinfulShellContentLocked: z.boolean().optional().default(false),
+    sinfulShellId: z.string().nullable().optional().default(null),
     technicalNotes: z.string().optional().default(''),
     updatedAt: z.string(),
     warmupProtocol: z.string().optional().default('none').transform(normalizeWarmupProtocol),

@@ -6,6 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { RoutinePage } from './RoutinePage'
 
 const routinePageMocks = vi.hoisted(() => ({
+  addCatalogExerciseToDay: vi.fn(() => Promise.resolve('exercise-1')),
+  catalog: [] as RoutinePageCatalogItem[],
   createCatalogExercise: vi.fn(() => Promise.resolve('catalog-1')),
   createExerciseAsset: vi.fn(() => Promise.resolve('asset-uploaded')),
   createRoutine: vi.fn(() => Promise.resolve('routine-created')),
@@ -17,7 +19,7 @@ const routinePageMocks = vi.hoisted(() => ({
 vi.mock('../hooks', () => ({
   useActiveRoutineBundle: () => routinePageMocks.bundle,
   useExerciseAssets: () => [],
-  useExerciseCatalog: () => [],
+  useExerciseCatalog: () => routinePageMocks.catalog,
   useRoutines: () => routinePageMocks.routines,
 }))
 
@@ -26,7 +28,7 @@ vi.mock('../../workout/hooks', () => ({
 }))
 
 vi.mock('../services', () => ({
-  addCatalogExerciseToDay: vi.fn(),
+  addCatalogExerciseToDay: routinePageMocks.addCatalogExerciseToDay,
   createCatalogExercise: routinePageMocks.createCatalogExercise,
   createDay: vi.fn(),
   createExerciseAsset: routinePageMocks.createExerciseAsset,
@@ -59,6 +61,7 @@ describe('RoutinePage catalog image upload', () => {
     routinePageMocks.createRoutine.mockResolvedValue('routine-created')
     routinePageMocks.setActiveRoutine.mockResolvedValue(undefined)
     routinePageMocks.bundle = defaultBundle()
+    routinePageMocks.catalog = []
     routinePageMocks.routines = [routine]
   })
 
@@ -164,6 +167,69 @@ describe('RoutinePage catalog image upload', () => {
       )
     })
   })
+
+  it('opens Sinful Shell from the catalog banner and opens detail before finalization', () => {
+    render(
+      <MemoryRouter>
+        <RoutinePage />
+      </MemoryRouter>,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Catalogo' }))
+    fireEvent.click(screen.getByRole('button', { name: /Explorar Sinful Shell/i }))
+    fireEvent.click(screen.getByRole('button', { name: 'Press inclinado Disponible' }))
+
+    expect(screen.getByRole('heading', { name: 'Press inclinado' })).toBeInTheDocument()
+    expect(routinePageMocks.createCatalogExercise).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Agregar a mi catalogo' }))
+
+    expect(screen.getByRole('heading', { name: 'Agregar a mi catalogo' })).toBeInTheDocument()
+    expect(screen.getByText('Pecho')).toBeInTheDocument()
+    expect(screen.getByText(/M.sculo principal: pectoral superior/i)).toBeInTheDocument()
+    expect(screen.getByLabelText('Equipo')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('press inclinado con barra, press de banca inclinado')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Nombre')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Musculo')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Imagen del ejercicio/i })).not.toBeInTheDocument()
+  })
+
+  it('saves a Sinful Shell copy through create-from-sinful-shell mode', async () => {
+    render(
+      <MemoryRouter>
+        <RoutinePage />
+      </MemoryRouter>,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Catalogo' }))
+    fireEvent.click(screen.getByRole('button', { name: /Explorar Sinful Shell/i }))
+    fireEvent.click(screen.getByRole('button', { name: 'Press inclinado Disponible' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Agregar a mi catalogo' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar' }))
+
+    await waitFor(() => {
+      expect(routinePageMocks.createCatalogExercise).toHaveBeenCalledWith(
+        expect.objectContaining({
+          mode: 'create-from-sinful-shell',
+          sinfulShellId: 'sinful-shell-press-inclinado',
+        }),
+      )
+    })
+  })
+
+  it('opens Sinful Shell from the add exercise sheet', () => {
+    render(
+      <MemoryRouter>
+        <RoutinePage />
+      </MemoryRouter>,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Editar' }))
+    fireEvent.click(screen.getByRole('button', { name: '+ Ejercicio' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Agregar desde Sinful Shell' }))
+
+    expect(screen.getByRole('heading', { name: 'Sinful Shell' })).toBeInTheDocument()
+  })
 })
 
 function openCatalogEditor() {
@@ -200,6 +266,31 @@ const routine = {
 }
 
 type RoutinePageRoutine = typeof routine
+type RoutinePageCatalogItem = {
+  aliases: string[]
+  assetKind: string | null
+  barWeightKg: number
+  bundledAssetId: string | null
+  canonicalName: string
+  createdAt: string
+  customAssetId: string | null
+  defaultRecommendedRir: number
+  defaultRepsMax: number
+  defaultRepsMin: number
+  defaultRestSeconds: number
+  defaultTargetSets: number
+  equipment: 'Barra'
+  id: string
+  loadMode: 'single'
+  mainMuscle: string
+  name: string
+  origin?: 'user' | 'sinful-shell'
+  sinfulShellContentLocked?: boolean
+  sinfulShellId?: string | null
+  technicalNotes: string
+  updatedAt: string
+  warmupProtocol: string
+}
 type RoutinePageBundle = ReturnType<typeof defaultBundle>
 
 function defaultBundle() {

@@ -4,6 +4,7 @@ import { loadSettingsForEquipment } from '../../shared/calculations/equipmentLoa
 import { normalizeWarmupProtocol } from '../../shared/calculations/warmups'
 import { createId } from '../../shared/utils/id'
 import { canonicalName } from '../../shared/utils/normalize'
+import { getSinfulShellExerciseById } from './data/sinfulShellCatalog'
 import { normalizeMuscleGroup } from './utils/muscles'
 
 export type ExerciseInput = {
@@ -32,11 +33,18 @@ export type CatalogExerciseInput = {
   assetKind?: string | null
   bundledAssetId?: string | null
   barWeightKg?: number
+  defaultRecommendedRir?: number
+  defaultRepsMax?: number
+  defaultRepsMin?: number
+  defaultRestSeconds?: number
+  defaultTargetSets?: number
   equipment?: Equipment
   loadMode?: LoadMode
-  mainMuscle: string
-  name: string
+  mainMuscle?: string
+  mode?: 'manual' | 'create-from-sinful-shell'
+  name?: string
   customAssetId?: string | null
+  sinfulShellId?: string | null
   technicalNotes?: string
   warmupProtocol?: string
 }
@@ -476,8 +484,57 @@ export async function reorderExercises(dayId: string, orderedExerciseIds: string
 
 export async function createCatalogExercise(input: CatalogExerciseInput) {
   const now = new Date().toISOString()
-  const name = input.name.trim() || 'Ejercicio nuevo'
+
+  if (input.mode === 'create-from-sinful-shell') {
+    const sinfulShellId = input.sinfulShellId?.trim()
+    if (!sinfulShellId) throw new Error('Ejercicio de Sinful Shell requerido')
+
+    const source = getSinfulShellExerciseById(sinfulShellId)
+    if (!source) throw new Error('Ejercicio de Sinful Shell no encontrado')
+
+    const existing = await findExistingSinfulShellCopy(sinfulShellId)
+    if (existing) return existing.id
+
+    const reps = normalizeReps(input.defaultRepsMin, input.defaultRepsMax)
+    const loadSettings = loadSettingsForEquipment({
+      barWeightKg: input.barWeightKg,
+      equipment: input.equipment ?? 'Otro',
+      loadMode: input.loadMode,
+    })
+    const catalogItem: ExerciseCatalogItem = {
+      aliases: input.aliases ?? source.aliases,
+      assetKind: null,
+      bundledAssetId: source.bundledAssetId,
+      canonicalName: source.canonicalName,
+      createdAt: now,
+      defaultRecommendedRir: normalizeRir(input.defaultRecommendedRir),
+      defaultRepsMax: reps.max,
+      defaultRepsMin: reps.min,
+      defaultRestSeconds: input.defaultRestSeconds ?? 90,
+      defaultTargetSets: input.defaultTargetSets ?? 3,
+      equipment: loadSettings.equipment,
+      loadMode: loadSettings.loadMode,
+      barWeightKg: loadSettings.barWeightKg,
+      id: createId('catalog'),
+      mainMuscle: source.mainMuscle,
+      name: source.name,
+      customAssetId: null,
+      origin: 'sinful-shell',
+      sinfulShellContentLocked: true,
+      sinfulShellId: source.id,
+      technicalNotes: source.technicalNotes,
+      warmupProtocol: normalizeWarmupProtocol(input.warmupProtocol),
+      updatedAt: now,
+    }
+
+    await db.exerciseCatalog.add(catalogItem)
+
+    return catalogItem.id
+  }
+
+  const name = input.name?.trim() || 'Ejercicio nuevo'
   const mainMuscle = normalizeMuscleGroup(input.mainMuscle)
+  const reps = normalizeReps(input.defaultRepsMin, input.defaultRepsMax)
   const loadSettings = loadSettingsForEquipment({
     barWeightKg: input.barWeightKg,
     equipment: input.equipment ?? 'Otro',
@@ -489,11 +546,11 @@ export async function createCatalogExercise(input: CatalogExerciseInput) {
     bundledAssetId: input.bundledAssetId ?? null,
     canonicalName: canonicalName(name),
     createdAt: now,
-    defaultRecommendedRir: 2,
-    defaultRepsMax: 10,
-    defaultRepsMin: 8,
-    defaultRestSeconds: 90,
-    defaultTargetSets: 3,
+    defaultRecommendedRir: normalizeRir(input.defaultRecommendedRir),
+    defaultRepsMax: reps.max,
+    defaultRepsMin: reps.min,
+    defaultRestSeconds: input.defaultRestSeconds ?? 90,
+    defaultTargetSets: input.defaultTargetSets ?? 3,
     equipment: loadSettings.equipment,
     loadMode: loadSettings.loadMode,
     barWeightKg: loadSettings.barWeightKg,
@@ -501,6 +558,9 @@ export async function createCatalogExercise(input: CatalogExerciseInput) {
     mainMuscle,
     name,
     customAssetId: input.customAssetId ?? null,
+    origin: 'user',
+    sinfulShellContentLocked: false,
+    sinfulShellId: null,
     technicalNotes: input.technicalNotes?.trim() ?? '',
     warmupProtocol: normalizeWarmupProtocol(input.warmupProtocol),
     updatedAt: now,
@@ -513,26 +573,44 @@ export async function createCatalogExercise(input: CatalogExerciseInput) {
 
 export async function updateCatalogExercise(catalogItemId: string, input: CatalogExerciseInput) {
   const existing = await db.exerciseCatalog.get(catalogItemId)
-  const name = input.name.trim() || 'Ejercicio sin nombre'
-  const mainMuscle = normalizeMuscleGroup(input.mainMuscle)
+  if (!existing) throw new Error('Ejercicio de catalogo no encontrado')
+
+  const origin = normalizeCatalogOrigin(existing)
+  const lockedSource = origin.sinfulShellContentLocked && origin.sinfulShellId ? getSinfulShellExerciseById(origin.sinfulShellId) : null
+  const isLocked = origin.sinfulShellContentLocked
+  const name = isLocked ? lockedSource?.name ?? existing.name : input.name?.trim() || 'Ejercicio sin nombre'
+  const mainMuscle = isLocked ? lockedSource?.mainMuscle ?? existing.mainMuscle : normalizeMuscleGroup(input.mainMuscle)
+  const reps = normalizeReps(input.defaultRepsMin ?? existing.defaultRepsMin, input.defaultRepsMax ?? existing.defaultRepsMax)
   const loadSettings = loadSettingsForEquipment({
-    barWeightKg: input.barWeightKg ?? existing?.barWeightKg,
-    equipment: input.equipment ?? existing?.equipment ?? 'Otro',
-    loadMode: input.loadMode ?? existing?.loadMode,
+    barWeightKg: input.barWeightKg ?? existing.barWeightKg,
+    equipment: input.equipment ?? existing.equipment,
+    loadMode: input.loadMode ?? existing.loadMode,
   })
 
   await db.exerciseCatalog.update(catalogItemId, {
     aliases: input.aliases ?? [],
-    assetKind: input.assetKind === undefined ? existing?.assetKind ?? null : input.assetKind,
-    bundledAssetId: input.bundledAssetId === undefined ? existing?.bundledAssetId ?? null : input.bundledAssetId,
+    assetKind: isLocked ? existing.assetKind ?? null : input.assetKind === undefined ? existing.assetKind ?? null : input.assetKind,
+    bundledAssetId: isLocked
+      ? lockedSource?.bundledAssetId ?? existing.bundledAssetId
+      : input.bundledAssetId === undefined
+        ? existing.bundledAssetId ?? null
+        : input.bundledAssetId,
     canonicalName: canonicalName(name),
+    defaultRecommendedRir: normalizeRir(input.defaultRecommendedRir ?? existing.defaultRecommendedRir),
+    defaultRepsMax: reps.max,
+    defaultRepsMin: reps.min,
+    defaultRestSeconds: input.defaultRestSeconds ?? existing.defaultRestSeconds,
+    defaultTargetSets: input.defaultTargetSets ?? existing.defaultTargetSets,
     equipment: loadSettings.equipment,
     loadMode: loadSettings.loadMode,
     barWeightKg: loadSettings.barWeightKg,
     mainMuscle,
     name,
-    customAssetId: input.customAssetId === undefined ? existing?.customAssetId ?? null : input.customAssetId,
-    technicalNotes: input.technicalNotes?.trim() ?? '',
+    customAssetId: isLocked ? existing.customAssetId ?? null : input.customAssetId === undefined ? existing.customAssetId ?? null : input.customAssetId,
+    origin: origin.origin,
+    sinfulShellContentLocked: origin.sinfulShellContentLocked,
+    sinfulShellId: origin.sinfulShellId,
+    technicalNotes: isLocked ? lockedSource?.technicalNotes ?? existing.technicalNotes : input.technicalNotes?.trim() ?? '',
     warmupProtocol: normalizeWarmupProtocol(input.warmupProtocol),
     updatedAt: new Date().toISOString(),
   })
@@ -548,6 +626,20 @@ function normalizeReps(repsMin = 8, repsMax = 10) {
   }
 
   return { max: repsMax, min: repsMin }
+}
+
+function normalizeCatalogOrigin(input: Pick<ExerciseCatalogItem, 'origin' | 'sinfulShellContentLocked' | 'sinfulShellId'>) {
+  return {
+    origin: input.origin ?? 'user',
+    sinfulShellContentLocked: input.sinfulShellContentLocked ?? false,
+    sinfulShellId: input.sinfulShellId ?? null,
+  }
+}
+
+async function findExistingSinfulShellCopy(sinfulShellId: string) {
+  return db.exerciseCatalog
+    .filter((item) => (item.origin ?? 'user') === 'sinful-shell' && (item.sinfulShellId ?? null) === sinfulShellId)
+    .first()
 }
 
 function normalizeRir(recommendedRir = 2) {

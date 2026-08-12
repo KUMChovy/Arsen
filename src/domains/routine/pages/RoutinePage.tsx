@@ -77,6 +77,7 @@ import {
   type CatalogExerciseInput,
   type ExerciseInput,
 } from '../services'
+import { catalogMuscleFilters, filterCatalogByQueryAndMuscle, type CatalogMuscleFilter } from '../utils/catalogFilters'
 import { dominantMuscleForExercises } from '../utils/dominantMuscle'
 import { muscleGroups, normalizeMuscleGroup } from '../utils/muscles'
 
@@ -830,7 +831,8 @@ function CatalogPickerSheet({
   selectedDay: RoutineDay
 }) {
   const [query, setQuery] = useState('')
-  const filtered = useMemo(() => filterCatalog(catalog, query), [catalog, query])
+  const [muscle, setMuscle] = useState<CatalogMuscleFilter>('Todos')
+  const filtered = useMemo(() => filterCatalogByQueryAndMuscle(catalog, query, muscle), [catalog, query, muscle])
 
   return (
     <SheetFrame onClose={onClose} title={`Agregar a ${selectedDay.name}`}>
@@ -845,6 +847,23 @@ function CatalogPickerSheet({
         </ActionButton>
       </div>
       <SearchBox onChange={setQuery} placeholder="Buscar ejercicio" value={query} />
+      <div className="scrollbar-none mt-3 flex gap-2 overflow-x-auto pb-1">
+        {catalogMuscleFilters.map((option) => (
+          <button
+            aria-pressed={muscle === option}
+            className={[
+              'min-h-10 shrink-0 rounded-full border px-3 text-xs font-extrabold transition',
+              muscle === option ? 'border-arsen-purple2 bg-arsen-purple/40 text-white' : 'border-white/10 bg-arsen-surface text-arsen-muted',
+            ].join(' ')}
+            key={option}
+            onClick={() => setMuscle(option)}
+            type="button"
+          >
+            {option}
+          </button>
+        ))}
+      </div>
+      <div className="mt-2 text-xs font-extrabold text-arsen-muted">{formatExerciseCount(filtered.length)}</div>
       <div className="mt-3 space-y-2">
         {filtered.map((item) => (
           <button className="block w-full text-left" key={item.id} onClick={() => onSelect(item)} type="button">
@@ -869,8 +888,37 @@ function CatalogPickerSheet({
             </Card>
           </button>
         ))}
+        {filtered.length === 0 ? (
+          <CatalogPickerEmptyState
+            muscle={muscle}
+            onClear={() => {
+              setMuscle('Todos')
+              setQuery('')
+            }}
+            query={query}
+          />
+        ) : null}
       </div>
     </SheetFrame>
+  )
+}
+
+function CatalogPickerEmptyState({
+  muscle,
+  onClear,
+  query,
+}: {
+  muscle: CatalogMuscleFilter
+  onClear: () => void
+  query: string
+}) {
+  return (
+    <div className="rounded-[12px] border border-white/10 bg-arsen-surface p-4">
+      <p className="text-sm font-semibold text-arsen-muted">{catalogPickerEmptyMessage(muscle, query)}</p>
+      <button className="mt-3 min-h-10 rounded-[10px] border border-arsen-purple/40 px-3 text-xs font-extrabold text-arsen-purple2" onClick={onClear} type="button">
+        Limpiar filtros
+      </button>
+    </div>
   )
 }
 
@@ -1699,6 +1747,19 @@ function filterCatalog(catalog: ExerciseCatalogItem[], query: string) {
       item.mainMuscle.toLowerCase().includes(value) ||
       item.equipment.toLowerCase().includes(value),
   )
+}
+
+function catalogPickerEmptyMessage(muscle: CatalogMuscleFilter, query: string) {
+  const value = query.trim()
+  if (muscle !== 'Todos' && value) return `No hay ejercicios de ${muscle} que coincidan con "${value}".`
+  if (muscle !== 'Todos') return `No hay ejercicios de ${muscle}.`
+  if (value) return `No hay ejercicios que coincidan con "${value}".`
+
+  return 'No hay ejercicios en tu catalogo.'
+}
+
+function formatExerciseCount(count: number) {
+  return `${count} ${count === 1 ? 'ejercicio' : 'ejercicios'}`
 }
 
 function weekdayName(weekday: RoutineDay['weekday']) {

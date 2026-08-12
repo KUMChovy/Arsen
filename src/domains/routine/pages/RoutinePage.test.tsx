@@ -230,7 +230,85 @@ describe('RoutinePage catalog image upload', () => {
 
     expect(screen.getByRole('heading', { name: 'Sinful Shell' })).toBeInTheDocument()
   })
+  it('shows muscle filters with Todos selected when adding an exercise', () => {
+    routinePageMocks.catalog = [
+      catalogItem('press', 'Press plano', 'Pecho'),
+      catalogItem('remo', 'Remo T', 'Espalda'),
+    ]
+
+    openAddExercisePicker()
+
+    expect(screen.getByRole('button', { name: 'Todos' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'Pecho' })).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByText('2 ejercicios')).toBeInTheDocument()
+  })
+
+  it('filters picker results by muscle chip', () => {
+    routinePageMocks.catalog = [
+      catalogItem('press', 'Press plano', 'Pecho'),
+      catalogItem('remo', 'Remo T', 'Espalda'),
+    ]
+
+    openAddExercisePicker()
+    fireEvent.click(screen.getByRole('button', { name: 'Espalda' }))
+
+    expect(screen.queryByRole('button', { name: /Press plano/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Remo T/ })).toBeInTheDocument()
+    expect(screen.getByText('1 ejercicio')).toBeInTheDocument()
+  })
+
+  it('combines picker search with the selected muscle', () => {
+    routinePageMocks.catalog = [
+      catalogItem('press', 'Press plano', 'Pecho', ['banca']),
+      catalogItem('fondos', 'Fondos', 'Brazos', ['banca']),
+    ]
+
+    openAddExercisePicker()
+    fireEvent.click(screen.getByRole('button', { name: 'Pecho' }))
+    fireEvent.change(screen.getByPlaceholderText('Buscar ejercicio'), { target: { value: 'BANCA' } })
+
+    expect(screen.getByRole('button', { name: /Press plano/ })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Fondos/ })).not.toBeInTheDocument()
+  })
+
+  it('shows an empty state and clears picker filters', () => {
+    routinePageMocks.catalog = [catalogItem('press', 'Press plano', 'Pecho')]
+
+    openAddExercisePicker()
+    fireEvent.click(screen.getByRole('button', { name: 'Espalda' }))
+    fireEvent.change(screen.getByPlaceholderText('Buscar ejercicio'), { target: { value: 'remo' } })
+
+    expect(screen.getByText('No hay ejercicios de Espalda que coincidan con "remo".')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Limpiar filtros' }))
+
+    expect(screen.getByRole('button', { name: 'Todos' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByPlaceholderText('Buscar ejercicio')).toHaveValue('')
+    expect(screen.getByRole('button', { name: /Press plano/ })).toBeInTheDocument()
+  })
+
+  it('keeps opening the recipe sheet after selecting a filtered exercise', () => {
+    routinePageMocks.catalog = [catalogItem('press', 'Press plano', 'Pecho')]
+
+    openAddExercisePicker()
+    fireEvent.click(screen.getByRole('button', { name: /Press plano/ }))
+
+    expect(screen.getByRole('heading', { name: 'Receta del dia' })).toBeInTheDocument()
+    expect(screen.getByText('Press plano')).toBeInTheDocument()
+  })
 })
+
+
+function openAddExercisePicker() {
+  render(
+    <MemoryRouter>
+      <RoutinePage />
+    </MemoryRouter>,
+  )
+
+  fireEvent.click(screen.getByRole('button', { name: 'Editar' }))
+  fireEvent.click(screen.getByRole('button', { name: '+ Ejercicio' }))
+}
 
 function openCatalogEditor() {
   render(
@@ -244,6 +322,32 @@ function openCatalogEditor() {
   fireEvent.click(screen.getByRole('button', { name: /Imagen del ejercicio/i }))
 
   return screen.getByLabelText('Subir imagen propia')
+}
+
+
+function catalogItem(id: string, name: string, mainMuscle: string, aliases: string[] = []): RoutinePageCatalogItem {
+  return {
+    aliases,
+    assetKind: null,
+    barWeightKg: 20,
+    bundledAssetId: null,
+    canonicalName: id,
+    createdAt: '2026-08-11T00:00:00.000Z',
+    customAssetId: null,
+    defaultRecommendedRir: 2,
+    defaultRepsMax: 10,
+    defaultRepsMin: 8,
+    defaultRestSeconds: 90,
+    defaultTargetSets: 3,
+    equipment: 'Barra',
+    id,
+    loadMode: 'single',
+    mainMuscle,
+    name,
+    technicalNotes: '',
+    updatedAt: '2026-08-11T00:00:00.000Z',
+    warmupProtocol: 'none',
+  }
 }
 
 const day = {

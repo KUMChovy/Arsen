@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { WeightIncreaseRecommendation } from '../../../shared/calculations/progression'
 import { WorkoutPage } from './WorkoutPage'
 import type { RoutineDay, RoutineExercise } from '../../routine/types'
-import type { ExerciseLog, SetLog, WorkoutSession } from '../types'
+import type { DropSetLog, ExerciseLog, LastSessionReference, SetLog, WorkoutSession } from '../types'
 import { confirmDanger } from '../../../shared/utils/alerts'
 import { completeSessionForDay, deleteMainSet, updateMainSet } from '../services'
 import { setActiveRoutine } from '../../routine/services'
@@ -21,6 +21,7 @@ const workoutMocks = vi.hoisted(() => ({
     shouldShow: false,
   },
   weightIncreaseRecommendations: [] as WeightIncreaseRecommendation[],
+  lastSessionReferences: new Map<string, LastSessionReference>(),
 }))
 
 vi.mock('../../routine/hooks', () => ({
@@ -56,6 +57,7 @@ vi.mock('../../routine/hooks', () => ({
 vi.mock('../hooks', () => ({
   useWeightIncreaseRecommendations: () => workoutMocks.weightIncreaseRecommendations,
   useWorkoutRotationStatus: () => workoutMocks.rotationStatus,
+  useLastSessionReferencesForDay: () => workoutMocks.lastSessionReferences,
   useWorkoutProgress: () => ({
     completedCount: 0,
     dropSets: [],
@@ -121,6 +123,7 @@ describe('WorkoutPage', () => {
       shouldShow: false,
     }
     workoutMocks.weightIncreaseRecommendations = []
+    workoutMocks.lastSessionReferences = new Map()
   })
 
   it('renders clean daily workout without date, notes or rest controls', () => {
@@ -174,6 +177,52 @@ describe('WorkoutPage', () => {
     expect(screen.queryByText('+2.5 kg')).not.toBeInTheDocument()
   })
 
+  it('shows the last-session reference for the current exercise', () => {
+    workoutMocks.lastSessionReferences = new Map([
+      [
+        exercise.id,
+        {
+          date: '2026-07-18',
+          sets: [{ dropSets: [referenceDropSet], set: referenceSetLog }],
+        },
+      ],
+    ])
+
+    render(<WorkoutPage />)
+
+    expect(screen.getByText('Ultima sesion')).toBeInTheDocument()
+    expect(screen.getByText('18 jul')).toBeInTheDocument()
+    expect(screen.getByText('Referencia')).toBeInTheDocument()
+    expect(screen.getByText('Serie 1 - 62.5 kg - 9 reps - RIR 2')).toBeInTheDocument()
+    expect(screen.getByText('Drop 1 - 45 kg - 8 reps - RIR 3')).toBeInTheDocument()
+  })
+
+  it('shows an empty last-session reference state for exercises without day-scoped history', () => {
+    render(<WorkoutPage />)
+
+    expect(screen.getByText('Primera vez con este ejercicio en este dia')).toBeInTheDocument()
+  })
+
+  it('does not render edit or delete controls inside the last-session reference', () => {
+    workoutMocks.lastSessionReferences = new Map([
+      [
+        exercise.id,
+        {
+          date: '2026-07-18',
+          sets: [{ dropSets: [], set: referenceSetLog }],
+        },
+      ],
+    ])
+
+    render(<WorkoutPage />)
+
+    const referenceBlock = screen.getByText('Ultima sesion').closest('section')
+    expect(referenceBlock).not.toBeNull()
+    expect(referenceBlock).not.toHaveTextContent(/Editar/i)
+    expect(referenceBlock).not.toHaveTextContent(/Eliminar/i)
+    expect(screen.queryByRole('button', { name: /Editar serie .*ultima/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Eliminar serie .*ultima/i })).not.toBeInTheDocument()
+  })
   it('opens exercise indication notes from the info button', () => {
     render(<WorkoutPage />)
 
@@ -523,6 +572,27 @@ const setLog: SetLog = {
   weightKg: 60,
 }
 
+const referenceSetLog: SetLog = {
+  ...setLog,
+  createdAt: '2026-07-18T00:00:00.000Z',
+  id: 'reference-set-1',
+  reps: 9,
+  rir: 2,
+  updatedAt: '2026-07-18T00:00:00.000Z',
+  weightKg: 62.5,
+}
+
+const referenceDropSet: DropSetLog = {
+  createdAt: '2026-07-18T00:00:00.000Z',
+  displayUnit: 'kg',
+  id: 'reference-drop-1',
+  order: 0,
+  reps: 8,
+  rir: 3,
+  setLogId: referenceSetLog.id,
+  updatedAt: '2026-07-18T00:00:00.000Z',
+  weightKg: 45,
+}
 const otherSetLog: SetLog = {
   ...setLog,
   exerciseLogId: otherExerciseLog.id,

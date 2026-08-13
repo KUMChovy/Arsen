@@ -24,7 +24,7 @@ import {
   skipRoutineExerciseForDay,
   updateWorkoutSession,
 } from '../domains/workout/services'
-import { getSessionsWithMainSets } from '../domains/workout/repository'
+import { getLastSessionReferencesForDay, getSessionsWithMainSets } from '../domains/workout/repository'
 
 const now = '2026-07-20T00:00:00.000Z'
 
@@ -112,6 +112,171 @@ describe('IndexedDB integration', () => {
     await expect(db.routineExercises.get(exercise.id)).resolves.toMatchObject({ currentWeightKg: 62.5 })
   })
 
+  it('loads last-session references for the same routine and day with drop sets', async () => {
+    const routineA = routine('routine-a', 'Rutina A')
+    const dayA = routineDay('day-a', routineA.id, 'Dia A')
+    const exerciseA = routineExercise({ dayId: dayA.id, id: 'exercise-a', routineId: routineA.id })
+    await db.routines.put(routineA)
+    await db.routineDays.put(dayA)
+    await db.routineExercises.put(exerciseA)
+
+    await registerMainSetForExercise({
+      date: '2026-08-10',
+      dayId: dayA.id,
+      displayUnit: 'kg',
+      exercise: exerciseA,
+      reps: 8,
+      rir: 1,
+      routineId: routineA.id,
+      weightKg: 60,
+    })
+    await registerMainSetForExercise({
+      date: '2026-08-12',
+      dayId: dayA.id,
+      displayUnit: 'kg',
+      dropSet: { reps: 8, rir: 3, weightKg: 45 },
+      exercise: exerciseA,
+      reps: 9,
+      rir: 2,
+      routineId: routineA.id,
+      weightKg: 62.5,
+    })
+
+    const references = await getLastSessionReferencesForDay({
+      date: '2026-08-13',
+      dayId: dayA.id,
+      exercises: [exerciseA],
+      routineId: routineA.id,
+    })
+
+    expect(references.get(exerciseA.id)).toMatchObject({
+      date: '2026-08-12',
+      sets: [
+        {
+          dropSets: [expect.objectContaining({ reps: 8, rir: 3, weightKg: 45 })],
+          set: expect.objectContaining({ reps: 9, rir: 2, weightKg: 62.5 }),
+        },
+      ],
+    })
+  })
+
+  it('ignores newer matching exercise logs when they have no main sets', async () => {
+    const routineA = routine('routine-a', 'Rutina A')
+    const dayA = routineDay('day-a', routineA.id, 'Dia A')
+    const exerciseA = routineExercise({ dayId: dayA.id, id: 'exercise-a', routineId: routineA.id })
+    await db.routines.put(routineA)
+    await db.routineDays.put(dayA)
+    await db.routineExercises.put(exerciseA)
+
+    await registerMainSetForExercise({
+      date: '2026-08-10',
+      dayId: dayA.id,
+      displayUnit: 'kg',
+      exercise: exerciseA,
+      reps: 8,
+      rir: 1,
+      routineId: routineA.id,
+      weightKg: 60,
+    })
+    await db.workoutSessions.put({
+      createdAt: now,
+      date: '2026-08-12',
+      dayId: dayA.id,
+      displayUnit: 'kg',
+      id: 'session-without-sets',
+      notes: '',
+      routineId: routineA.id,
+      status: 'draft',
+      updatedAt: now,
+    })
+    await db.exerciseLogs.put({
+      createdAt: now,
+      id: 'log-without-sets',
+      notes: '',
+      routineExerciseId: exerciseA.id,
+      sessionId: 'session-without-sets',
+      snapshot: exerciseSnapshot(exerciseA),
+      state: 'pending',
+      updatedAt: now,
+    })
+
+    const references = await getLastSessionReferencesForDay({
+      date: '2026-08-13',
+      dayId: dayA.id,
+      exercises: [exerciseA],
+      routineId: routineA.id,
+    })
+
+    expect(references.get(exerciseA.id)).toMatchObject({
+      date: '2026-08-10',
+      sets: [
+        {
+          set: expect.objectContaining({ reps: 8, rir: 1, weightKg: 60 }),
+        },
+      ],
+    })
+  })
+  it('ignores last-session references from another routine or day with the same canonical name', async () => {
+    const routineA = routine('routine-a', 'Rutina A')
+    const dayA = routineDay('day-a', routineA.id, 'Dia A')
+    const exerciseA = routineExercise({ dayId: dayA.id, id: 'exercise-a', routineId: routineA.id })
+    const dayB = routineDay('day-b', routineA.id, 'Dia B')
+    const exerciseB = routineExercise({ dayId: dayB.id, id: 'exercise-b', routineId: routineA.id })
+    const routineB = routine('routine-b', 'Rutina B')
+    const dayC = routineDay('day-c', routineB.id, 'Dia A')
+    const exerciseC = routineExercise({ dayId: dayC.id, id: 'exercise-c', routineId: routineB.id })
+    await db.routines.bulkPut([routineA, routineB])
+    await db.routineDays.bulkPut([dayA, dayB, dayC])
+    await db.routineExercises.bulkPut([exerciseA, exerciseB, exerciseC])
+
+    await registerMainSetForExercise({
+      date: '2026-08-12',
+      dayId: dayB.id,
+      displayUnit: 'kg',
+      exercise: exerciseB,
+      reps: 12,
+      rir: 3,
+      routineId: routineA.id,
+      weightKg: 70,
+    })
+    await registerMainSetForExercise({
+      date: '2026-08-12',
+      dayId: dayC.id,
+      displayUnit: 'kg',
+      exercise: exerciseC,
+      reps: 11,
+      rir: 2,
+      routineId: routineB.id,
+      weightKg: 80,
+    })
+
+    const references = await getLastSessionReferencesForDay({
+      date: '2026-08-13',
+      dayId: dayA.id,
+      exercises: [exerciseA],
+      routineId: routineA.id,
+    })
+
+    expect(references.get(exerciseA.id)).toBeUndefined()
+  })
+
+  it('returns no last-session reference when an exercise has no prior history in the active routine and day', async () => {
+    const routineA = routine('routine-a', 'Rutina A')
+    const dayA = routineDay('day-a', routineA.id, 'Dia A')
+    const exerciseA = routineExercise({ dayId: dayA.id, id: 'exercise-a', routineId: routineA.id })
+    await db.routines.put(routineA)
+    await db.routineDays.put(dayA)
+    await db.routineExercises.put(exerciseA)
+
+    const references = await getLastSessionReferencesForDay({
+      date: '2026-08-13',
+      dayId: dayA.id,
+      exercises: [exerciseA],
+      routineId: routineA.id,
+    })
+
+    expect(references.get(exerciseA.id)).toBeUndefined()
+  })
   it('loads only workout sessions that have main sets', async () => {
     const exercise = routineExercise()
     await db.routineExercises.put(exercise)

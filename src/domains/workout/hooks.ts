@@ -1,9 +1,9 @@
 import { useMemo } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import type { RoutineDay, RoutineExercise } from '../routine/types'
-import type { ExerciseState } from './types'
+import type { ExerciseState, LastSessionReference } from './types'
 import { buildMissedTrainingNotice } from './calculations/trainingRotation'
-import { getSessionsWithMainSets, getWeightIncreaseRecommendations, getWorkoutProgressForDay } from './repository'
+import { getLastSessionReferencesForDay, getSessionsWithMainSets, getWeightIncreaseRecommendations, getWorkoutProgressForDay } from './repository'
 
 export function useWorkoutProgress(date: string, dayId: string | undefined, exercises: RoutineExercise[]) {
   const progress = useLiveQuery(() => getWorkoutProgressForDay(date, dayId), [date, dayId], undefined)
@@ -47,6 +47,23 @@ export function useWorkoutProgress(date: string, dayId: string | undefined, exer
       stateByExerciseId,
     }
   }, [exercises, progress])
+}
+
+export function useLastSessionReferencesForDay(input: {
+  date: string
+  dayId: string | undefined
+  exercises: RoutineExercise[]
+  routineId: string | undefined
+}) {
+  const exerciseKey = input.exercises.map((exercise) => exercise.id).join('|')
+
+  return (
+    useLiveQuery(
+      () => getLastSessionReferencesForDay(input),
+      [input.date, input.dayId, input.routineId, exerciseKey],
+      undefined,
+    ) ?? new Map<string, LastSessionReference>()
+  )
 }
 
 export function useWeightIncreaseRecommendations(exercises: RoutineExercise[]) {

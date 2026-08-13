@@ -67,6 +67,16 @@ export type DropSetLog = {
   updatedAt: string
 }
 
+export type LastSessionReferenceSet = {
+  dropSets: DropSetLog[]
+  set: SetLog
+}
+
+export type LastSessionReference = {
+  date: string
+  sets: LastSessionReferenceSet[]
+}
+
 export type SkipLog = {
   id: string
   sessionId: string

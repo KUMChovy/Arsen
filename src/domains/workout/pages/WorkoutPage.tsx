@@ -17,10 +17,10 @@ import type { Routine, RoutineDay, RoutineExercise } from '../../routine/types'
 import { RegisterSetSheet } from '../components/RegisterSetSheet'
 import { EditSetSheet } from '../components/EditSetSheet'
 import { getDefaultWorkoutDayId } from '../calculations/trainingRotation'
-import { useWeightIncreaseRecommendations, useWorkoutProgress, useWorkoutRotationStatus } from '../hooks'
+import { useLastSessionReferencesForDay, useWeightIncreaseRecommendations, useWorkoutProgress, useWorkoutRotationStatus } from '../hooks'
 import { addDropSet, completeSessionForDay, deleteDropSet, deleteMainSet, skipRoutineExerciseForDay, updateDropSet, updateMainSet } from '../services'
 import { setActiveRoutine } from '../../routine/services'
-import type { ExerciseState, SetLog, WeightUnit } from '../types'
+import type { ExerciseState, LastSessionReference, SetLog, WeightUnit } from '../types'
 
 type ExerciseFilter = 'all' | 'pending' | 'in_progress' | 'skipped' | 'done'
 type SelectionSnapshot = {
@@ -45,6 +45,12 @@ export function WorkoutPage() {
   const workoutDay = useWorkoutDayById(selectedDayId)
   const dayExercises = workoutDay?.dayExercises ?? []
   const dailyProgress = useWorkoutProgress(dateKey, workoutDay?.day.id, dayExercises)
+  const lastSessionReferences = useLastSessionReferencesForDay({
+    date: dateKey,
+    dayId: workoutDay?.day.id,
+    exercises: dayExercises,
+    routineId: workoutDay?.routine.id,
+  })
   const rotationStatus = useWorkoutRotationStatus({
     activeRoutineId,
     dateKey,
@@ -88,6 +94,7 @@ export function WorkoutPage() {
         weightKg: currentExercise.currentWeightKg,
       })
     : null
+  const currentLastSessionReference = currentExercise ? lastSessionReferences.get(currentExercise.id) : undefined
   const hasOpenRegisteredSetsToday = dailyProgress.setLogs.length > 0 && dailyProgress.progress?.session?.status !== 'completed'
   const mainSets = dailyProgress.setLogs.filter((set) => set.kind === 'main')
   const dailyVolume = Math.round(totalVolume(mainSets, dailyProgress.dropSets))
@@ -399,6 +406,8 @@ export function WorkoutPage() {
               {currentLoadNote}
             </div>
           ) : null}
+
+          {currentExercise ? <LastSessionReferenceBlock reference={currentLastSessionReference} unit={preferredUnit} /> : null}
 
           <ActionButton className="w-full" disabled={!currentExercise} onClick={() => setSelectedExerciseId(currentExercise?.id ?? null)}>
             Registrar
@@ -746,6 +755,9 @@ function weekdayLabel(date: Date) {
   return new Intl.DateTimeFormat('es-MX', { weekday: 'long' }).format(date)
 }
 
+function formatShortWorkoutDate(date: string) {
+  return new Intl.DateTimeFormat('es-MX', { day: 'numeric', month: 'short' }).format(new Date(`${date}T12:00:00`))
+}
 function stateLabel(state: ExerciseState) {
   const labels: Record<ExerciseState, string> = {
     done: 'Hecho',
@@ -897,6 +909,59 @@ function ExerciseNotesSheet({ exercise, onClose }: { exercise: RoutineExercise; 
   )
 }
 
+function LastSessionReferenceBlock({
+  reference,
+  unit,
+}: {
+  reference: LastSessionReference | undefined
+  unit: WeightUnit
+}) {
+  return (
+    <section className="mb-3 rounded-[10px] border border-dashed border-arsen-purple/35 bg-arsen-bg/40 p-3">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <div className="min-w-0">
+          <strong className="block text-xs font-extrabold text-arsen-purple2">Ultima sesion</strong>
+          <span className="mt-0.5 block text-xs text-arsen-muted">
+            {reference ? formatShortWorkoutDate(reference.date) : 'Sin historial previo'}
+          </span>
+        </div>
+        <span className="shrink-0 rounded-full border border-arsen-purple/35 bg-arsen-purple/15 px-2 py-1 text-xs font-extrabold text-arsen-purple2">
+          Referencia
+        </span>
+      </div>
+      {reference ? (
+        <div className="space-y-2">
+          {reference.sets.length > 0 ? (
+            reference.sets.map(({ dropSets, set }) => (
+              <div className="rounded-[9px] border border-white/10 bg-arsen-surface/55 p-2" key={set.id}>
+                <div className="text-xs font-semibold text-arsen-ink">
+                  Serie {set.order + 1} - {formatWeight(set.weightKg, unit)} - {set.reps} reps - RIR {set.rir}
+                </div>
+                {dropSets.length > 0 ? (
+                  <div className="mt-2 space-y-1 border-l border-arsen-purple/30 pl-2">
+                    {dropSets.map((dropSet) => (
+                      <div className="text-xs text-arsen-muted" key={dropSet.id}>
+                        Drop {dropSet.order + 1} - {formatWeight(dropSet.weightKg, unit)} - {dropSet.reps} reps - RIR {dropSet.rir}
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            ))
+          ) : (
+            <div className="rounded-[9px] border border-white/10 bg-arsen-surface/55 p-2 text-xs text-arsen-muted">
+              Sin series principales registradas esa vez.
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="rounded-[9px] border border-white/10 bg-arsen-surface/55 p-2 text-xs text-arsen-muted">
+          Primera vez con este ejercicio en este dia
+        </div>
+      )}
+    </section>
+  )
+}
 function WeightIncreaseCard({
   recommendations,
   unit,

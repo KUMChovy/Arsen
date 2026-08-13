@@ -1,5 +1,6 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import {
+  getExistingSessionForDateAndDay,
   getProgressDayOptions,
   getProgressEditOptions,
   getProgressExerciseOptions,
@@ -26,6 +27,13 @@ export function useTrainingDates(filters: ProgressOverviewFilters = {}) {
   return useLiveQuery(() => getTrainingDates(filters), [filters.canonicalName, filters.dayId], undefined)
 }
 
+export function useExistingSessionForDateAndDay(date: string | undefined, dayId: string | null | undefined) {
+  return useLiveQuery(
+    () => (date && dayId ? getExistingSessionForDateAndDay(date, dayId) : Promise.resolve(null)),
+    [date, dayId],
+    undefined,
+  )
+}
 export function useSessionDetail(sessionId: string | null, filters: ProgressOverviewFilters = {}) {
   return useLiveQuery(
     () => (sessionId ? getSessionDetail(sessionId, filters) : Promise.resolve(null)),

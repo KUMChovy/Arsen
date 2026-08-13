@@ -7,9 +7,11 @@ import type { AppSettings } from '../domains/settings/types'
 import { addCatalogExerciseToDay, createCatalogExercise, createExerciseAsset, updateCatalogExercise } from '../domains/routine/services'
 import { buildProgressExport, importFullBackup } from '../domains/settings/services'
 import {
+  getExistingSessionForDateAndDay,
   getProgressDayOptions,
   getProgressEditOptions,
   getProgressExerciseOptions,
+  getProgressOverview,
   getSessionDetail,
   getSessionsForDate,
   getTrainingDates,
@@ -643,6 +645,109 @@ describe('IndexedDB integration', () => {
     ])
   })
 
+  it('creates a past manual session through the workout save path and includes it in progress', async () => {
+    const routineA = routine('routine-a', 'Rutina A')
+    const dayA = routineDay('day-a', routineA.id, 'Dia A')
+    const exerciseA = routineExercise({ dayId: dayA.id, id: 'exercise-a', routineId: routineA.id })
+    await db.routines.put(routineA)
+    await db.routineDays.put(dayA)
+    await db.routineExercises.put(exerciseA)
+
+    const registered = await registerMainSetForExercise({
+      date: '2026-08-01',
+      dayId: dayA.id,
+      displayUnit: 'kg',
+      dropSet: { reps: 10, rir: 2, weightKg: 40 },
+      exercise: exerciseA,
+      reps: 8,
+      rir: 1,
+      routineId: routineA.id,
+      weightKg: 60,
+    })
+
+    const sessions = await getSessionsForDate('2026-08-01')
+    const dates = await getTrainingDates()
+    const overview = await getProgressOverview()
+    const detail = await getSessionDetail(registered.sessionId)
+
+    expect(sessions).toEqual([
+      expect.objectContaining({
+        date: '2026-08-01',
+        id: registered.sessionId,
+        routineName: 'Rutina A',
+        setCount: 1,
+        volumeKg: 880,
+      }),
+    ])
+    expect(dates).toContain('2026-08-01')
+    expect(overview).toMatchObject({ sessionCount: 1, totalSets: 1, volumeKg: 880 })
+    expect(overview.chartData).toHaveLength(1)
+    expect(detail?.exercises).toHaveLength(1)
+  })
+
+  it('adds another exercise to an existing date and day session without duplicating the session', async () => {
+    const routineA = routine('routine-a', 'Rutina A')
+    const dayA = routineDay('day-a', routineA.id, 'Dia A')
+    const exerciseA = routineExercise({ dayId: dayA.id, id: 'exercise-a', name: 'Press inclinado', routineId: routineA.id })
+    const exerciseB = routineExercise({ canonicalName: 'remo-barra', dayId: dayA.id, id: 'exercise-b', name: 'Remo barra', routineId: routineA.id })
+    await db.routines.put(routineA)
+    await db.routineDays.put(dayA)
+    await db.routineExercises.bulkPut([exerciseA, exerciseB])
+
+    const first = await registerMainSetForExercise({
+      date: '2026-08-01',
+      dayId: dayA.id,
+      displayUnit: 'kg',
+      exercise: exerciseA,
+      reps: 8,
+      rir: 1,
+      routineId: routineA.id,
+      weightKg: 60,
+    })
+    const second = await registerMainSetForExercise({
+      date: '2026-08-01',
+      dayId: dayA.id,
+      displayUnit: 'kg',
+      exercise: exerciseB,
+      reps: 10,
+      rir: 2,
+      routineId: routineA.id,
+      weightKg: 70,
+    })
+
+    expect(second.sessionId).toBe(first.sessionId)
+    await expect(db.workoutSessions.where('[date+dayId]').equals(['2026-08-01', dayA.id]).count()).resolves.toBe(1)
+    const detail = await getSessionDetail(first.sessionId)
+    expect(detail?.exercises.map((exercise) => exercise.exerciseName).sort()).toEqual(['Press inclinado', 'Remo barra'])
+    expect((await getSessionsForDate('2026-08-01'))[0]).toMatchObject({ exerciseCount: 2, setCount: 2 })
+  })
+
+  it('detects an existing progress session for a date and day', async () => {
+    const routineA = routine('routine-a', 'Rutina A')
+    const dayA = routineDay('day-a', routineA.id, 'Dia A')
+    const exerciseA = routineExercise({ dayId: dayA.id, id: 'exercise-a', routineId: routineA.id })
+    await db.routines.put(routineA)
+    await db.routineDays.put(dayA)
+    await db.routineExercises.put(exerciseA)
+
+    const registered = await registerMainSetForExercise({
+      date: '2026-08-01',
+      dayId: dayA.id,
+      displayUnit: 'kg',
+      exercise: exerciseA,
+      reps: 8,
+      rir: 1,
+      routineId: routineA.id,
+      weightKg: 60,
+    })
+
+    await expect(getExistingSessionForDateAndDay('2026-08-01', dayA.id)).resolves.toMatchObject({
+      id: registered.sessionId,
+      dayName: 'Dia A',
+      routineName: 'Rutina A',
+    })
+    await expect(getExistingSessionForDateAndDay('2026-08-02', dayA.id)).resolves.toBeNull()
+  })
   it('loads session detail and moves a set to another exercise recipe', async () => {
     const routineA = routine('routine-a', 'Rutina A')
     const dayA = routineDay('day-a', routineA.id, 'Dia A')

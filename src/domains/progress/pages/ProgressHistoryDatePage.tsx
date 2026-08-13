@@ -1,12 +1,18 @@
-import { useState, useTransition } from 'react'
-import { ArrowLeft, ChevronDown, Pencil, Trash2 } from 'lucide-react'
+import { useEffect, useState, useTransition } from 'react'
+import { useLiveQuery } from 'dexie-react-hooks'
+import { ArrowLeft, ChevronDown, Pencil, Plus, Trash2 } from 'lucide-react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
+import { ActionButton } from '../../../shared/components/ActionButton'
 import { Card } from '../../../shared/components/Card'
 import { ExerciseArt } from '../../../shared/components/ExerciseArt'
 import { PageHeader } from '../../../shared/components/PageHeader'
 import { confirmDanger } from '../../../shared/utils/alerts'
-import { deleteMainSet, deleteWorkoutSession, moveMainSetToExercise, updateMainSet, updateWorkoutSession } from '../../workout/services'
-import { useProgressEditOptions, useSessionDetail, useSessionsForDate } from '../hooks'
+import { localDateKey } from '../../../shared/utils/date'
+import { deleteMainSet, deleteWorkoutSession, moveMainSetToExercise, registerMainSetForExercise, updateMainSet, updateWorkoutSession } from '../../workout/services'
+import { getAppSettings } from '../../settings/services'
+import { useRoutineDayDetail } from '../../routine/hooks'
+import { CreateSessionSheet, type ManualSessionSaveInput } from '../components/CreateSessionSheet'
+import { useExistingSessionForDateAndDay, useProgressEditOptions, useSessionDetail, useSessionsForDate } from '../hooks'
 import type { RecentSessionSummary, SessionDetail } from '../repository'
 import { EditSetSheet, formatSessionDate, type EditSetState } from './ProgressPage'
 
@@ -22,9 +28,16 @@ export function ProgressHistoryDatePage() {
   const expandedDetail = useSessionDetail(expandedSessionId, filters)
   const editOptions = useProgressEditOptions()
   const [editingSet, setEditingSet] = useState<EditSetState | null>(null)
+  const shouldOpenCreateSession = searchParams.get('create') === '1'
+  const [creatingSession, setCreatingSession] = useState(shouldOpenCreateSession)
+  const [createDate, setCreateDate] = useState(date)
+  const [createDayId, setCreateDayId] = useState<string | null>(null)
+  const appSettings = useLiveQuery(() => getAppSettings(), [], undefined)
+  const createDayDetail = useRoutineDayDetail(createDayId)
+  const existingCreateSession = useExistingSessionForDateAndDay(createDate, createDayId)
+  const maxSessionDate = localDateKey(new Date())
   const [isPending, startTransition] = useTransition()
   const [message, setMessage] = useState<string | null>(null)
-
   function runHistoryAction(action: () => Promise<void>, success: string) {
     startTransition(() => {
       action()
@@ -33,6 +46,37 @@ export function ProgressHistoryDatePage() {
     })
   }
 
+  useEffect(() => {
+    if (!shouldOpenCreateSession) return
+    setCreateDate(date)
+    setCreateDayId(editOptions?.days[0]?.id ?? null)
+    setCreatingSession(true)
+  }, [date, editOptions, shouldOpenCreateSession])
+
+  function openCreateSession() {
+    setCreateDate(date)
+    setCreateDayId(editOptions?.days[0]?.id ?? null)
+    setCreatingSession(true)
+  }
+
+  function saveManualSession(input: ManualSessionSaveInput) {
+    runHistoryAction(async () => {
+      for (const set of input.sets) {
+        await registerMainSetForExercise({
+          date: input.date,
+          dayId: input.dayId,
+          displayUnit: appSettings?.preferredUnit ?? 'kg',
+          dropSet: set.dropSet,
+          exercise: set.exercise,
+          reps: set.reps,
+          rir: set.rir,
+          routineId: input.routineId,
+          weightKg: set.weightKg,
+        })
+      }
+      setCreatingSession(false)
+    }, input.date === date ? 'Sesion guardada' : 'Sesion guardada; cambia de fecha para verla')
+  }
   return (
     <div className="space-y-4">
       <PageHeader eyebrow="Historial por fecha" title={date ? formatSessionDate(date) : 'Historial'}>
@@ -50,6 +94,11 @@ export function ProgressHistoryDatePage() {
           {message}
         </div>
       ) : null}
+
+      <ActionButton className="w-full" disabled={!editOptions} onClick={openCreateSession} tone="acid" type="button">
+        <Plus aria-hidden="true" className="size-5" />
+        Crear sesion
+      </ActionButton>
 
       <section className="space-y-2">
         {sessions.length > 0 ? (
@@ -85,6 +134,22 @@ export function ProgressHistoryDatePage() {
           <Card className="p-4 text-sm text-arsen-muted">No hay sesiones para esta fecha con el filtro actual.</Card>
         )}
       </section>
+
+      {creatingSession && editOptions ? (
+        <CreateSessionSheet
+          date={createDate}
+          disabled={isPending}
+          displayUnit={appSettings?.preferredUnit ?? 'kg'}
+          existingSession={existingCreateSession}
+          exercisesForDay={createDayDetail?.exercises ?? []}
+          maxDate={maxSessionDate}
+          onClose={() => setCreatingSession(false)}
+          onDateChange={setCreateDate}
+          onDayChange={setCreateDayId}
+          onSave={saveManualSession}
+          options={editOptions}
+        />
+      ) : null}
 
       {editingSet && editOptions ? (
         <EditSetSheet
@@ -127,6 +192,7 @@ function HistorySessionCard({
   onToggle: () => void
   session: RecentSessionSummary
 }) {
+
   return (
     <Card className="grid grid-cols-[1fr_auto] items-center gap-3 p-3">
       <button className="min-w-0 text-left" disabled={disabled} onClick={onToggle} type="button">

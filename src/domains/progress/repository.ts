@@ -244,6 +244,13 @@ export async function getSessionsForDate(date: string, filters: ProgressOverview
   return overview.recentSessions.filter((session) => session.date === date)
 }
 
+export async function getExistingSessionForDateAndDay(date: string, dayId: string): Promise<RecentSessionSummary | null> {
+  if (!date || !dayId) return null
+
+  const sessions = await getSessionsForDate(date, { dayId })
+
+  return sessions.find((session) => session.date === date) ?? null
+}
 export async function getProgressExerciseOptions(filters: Pick<ProgressOverviewFilters, 'dayId'> = {}): Promise<ProgressExerciseOption[]> {
   const [sessions, exerciseLogs] = await Promise.all([db.workoutSessions.toArray(), db.exerciseLogs.toArray()])
   const visibleSessionIds = filters.dayId ? new Set(sessions.filter((session) => session.dayId === filters.dayId).map((session) => session.id)) : null

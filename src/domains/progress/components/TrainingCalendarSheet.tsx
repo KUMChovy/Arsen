@@ -5,7 +5,7 @@ import { Card } from '../../../shared/components/Card'
 type TrainingCalendarSheetProps = {
   dates: string[]
   onClose: () => void
-  onSelect: (date: string) => void
+  onSelect: (date: string, hasTraining: boolean) => void
 }
 
 export function TrainingCalendarSheet({ dates, onClose, onSelect }: TrainingCalendarSheetProps) {
@@ -14,6 +14,7 @@ export function TrainingCalendarSheet({ dates, onClose, onSelect }: TrainingCale
   const trainedDates = useMemo(() => new Set(dates), [dates])
   const calendarDays = useMemo(() => monthGrid(monthDate), [monthDate])
   const monthLabel = new Intl.DateTimeFormat('es-MX', { month: 'long', year: 'numeric' }).format(monthDate)
+  const maxDate = localDateKey(new Date())
 
   function moveMonth(delta: number) {
     setMonthDate((current) => new Date(current.getFullYear(), current.getMonth() + delta, 1, 12))
@@ -30,7 +31,7 @@ export function TrainingCalendarSheet({ dates, onClose, onSelect }: TrainingCale
               <CalendarDays aria-hidden="true" className="size-5 text-arsen-purple2" />
               Historial
             </h2>
-            <p className="mt-1 text-xs font-semibold text-arsen-muted">Selecciona una fecha entrenada.</p>
+            <p className="mt-1 text-xs font-semibold text-arsen-muted">Selecciona una fecha o registra una sesion pasada.</p>
           </div>
           <button className="grid size-9 place-items-center rounded-[10px] text-arsen-muted" onClick={onClose} type="button">
             <X aria-hidden="true" className="size-5" />
@@ -59,7 +60,7 @@ export function TrainingCalendarSheet({ dates, onClose, onSelect }: TrainingCale
             </button>
           </div>
 
-          <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-extrabold text-arsen-muted">
+          <div className="grid grid-cols-7 gap-1 text-center text-xs font-extrabold text-arsen-muted">
             {['D', 'L', 'M', 'M', 'J', 'V', 'S'].map((day, index) => (
               <span key={`${day}-${index}`}>{day}</span>
             ))}
@@ -67,19 +68,24 @@ export function TrainingCalendarSheet({ dates, onClose, onSelect }: TrainingCale
           <div className="mt-2 grid grid-cols-7 gap-1">
             {calendarDays.map((date, index) => {
               const key = date ? localDateKey(date) : ''
-              const enabled = key ? trainedDates.has(key) : false
+              const hasTraining = key ? trainedDates.has(key) : false
+              const enabled = key ? key <= maxDate : false
 
               return (
                 <button
-                  aria-label={key ? `Ver sesiones del ${formatDate(key)}` : 'Dia vacio'}
+                  aria-label={key ? (hasTraining ? `Ver sesiones del ${formatDate(key)}` : `Crear sesion del ${formatDate(key)}`) : 'Dia vacio'}
                   className={[
                     'aspect-square rounded-[10px] text-sm font-extrabold',
-                    enabled ? 'border border-arsen-purple2 bg-arsen-purple/35 text-white' : 'border border-white/5 bg-white/[0.03] text-arsen-dim',
+                    hasTraining
+                      ? 'border border-arsen-purple2 bg-arsen-purple/35 text-white'
+                      : enabled
+                        ? 'border border-white/10 bg-white/[0.06] text-arsen-muted'
+                        : 'border border-white/5 bg-white/[0.03] text-arsen-dim',
                   ].join(' ')}
                   disabled={!enabled}
                   key={key || `empty-${index}`}
                   onClick={() => {
-                    if (key) onSelect(key)
+                    if (key) onSelect(key, hasTraining)
                   }}
                   type="button"
                 >

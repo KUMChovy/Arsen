@@ -234,10 +234,11 @@ export function ProgressPage() {
         <TrainingCalendarSheet
           dates={trainingDates}
           onClose={() => setHistorySheetOpen(false)}
-          onSelect={(date) => {
+          onSelect={(date, hasTraining) => {
             const params = new URLSearchParams()
             if (activeDayId) params.set('dayId', activeDayId)
             if (selectedExercise) params.set('exercise', selectedExercise)
+            if (!hasTraining) params.set('create', '1')
             setHistorySheetOpen(false)
             navigate(`/progreso/historial/${date}${params.size ? `?${params.toString()}` : ''}`)
           }}

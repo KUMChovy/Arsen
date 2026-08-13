@@ -11,6 +11,7 @@ import { buildWarmupSets } from '../../../shared/calculations/warmups'
 import { localDateKey } from '../../../shared/utils/date'
 import { confirmDanger } from '../../../shared/utils/alerts'
 import { formatRepRange } from '../../../shared/utils/reps'
+import { formatRestSeconds } from '../../../shared/utils/time'
 import { formatWeight } from '../../../shared/utils/weight'
 import { useActiveRoutineBundle, useExerciseAssets, useRoutines, useWorkoutDayById } from '../../routine/hooks'
 import type { Routine, RoutineDay, RoutineExercise } from '../../routine/types'
@@ -394,11 +395,16 @@ export function WorkoutPage() {
               ['Reps', currentExercise ? formatRepRange(currentExercise.repsMin, currentExercise.repsMax) : '-', 'text-arsen-ink'],
               ['RIR', currentExercise?.recommendedRir ?? '-', 'text-arsen-ink'],
             ].map(([label, value, tone]) => (
-              <div className="border-r border-white/10 px-1 last:border-r-0" key={label}>
-                <span className="block text-xs text-arsen-muted">{label}</span>
-                <strong className={['mt-1 block text-lg', tone].join(' ')}>{value}</strong>
+              <div className="min-w-0 border-r border-white/10 px-1 last:border-r-0" key={label}>
+                <span className="block truncate text-xs text-arsen-muted">{label}</span>
+                <strong className={['mt-1 block truncate text-lg', tone].join(' ')}>{value}</strong>
               </div>
             ))}
+          </div>
+
+          <div aria-label="Descanso recomendado" className="border-t border-white/10 py-3 text-center text-xs">
+            <span className="text-arsen-muted">Descanso</span>
+            <strong className="ml-2 text-sm text-arsen-ink">{formatRestSeconds(currentExercise?.restSeconds)}</strong>
           </div>
 
           {currentLoadNote ? (

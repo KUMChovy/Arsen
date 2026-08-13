@@ -126,7 +126,7 @@ describe('WorkoutPage', () => {
     workoutMocks.lastSessionReferences = new Map()
   })
 
-  it('renders clean daily workout without date, notes or rest controls', () => {
+  it('renders clean daily workout with current exercise rest visible', () => {
     render(<WorkoutPage />)
 
     expect(screen.getByRole('heading', { name: /Entreno/i })).toBeInTheDocument()
@@ -134,7 +134,9 @@ describe('WorkoutPage', () => {
     expect(screen.getAllByText('Press inclinado').length).toBeGreaterThan(0)
     expect(screen.queryByLabelText('Notas personales')).not.toBeInTheDocument()
     expect(screen.queryByText('Fecha de sesion')).not.toBeInTheDocument()
-    expect(screen.queryByText('Descanso')).not.toBeInTheDocument()
+    expect(screen.getByText('Descanso')).toBeInTheDocument()
+    expect(screen.getByText('1:30 min')).toBeInTheDocument()
+    expect(screen.getByLabelText('Descanso recomendado')).toHaveTextContent('Descanso1:30 min')
   })
 
   it('completes current session', async () => {

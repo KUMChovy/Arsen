@@ -7,6 +7,7 @@ import { Card } from '../../../shared/components/Card'
 import { ExerciseArt } from '../../../shared/components/ExerciseArt'
 import { PageHeader } from '../../../shared/components/PageHeader'
 import { formatRepRange } from '../../../shared/utils/reps'
+import { formatRestSeconds } from '../../../shared/utils/time'
 import { formatWeight } from '../../../shared/utils/weight'
 import { normalizeWarmupProtocol, warmupProtocolLabel } from '../../../shared/calculations/warmups'
 import { useWeightIncreaseRecommendations } from '../../workout/hooks'
@@ -113,7 +114,7 @@ function ExerciseDetailCard({
 
         {expanded ? (
           <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-            <DetailMetric label="Descanso" value={`${exercise.restSeconds} seg`} />
+            <DetailMetric label="Descanso" value={formatRestSeconds(exercise.restSeconds)} />
             <button
               aria-label="Ver descripcion del calentamiento"
               className="rounded-[10px] border border-white/10 bg-arsen-bg/55 p-2 text-left"

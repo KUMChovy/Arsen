@@ -29,6 +29,9 @@ importers:
       lucide-react:
         specifier: 0.468.0
         version: 0.468.0(react@19.2.7)
+      papaparse:
+        specifier: 5.6.0
+        version: 5.6.0
       react:
         specifier: 19.2.7
         version: 19.2.7
@@ -57,6 +60,9 @@ importers:
       '@types/node':
         specifier: 22.20.1
         version: 22.20.1
+      '@types/papaparse':
+        specifier: 5.5.2
+        version: 5.5.2
       '@types/react':
         specifier: 19.2.17
         version: 19.2.17
@@ -761,6 +767,9 @@ packages:
   '@types/node@22.20.1':
     resolution: {integrity: sha512-EANqOCF9QFyra+4pfxUcX9STKJpCLjMbObVzljIJomAWSnuSIEAvyzEU53GaajbXJEgdh0iEcPL+DGvpUd4k1Q==}
 
+  '@types/papaparse@5.5.2':
+    resolution: {integrity: sha512-gFnFp/JMzLHCwRf7tQHrNnfhN4eYBVYYI897CGX4MY1tzY9l2aLkVyx2IlKZ/SAqDbB3I1AOZW5gTMGGsqWliA==}
+
   '@types/react-dom@19.2.3':
     resolution: {integrity: sha512-jp2L/eY6fn+KgVVQAOqYItbF0VY/YApe5Mz2F0aykSO8gx31bYCZyvSeYxCHKvzHG5eZjc+zyaS5BrBWya2+kQ==}
     peerDependencies:
@@ -1184,6 +1193,9 @@ packages:
   node-releases@2.0.51:
     resolution: {integrity: sha512-wRNIrw4DmVLKQlbgOMdkMx27Wrpzes2hh5Jtbi2bjPd+4wJstWIqP5A+lscnqbm0xxmT5Bpg8Lec5ItEBwx6BQ==}
     engines: {node: '>=18'}
+
+  papaparse@5.6.0:
+    resolution: {integrity: sha512-N2vuNQAYGK1/4vs6HJX86+VYU6OkiSTgdJz3JQfTk1y51cFCO/U8gnaeTF4iNE4r57Tt0sV47dUua1/19pxO6Q==}
 
   parse5@8.0.1:
     resolution: {integrity: sha512-z1e/HMG90obSGeidlli3hj7cbocou0/wa5HacvI3ASx34PecNjNQeaHNo5WIZpWofN9kgkqV1q5YvXe3F0FoPw==}
@@ -2058,6 +2070,10 @@ snapshots:
     dependencies:
       undici-types: 6.21.0
 
+  '@types/papaparse@5.5.2':
+    dependencies:
+      '@types/node': 22.20.1
+
   '@types/react-dom@19.2.3(@types/react@19.2.17)':
     dependencies:
       '@types/react': 19.2.17
@@ -2437,6 +2453,8 @@ snapshots:
   nanoid@3.3.16: {}
 
   node-releases@2.0.51: {}
+
+  papaparse@5.6.0: {}
 
   parse5@8.0.1:
     dependencies:

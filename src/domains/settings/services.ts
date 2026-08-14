@@ -1,3 +1,4 @@
+import Papa from 'papaparse'
 import { CURRENT_SCHEMA_VERSION, db } from '../../db/schema'
 import type {
   ExerciseCatalogItem,
@@ -126,53 +127,15 @@ export async function exportProgressJson(filters: ProgressExportFilters = {}) {
 }
 
 /**
- * Exports progress CSV from the same timeline as progress JSON, with one row per main set.
+ * Exports progress CSV for end users, with one row per main set and drop set.
  */
 export async function exportProgressCsv(filters: ProgressExportFilters = {}) {
   const data = await buildProgressExport(filters)
-  const rows = [
-    [
-      'date',
-      'routine',
-      'routine_id',
-      'day',
-      'day_id',
-      'exercise',
-      'exercise_log_id',
-      'routine_exercise_id',
-      'muscle',
-      'equipment',
-      'set_order',
-      'set_log_id',
-      'weight_kg',
-      'reps',
-      'rir',
-      'volume',
-      'score',
-    ],
-    ...data.timeline.map((row) => [
-      row.date,
-      row.routineName,
-      row.routineId,
-      row.dayName,
-      row.dayId,
-      row.exerciseName,
-      row.exerciseLogId,
-      row.routineExerciseId,
-      row.mainMuscle,
-      row.equipment,
-      String(row.setOrder),
-      row.setLogId,
-      String(row.weightKg),
-      String(row.reps),
-      String(row.rir),
-      String(row.volume),
-      String(row.score),
-    ]),
-  ]
-  const csv = rows.map((row) => row.map(escapeCsvCell).join(',')).join('\n')
+  const rows = [CSV_EXPORT_HEADERS, ...data.timeline.flatMap(csvRowsForTimelineRow)]
+  const csv = `\ufeffsep=;
+${Papa.unparse(rows, { delimiter: ';' })}`
 
-  downloadText(progressExportFilename(filters, 'csv'), csv, 'text/csv')
+  downloadText(progressExportFilename(filters, 'csv'), csv, 'text/csv;charset=utf-8')
 }
 
 export async function getStorageOverview() {
@@ -383,11 +346,108 @@ function buildGraphPoints(timeline: Array<{ canonicalName: string; date: string;
   )
 }
 
-function escapeCsvCell(value: string) {
-  if (!/[",\n]/.test(value)) return value
+const CSV_EXPORT_HEADERS = [
+  'Fecha',
+  'Rutina',
+  'Dia',
+  'Ejercicio',
+  'Musculo',
+  'Equipo',
+  'Serie',
+  'Tipo de serie',
+  'Serie principal',
+  'Peso (kg)',
+  'Repeticiones',
+  'RIR',
+  'Volumen',
+  'Puntaje',
+]
 
-  return `"${value.replaceAll('"', '""')}"`
+type ProgressTimelineRow = Awaited<ReturnType<typeof buildProgressExport>>['timeline'][number]
+
+function csvRowsForTimelineRow(row: ProgressTimelineRow) {
+  const mainRow = csvRow({
+    dayName: row.dayName,
+    equipment: row.equipment,
+    exerciseName: row.exerciseName,
+    mainMuscle: row.mainMuscle,
+    parentSetOrder: '',
+    reps: row.reps,
+    rir: row.rir,
+    routineName: row.routineName,
+    score: row.score,
+    setOrder: row.setOrder,
+    setType: 'principal',
+    trainedAt: row.date,
+    volume: volumeForSet(row),
+    weightKg: row.weightKg,
+  })
+  const dropRows = [...row.dropSets]
+    .sort((a, b) => a.order - b.order)
+    .map((dropSet) =>
+      csvRow({
+        dayName: row.dayName,
+        equipment: row.equipment,
+        exerciseName: row.exerciseName,
+        mainMuscle: row.mainMuscle,
+        parentSetOrder: row.setOrder,
+        reps: dropSet.reps,
+        rir: dropSet.rir,
+        routineName: row.routineName,
+        score: performanceScore(dropSet),
+        setOrder: `Drop ${dropSet.order + 1}`,
+        setType: 'drop',
+        trainedAt: row.date,
+        volume: volumeForSet(dropSet),
+        weightKg: dropSet.weightKg,
+      }),
+    )
+
+  return [mainRow, ...dropRows]
 }
+
+function csvRow(input: {
+  dayName: string
+  equipment: string
+  exerciseName: string
+  mainMuscle: string
+  parentSetOrder: number | ''
+  reps: number
+  rir: number
+  routineName: string
+  score: number
+  setOrder: number | string
+  setType: 'principal' | 'drop'
+  trainedAt: string
+  volume: number
+  weightKg: number
+}) {
+  return [
+    input.trainedAt,
+    formatCsvText(input.routineName),
+    formatCsvText(input.dayName),
+    formatCsvText(input.exerciseName),
+    formatCsvText(input.mainMuscle),
+    formatCsvText(input.equipment),
+    String(input.setOrder),
+    input.setType,
+    String(input.parentSetOrder),
+    formatCsvDecimal(input.weightKg),
+    String(input.reps),
+    String(input.rir),
+    formatCsvDecimal(input.volume),
+    formatCsvDecimal(input.score),
+  ]
+}
+
+function formatCsvText(value: string) {
+  return value.replace(/[\r\n]+/g, ' ').trim()
+}
+
+function formatCsvDecimal(value: number) {
+  return value.toFixed(2).replace('.', ',')
+}
+
 
 function progressExportFilename(filters: ProgressExportFilters, extension: 'csv' | 'json') {
   const suffix = filters.dayId || filters.canonicalName ? '-filtrado' : ''

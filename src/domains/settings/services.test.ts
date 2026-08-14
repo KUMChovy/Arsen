@@ -5,7 +5,7 @@ import { DEFAULT_AVAILABLE_PLATES_KG } from '../../shared/calculations/equipment
 import { downloadText } from '../../shared/utils/download'
 import { buildProgressExport, exportProgressCsv, resolveAvailablePlateWeightsKg, updateAvailablePlateWeights } from './services'
 import type { Routine, RoutineDay, RoutineExercise } from '../routine/types'
-import type { ExerciseLog, SetLog, WorkoutSession } from '../workout/types'
+import type { DropSetLog, ExerciseLog, SetLog, WorkoutSession } from '../workout/types'
 import type { AppSettings } from './types'
 
 vi.mock('../../shared/utils/download', () => ({
@@ -66,11 +66,12 @@ describe('settings export services', () => {
       availablePlateWeightsKg: [20, 10, 2.5],
     })
   })
-  it('exports valid escaped progress CSV', async () => {
+  it('exports user-readable progress CSV with BOM and drop-set rows', async () => {
     await seedProgressData({
-      dayName: 'Dia, A',
+      dayName: 'Dia A',
       exerciseName: 'Press "inclinado"\npausado',
-      routineName: 'Rutina, "A"',
+      routineName: 'Rutina; "A"',
+      withDropSet: true,
     })
 
     await exportProgressCsv()
@@ -79,15 +80,21 @@ describe('settings export services', () => {
     expect(call).toBeDefined()
     if (!call) return
     const [filename, csv, type] = call
+    const normalizedCsv = csv.replace(/\r\n/g, '\n')
 
     expect(filename).toMatch(/^arsen-progreso-\d{4}-\d{2}-\d{2}\.csv$/)
-    expect(type).toBe('text/csv')
-    expect(csv).toContain(
-      'date,routine,routine_id,day,day_id,exercise,exercise_log_id,routine_exercise_id,muscle,equipment,set_order,set_log_id,weight_kg,reps,rir,volume,score',
+    expect(type).toBe('text/csv;charset=utf-8')
+    expect(normalizedCsv.startsWith('\ufeff')).toBe(true)
+    const physicalLines = normalizedCsv.slice(1).split('\n')
+    expect(physicalLines[0]).toBe('sep=;')
+    expect(physicalLines[1]).toBe(
+      'Fecha;Rutina;Dia;Ejercicio;Musculo;Equipo;Serie;Tipo de serie;Serie principal;Peso (kg);Repeticiones;RIR;Volumen;Puntaje',
     )
-    expect(csv).toContain('"Rutina, ""A"""')
-    expect(csv).toContain('"Dia, A"')
-    expect(csv).toContain('"Press ""inclinado""\npausado"')
+    expect(normalizedCsv).toContain('"Rutina; ""A"""')
+    expect(physicalLines).toHaveLength(4)
+    expect(normalizedCsv).toContain('"Press ""inclinado"" pausado"')
+    expect(normalizedCsv).toContain(';principal;;60,00;10;2;600,00;80,00')
+    expect(normalizedCsv).toContain(';Drop 1;drop;1;40,00;10;2;400,00;53,33')
   })
 })
 
@@ -113,7 +120,7 @@ async function resetDb() {
   await db.open()
 }
 
-async function seedProgressData(input: { dayName: string; exerciseName: string; routineName: string }) {
+async function seedProgressData(input: { dayName: string; exerciseName: string; routineName: string; withDropSet?: boolean }) {
   const routine: Routine = {
     createdAt: now,
     id: 'routine-1',
@@ -211,4 +218,20 @@ async function seedProgressData(input: { dayName: string; exerciseName: string; 
   await db.workoutSessions.put(session)
   await db.exerciseLogs.put(exerciseLog)
   await db.setLogs.put(setLog)
+
+  if (input.withDropSet) {
+    const dropSetLog: DropSetLog = {
+      createdAt: now,
+      displayUnit: 'kg',
+      id: 'drop-set-1',
+      order: 0,
+      reps: 10,
+      rir: 2,
+      setLogId: setLog.id,
+      updatedAt: now,
+      weightKg: 40,
+    }
+
+    await db.dropSetLogs.put(dropSetLog)
+  }
 }

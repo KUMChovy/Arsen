@@ -1,4 +1,4 @@
-import { useRef, useState, type PropsWithChildren } from 'react'
+import { useEffect, useRef, useState, type PropsWithChildren } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useNavigate } from 'react-router-dom'
 import {
@@ -7,6 +7,7 @@ import {
   CloudDownload,
   CloudUpload,
   Database,
+  Disc3,
   FileUp,
   Flame,
   Folder,
@@ -30,11 +31,14 @@ import {
   getStorageOverview,
   importFullBackup,
   requestPersistentStorage,
+  resolveAvailablePlateWeightsKg,
+  updateAvailablePlateWeights,
   updatePreferredUnit,
   type BackupImportMode,
 } from '../services'
 import { getDeloadOverview, requestDeloadNotifications } from '../notifications'
 import { localDateKey } from '../../../shared/utils/date'
+import { kgToUnit, unitToKg } from '../../../shared/utils/weight'
 
 const routineActions = [
   { icon: Folder, label: 'Rutinas guardadas', meta: 'Cambiar, duplicar o eliminar' },
@@ -52,9 +56,17 @@ export function SettingsPage() {
   const [cleanupStartDate, setCleanupStartDate] = useState(today)
   const [message, setMessage] = useState<string | null>(null)
   const appSettings = useLiveQuery(() => getAppSettings(), [], undefined)
+  const preferredUnit = appSettings?.preferredUnit ?? 'kg'
+  const resolvedPlates = resolveAvailablePlateWeightsKg(appSettings)
+  const resolvedPlateKey = resolvedPlates.join('|')
+  const [platesValue, setPlatesValue] = useState('')
   const deload = useLiveQuery(() => getDeloadOverview(), [], undefined)
   const storage = useLiveQuery(() => getStorageOverview(), [], undefined)
   const storagePercent = storage?.usage && storage.quota ? Math.min(100, Math.round((storage.usage / storage.quota) * 100)) : 0
+
+  useEffect(() => {
+    setPlatesValue(resolvedPlates.map((plate) => formatPlateInputValue(plate, preferredUnit)).join(', '))
+  }, [preferredUnit, resolvedPlateKey])
 
   async function runAction(id: string, action: () => Promise<void | boolean>, success: string) {
     try {
@@ -67,6 +79,22 @@ export function SettingsPage() {
     } finally {
       setBusyAction(null)
     }
+  }
+
+  function savePlateWeights() {
+    const rawValues = platesValue.split(',').map((value) => value.trim()).filter(Boolean)
+    const values = rawValues.map(Number)
+
+    if (values.some((value) => !Number.isFinite(value) || value <= 0)) {
+      setMessage('Escribe discos validos separados por coma')
+      return
+    }
+
+    void runAction(
+      'plates',
+      () => updateAvailablePlateWeights(values.map((value) => unitToKg(value, preferredUnit))),
+      'Discos actualizados',
+    )
   }
 
   return (
@@ -169,6 +197,34 @@ export function SettingsPage() {
               </button>
             ))}
           </div>
+        </Card>
+        <Card className="grid gap-3 p-3">
+          <div className="grid grid-cols-[42px_1fr] items-center gap-3">
+            <div className="grid size-10 place-items-center text-arsen-purple2">
+              <Disc3 aria-hidden="true" className="size-6" />
+            </div>
+            <div>
+              <strong>Discos disponibles</strong>
+              <span className="mt-1 block text-xs text-arsen-muted">Separados por coma, en {preferredUnit}</span>
+            </div>
+          </div>
+          <label className="block">
+            <span className="sr-only">Discos disponibles</span>
+            <input
+              className="min-h-11 w-full rounded-[10px] border border-white/10 bg-arsen-bg px-3 text-sm font-extrabold text-arsen-ink"
+              onChange={(event) => setPlatesValue(event.target.value)}
+              type="text"
+              value={platesValue}
+            />
+          </label>
+          <button
+            className="min-h-10 rounded-[10px] border border-arsen-purple/40 px-3 text-sm font-extrabold text-arsen-purple2 disabled:opacity-50"
+            disabled={busyAction === 'plates'}
+            onClick={savePlateWeights}
+            type="button"
+          >
+            Guardar discos
+          </button>
         </Card>
       </SettingsSection>
 
@@ -381,7 +437,7 @@ function Metric({ label, value }: { label: string; value: number }) {
   return (
     <div className="px-2 py-3">
       <div className="text-lg font-black text-arsen-acid">{value}</div>
-      <div className="text-[11px] text-arsen-muted">{label}</div>
+      <div className="text-xs text-arsen-muted">{label}</div>
     </div>
   )
 }
@@ -393,4 +449,10 @@ function formatBytes(value?: number | null) {
   if (gb >= 1) return `${gb.toFixed(2)} GB`
 
   return `${(value / 1024 / 1024).toFixed(1)} MB`
+}
+
+function formatPlateInputValue(valueKg: number, unit: 'kg' | 'lb') {
+  const value = unit === 'kg' ? valueKg : kgToUnit(valueKg, unit)
+
+  return String(Math.round(value * 100) / 100)
 }

@@ -83,11 +83,13 @@ export function WorkoutPage() {
   const completedCount = dailyProgress.completedCount
   const totalCount = dayExercises.length
   const preferredUnit = workoutDay?.settings.preferredUnit ?? 'kg'
+  const availablePlateWeightsKg = workoutDay?.settings.availablePlateWeightsKg
   const selectedWeekday = workoutDay?.day.weekday
   const isOffCalendar = selectedWeekday !== undefined && selectedWeekday !== null && selectedWeekday !== selectedDate.getDay()
   const warmups = buildWarmupsForExercise(currentExercise, preferredUnit)
   const currentLoadNote = currentExercise
     ? buildEquipmentLoadNote({
+        availablePlateWeightsKg,
         barWeightKg: currentExercise.barWeightKg,
         equipment: currentExercise.equipment,
         loadMode: currentExercise.loadMode,
@@ -623,6 +625,7 @@ export function WorkoutPage() {
 
       {selectedExercise && workoutDay ? (
         <RegisterSetSheet
+          availablePlateWeightsKg={availablePlateWeightsKg}
           date={dateKey}
           dayId={workoutDay.day.id}
           displayUnit={workoutDay.settings.preferredUnit}

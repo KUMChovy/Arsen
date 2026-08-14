@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildEquipmentLoadNote,
+  calculatePlateBreakdown,
+  DEFAULT_AVAILABLE_PLATES_KG,
   defaultLoadSettingsForEquipment,
   loadSettingsForEquipment,
+  normalizeAvailablePlateWeightsKg,
   normalizeEquipment,
 } from './equipmentLoad'
 
@@ -28,6 +31,29 @@ describe('equipment load calculations', () => {
     })
   })
 
+  it('calculates exact barbell plates greedily without passing the target', () => {
+    expect(calculatePlateBreakdown({ targetWeightKg: 30, availablePlateWeightsKg: [25, 20, 10, 5, 2.5] })).toEqual({
+      isExact: true,
+      matchedWeightKg: 30,
+      platesKg: [25, 5],
+      remainingWeightKg: 0,
+    })
+  })
+
+  it('calculates the closest plate breakdown below a non-exact target', () => {
+    expect(calculatePlateBreakdown({ targetWeightKg: 28.2, availablePlateWeightsKg: [25, 10, 5, 2.5] })).toEqual({
+      isExact: false,
+      matchedWeightKg: 27.5,
+      platesKg: [25, 2.5],
+      remainingWeightKg: 0.7,
+    })
+  })
+
+  it('normalizes configurable plate inventory', () => {
+    expect(normalizeAvailablePlateWeightsKg([2.5, 20, 0, Number.NaN, 2.5, -1, 10])).toEqual([20, 10, 2.5])
+    expect(normalizeAvailablePlateWeightsKg([])).toEqual(DEFAULT_AVAILABLE_PLATES_KG)
+  })
+
   it('builds a barbell note from disk weight', () => {
     expect(
       buildEquipmentLoadNote({
@@ -37,7 +63,32 @@ describe('equipment load calculations', () => {
         unit: 'kg',
         weightKg: 40,
       }),
-    ).toBe('Discos por lado: 20 kg · Total con barra: 60 kg')
+    ).toBe('Discos: 20 kg por lado - Total con barra: 60 kg')
+  })
+
+  it('preserves small plate decimals in barbell notes', () => {
+    expect(
+      buildEquipmentLoadNote({
+        barWeightKg: 20,
+        equipment: 'Barra',
+        loadMode: 'split',
+        unit: 'kg',
+        weightKg: 57.5,
+      }),
+    ).toBe('Discos: 25 + 2.5 + 1.25 kg por lado - Total con barra: 77.5 kg')
+  })
+
+  it('builds a barbell note with concrete plates and remaining weight', () => {
+    expect(
+      buildEquipmentLoadNote({
+        availablePlateWeightsKg: [25, 10, 5, 2.5],
+        barWeightKg: 20,
+        equipment: 'Barra',
+        loadMode: 'split',
+        unit: 'kg',
+        weightKg: 56.4,
+      }),
+    ).toBe('Discos: 25 + 2.5 kg por lado - Faltan 0.7 kg por lado - Total con barra: 76.4 kg')
   })
 
   it('builds a split machine note', () => {
@@ -73,6 +124,6 @@ describe('equipment load calculations', () => {
         unit: 'lb',
         weightKg: 40,
       }),
-    ).toBe('Discos por lado: 44.1 lb · Total con barra: 132.3 lb')
+    ).toBe('Discos: 44.1 lb por lado - Total con barra: 132.3 lb')
   })
 })

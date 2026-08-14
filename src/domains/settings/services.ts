@@ -9,7 +9,7 @@ import type {
 } from '../routine/types'
 import type { AppSettings } from './types'
 import type { DropSetLog, ExerciseLog, SetLog, SkipLog, WeightUnit, WorkoutSession } from '../workout/types'
-import { loadSettingsForEquipment } from '../../shared/calculations/equipmentLoad'
+import { loadSettingsForEquipment, normalizeAvailablePlateWeightsKg } from '../../shared/calculations/equipmentLoad'
 import { performanceScore, volumeForSet } from '../../shared/calculations/workout'
 import { normalizeWarmupProtocol } from '../../shared/calculations/warmups'
 import { downloadJson, downloadText } from '../../shared/utils/download'
@@ -209,6 +209,17 @@ export async function getAppSettings() {
 export async function updatePreferredUnit(preferredUnit: WeightUnit) {
   await db.settings.update('app', {
     preferredUnit,
+    updatedAt: new Date().toISOString(),
+  })
+}
+
+export function resolveAvailablePlateWeightsKg(settings?: Pick<AppSettings, 'availablePlateWeightsKg'> | null) {
+  return normalizeAvailablePlateWeightsKg(settings?.availablePlateWeightsKg)
+}
+
+export async function updateAvailablePlateWeights(availablePlateWeightsKg: number[]) {
+  await db.settings.update('app', {
+    availablePlateWeightsKg: normalizeAvailablePlateWeightsKg(availablePlateWeightsKg),
     updatedAt: new Date().toISOString(),
   })
 }

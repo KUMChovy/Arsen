@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { loadSettingsForEquipment, normalizeEquipment } from '../calculations/equipmentLoad'
+import { DEFAULT_AVAILABLE_PLATES_KG, loadSettingsForEquipment, normalizeAvailablePlateWeightsKg, normalizeEquipment } from '../calculations/equipmentLoad'
 import { normalizeWarmupProtocol } from '../calculations/warmups'
 
 const equipmentSchema = z.string().transform(normalizeEquipment)
@@ -145,6 +145,7 @@ export const exerciseAssetSchema = z
 export const appSettingsSchema = z
   .object({
     activeRoutineId: z.string().nullable(),
+    availablePlateWeightsKg: z.array(z.number()).optional().default(DEFAULT_AVAILABLE_PLATES_KG).transform(normalizeAvailablePlateWeightsKg),
     createdAt: z.string(),
     deloadNotifications: z.boolean(),
     id: z.literal('app'),

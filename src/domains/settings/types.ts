@@ -5,6 +5,7 @@ export type AppSettings = {
   schemaVersion: number
   activeRoutineId: string | null
   preferredUnit: WeightUnit
+  availablePlateWeightsKg?: number[]
   deloadNotifications: boolean
   lastDeloadNotificationDate?: string | null
   notificationPermission?: NotificationPermission | 'unsupported'

@@ -58,24 +58,45 @@ describe('RegisterSetSheet', () => {
     expect(onClose).toHaveBeenCalled()
   })
 
+  it('uses configured plates when recalculating the barbell note', () => {
+    render(<Sheet availablePlateWeightsKg={[20, 10]} onClose={vi.fn()} />)
+
+    expect(screen.getByText('Discos: 20 + 10 kg por lado - Total con barra: 80 kg')).toBeInTheDocument()
+  })
+
+  it('does not show plate calculator for dumbbells', () => {
+    render(<Sheet exercise={{ ...exercise, equipment: 'Mancuerna', loadMode: 'single', barWeightKg: 0 }} onClose={vi.fn()} />)
+
+    expect(screen.queryByText(/Discos:/i)).not.toBeInTheDocument()
+  })
+
   it('recalculates the equipment load note from the entered weight', () => {
     render(<Sheet onClose={vi.fn()} />)
 
-    expect(screen.getByText('Discos por lado: 30 kg · Total con barra: 80 kg')).toBeInTheDocument()
+    expect(screen.getByText('Discos: 25 + 5 kg por lado - Total con barra: 80 kg')).toBeInTheDocument()
 
     fireEvent.change(screen.getByLabelText('KG'), { target: { value: '40' } })
 
-    expect(screen.getByText('Discos por lado: 20 kg · Total con barra: 60 kg')).toBeInTheDocument()
+    expect(screen.getByText('Discos: 20 kg por lado - Total con barra: 60 kg')).toBeInTheDocument()
   })
 })
 
-function Sheet({ onClose }: { onClose: () => void }) {
+function Sheet({
+  availablePlateWeightsKg,
+  exercise: sheetExercise = exercise,
+  onClose,
+}: {
+  availablePlateWeightsKg?: number[]
+  exercise?: RoutineExercise
+  onClose: () => void
+}) {
   return (
     <RegisterSetSheet
       date="2026-07-20"
       dayId="day-1"
       displayUnit="kg"
-      exercise={exercise}
+      availablePlateWeightsKg={availablePlateWeightsKg}
+      exercise={sheetExercise}
       onClose={onClose}
       routineId="routine-1"
     />

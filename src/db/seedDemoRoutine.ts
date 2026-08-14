@@ -1,6 +1,6 @@
 import type { Equipment, RoutineDay, RoutineExercise } from '../domains/routine/types'
 import type { AppSettings } from '../domains/settings/types'
-import { loadSettingsForEquipment } from '../shared/calculations/equipmentLoad'
+import { DEFAULT_AVAILABLE_PLATES_KG, loadSettingsForEquipment } from '../shared/calculations/equipmentLoad'
 import { bundledAssetIdForExercise } from '../shared/assets/exerciseImages'
 import { createId } from '../shared/utils/id'
 import { canonicalName } from '../shared/utils/normalize'
@@ -100,6 +100,7 @@ export async function ensureDemoData() {
     schemaVersion: 5,
     activeRoutineId: routineId,
     preferredUnit: 'kg',
+    availablePlateWeightsKg: DEFAULT_AVAILABLE_PLATES_KG,
     deloadNotifications: true,
     lastDeloadNotificationDate: null,
     notificationPermission: 'default',

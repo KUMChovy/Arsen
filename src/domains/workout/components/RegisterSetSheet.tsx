@@ -10,6 +10,7 @@ import { registerMainSetForExercise } from '../services'
 import type { WeightUnit } from '../types'
 
 type RegisterSetSheetProps = {
+  availablePlateWeightsKg?: number[] | null
   date: string
   dayId: string
   displayUnit: WeightUnit
@@ -19,6 +20,7 @@ type RegisterSetSheetProps = {
 }
 
 export function RegisterSetSheet({
+  availablePlateWeightsKg,
   date,
   dayId,
   displayUnit,
@@ -46,6 +48,7 @@ export function RegisterSetSheet({
   if (!exercise) return null
   const activeExercise = exercise
   const equipmentLoadNote = buildEquipmentLoadNote({
+    availablePlateWeightsKg,
     barWeightKg: activeExercise.barWeightKg,
     equipment: activeExercise.equipment,
     loadMode: activeExercise.loadMode,

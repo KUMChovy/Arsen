@@ -1,9 +1,14 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest'
-import { render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SettingsPage } from './SettingsPage'
+import { updateAvailablePlateWeights } from '../services'
+
+const settingsPageMocks = vi.hoisted(() => ({
+  updateAvailablePlateWeights: vi.fn(() => Promise.resolve()),
+}))
 
 vi.mock('dexie-react-hooks', () => ({
   useLiveQuery: (callback: () => unknown) => callback(),
@@ -16,6 +21,7 @@ vi.mock('../services', async (importOriginal) => {
     ...actual,
     getAppSettings: () => ({
       activeRoutineId: 'routine-1',
+      availablePlateWeightsKg: [25, 20, 15, 10, 5, 2.5, 1.25],
       deloadNotifications: true,
       id: 'app',
       preferredUnit: 'kg',
@@ -30,6 +36,7 @@ vi.mock('../services', async (importOriginal) => {
       setLogs: 8,
       usage: 1024 * 1024,
     }),
+    updateAvailablePlateWeights: settingsPageMocks.updateAvailablePlateWeights,
   }
 })
 
@@ -47,6 +54,11 @@ vi.mock('../../routine/importExport', () => ({
 }))
 
 describe('SettingsPage', () => {
+  afterEach(() => {
+    cleanup()
+    settingsPageMocks.updateAvailablePlateWeights.mockClear()
+  })
+
   it('shows safe backup import modes and cleanup controls', () => {
     render(
       <MemoryRouter>
@@ -62,5 +74,22 @@ describe('SettingsPage', () => {
     expect(screen.getByRole('button', { name: /Borrar rango de fechas/i })).toBeInTheDocument()
     expect(screen.getByLabelText('Desde')).toHaveAttribute('type', 'date')
     expect(screen.getByLabelText('Hasta')).toHaveAttribute('type', 'date')
+  })
+
+  it('saves configurable available plates from the preferred unit', async () => {
+    render(
+      <MemoryRouter>
+        <SettingsPage />
+      </MemoryRouter>,
+    )
+
+    expect(screen.getByLabelText('Discos disponibles')).toHaveValue('25, 20, 15, 10, 5, 2.5, 1.25')
+
+    fireEvent.change(screen.getByLabelText('Discos disponibles'), { target: { value: '20, 10, 2.5' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar discos' }))
+
+    await waitFor(() => {
+      expect(updateAvailablePlateWeights).toHaveBeenCalledWith([20, 10, 2.5])
+    })
   })
 })

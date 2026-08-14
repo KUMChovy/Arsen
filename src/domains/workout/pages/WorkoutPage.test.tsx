@@ -33,6 +33,7 @@ vi.mock('../../routine/hooks', () => ({
     ]),
     routine,
     settings: {
+      availablePlateWeightsKg: [20, 10],
       preferredUnit: 'kg',
     },
   }),
@@ -48,6 +49,7 @@ vi.mock('../../routine/hooks', () => ({
         name: 'Mi rutina actual',
       },
       settings: {
+        availablePlateWeightsKg: [20, 10],
         preferredUnit: 'kg',
       },
     }
@@ -124,6 +126,9 @@ describe('WorkoutPage', () => {
     }
     workoutMocks.weightIncreaseRecommendations = []
     workoutMocks.lastSessionReferences = new Map()
+    exercise.equipment = 'Barra'
+    exercise.loadMode = 'split'
+    exercise.barWeightKg = 20
   })
 
   it('renders clean daily workout with current exercise rest visible', () => {
@@ -167,7 +172,17 @@ describe('WorkoutPage', () => {
   it('shows barbell load note on the current exercise card', () => {
     render(<WorkoutPage />)
 
-    expect(screen.getByText('Discos por lado: 30 kg · Total con barra: 80 kg')).toBeInTheDocument()
+    expect(screen.getByText('Discos: 20 + 10 kg por lado - Total con barra: 80 kg')).toBeInTheDocument()
+  })
+
+  it('does not show plate calculator for dumbbells', () => {
+    exercise.equipment = 'Mancuerna'
+    exercise.loadMode = 'single'
+    exercise.barWeightKg = 0
+
+    render(<WorkoutPage />)
+
+    expect(screen.queryByText(/Discos:/i)).not.toBeInTheDocument()
   })
 
   it('hides weight increase recommendation for a different exercise', () => {

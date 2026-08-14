@@ -1,10 +1,12 @@
 import 'fake-indexeddb/auto'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { db } from '../../db/schema'
+import { DEFAULT_AVAILABLE_PLATES_KG } from '../../shared/calculations/equipmentLoad'
 import { downloadText } from '../../shared/utils/download'
-import { buildProgressExport, exportProgressCsv } from './services'
+import { buildProgressExport, exportProgressCsv, resolveAvailablePlateWeightsKg, updateAvailablePlateWeights } from './services'
 import type { Routine, RoutineDay, RoutineExercise } from '../routine/types'
 import type { ExerciseLog, SetLog, WorkoutSession } from '../workout/types'
+import type { AppSettings } from './types'
 
 vi.mock('../../shared/utils/download', () => ({
   downloadJson: vi.fn(),
@@ -49,6 +51,21 @@ describe('settings export services', () => {
     })
   })
 
+
+  it('resolves default plate weights when settings do not have an inventory', () => {
+    expect(resolveAvailablePlateWeightsKg(null)).toEqual(DEFAULT_AVAILABLE_PLATES_KG)
+    expect(resolveAvailablePlateWeightsKg({ availablePlateWeightsKg: [] })).toEqual(DEFAULT_AVAILABLE_PLATES_KG)
+  })
+
+  it('updates available plate weights normalized in kg', async () => {
+    await db.settings.put(appSettings())
+
+    await updateAvailablePlateWeights([2.5, 20, 20, 0, 10])
+
+    await expect(db.settings.get('app')).resolves.toMatchObject({
+      availablePlateWeightsKg: [20, 10, 2.5],
+    })
+  })
   it('exports valid escaped progress CSV', async () => {
     await seedProgressData({
       dayName: 'Dia, A',
@@ -73,6 +90,22 @@ describe('settings export services', () => {
     expect(csv).toContain('"Press ""inclinado""\npausado"')
   })
 })
+
+
+function appSettings(): AppSettings {
+  return {
+    activeRoutineId: 'routine-1',
+    createdAt: now,
+    deloadNotifications: true,
+    id: 'app',
+    lastDeloadNotificationDate: null,
+    notificationPermission: 'default',
+    preferredUnit: 'kg',
+    schemaVersion: 6,
+    storagePersisted: null,
+    updatedAt: now,
+  }
+}
 
 async function resetDb() {
   db.close()

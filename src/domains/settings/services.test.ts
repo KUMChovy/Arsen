@@ -3,7 +3,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { db } from '../../db/schema'
 import { DEFAULT_AVAILABLE_PLATES_KG } from '../../shared/calculations/equipmentLoad'
 import { downloadText } from '../../shared/utils/download'
-import { buildProgressExport, exportProgressCsv, resolveAvailablePlateWeightsKg, updateAvailablePlateWeights } from './services'
+import {
+  buildProgressExport,
+  completeActiveDeload,
+  exportProgressCsv,
+  getDeloadOverview,
+  resolveAvailablePlateWeightsKg,
+  scheduleDeload,
+  skipDeloadSuggestion,
+  startDeloadNow,
+  updateAvailablePlateWeights,
+  updateDeloadReductionSettings,
+} from './services'
 import type { Routine, RoutineDay, RoutineExercise } from '../routine/types'
 import type { DropSetLog, ExerciseLog, SetLog, WorkoutSession } from '../workout/types'
 import type { AppSettings } from './types'
@@ -98,6 +109,115 @@ describe('settings export services', () => {
   })
 })
 
+describe('deload services', () => {
+  beforeEach(async () => {
+    await resetDb()
+    await db.settings.put(appSettings())
+  })
+
+  afterEach(async () => {
+    await resetDb()
+  })
+
+  it('anchors suggestions to the last completed deload when one exists', async () => {
+    await db.workoutSessions.put(workoutSession({ date: '2026-01-01', id: 'session-1' }))
+    await db.deloadCycles.put({
+      completedAt: '2026-02-01',
+      createdAt: now,
+      id: 'deload-1',
+      scheduledStartDate: null,
+      skippedAt: null,
+      startedAt: '2026-01-25',
+      status: 'completed',
+      suggestedAt: '2026-01-20',
+      updatedAt: now,
+    })
+
+    const overview = await getDeloadOverview('2026-03-12')
+
+    expect(overview.anchorDate).toBe('2026-02-01')
+    expect(overview.lastCompletedDate).toBe('2026-02-01')
+    expect(overview.weeksSinceAnchor).toBe(5)
+    expect(overview.phase).toBe('suggested')
+    expect(overview.currentCycle?.status).toBe('suggested')
+  })
+
+  it('falls back to first workout session when no deload has completed', async () => {
+    await db.workoutSessions.put(workoutSession({ date: '2026-01-01', id: 'session-1' }))
+
+    const overview = await getDeloadOverview('2026-02-05')
+
+    expect(overview.anchorDate).toBe('2026-01-01')
+    expect(overview.firstLogDate).toBe('2026-01-01')
+    expect(overview.phase).toBe('suggested')
+  })
+
+  it('schedules a future deload and activates it on the scheduled date', async () => {
+    await scheduleDeload('2026-02-10', '2026-02-01')
+    await expect(getDeloadOverview('2026-02-09')).resolves.toMatchObject({
+      phase: 'scheduled',
+    })
+
+    const overview = await getDeloadOverview('2026-02-10')
+
+    expect(overview.phase).toBe('active')
+    expect(overview.currentCycle).toMatchObject({
+      scheduledStartDate: '2026-02-10',
+      startedAt: '2026-02-10',
+      status: 'active',
+    })
+  })
+
+  it('starts now and auto-completes after seven calendar days', async () => {
+    await startDeloadNow('2026-02-01')
+
+    expect(await getDeloadOverview('2026-02-07')).toMatchObject({
+      daysRemaining: 1,
+      phase: 'active',
+    })
+
+    const overview = await getDeloadOverview('2026-02-08')
+
+    expect(overview.phase).toBe('completed')
+    expect(overview.currentCycle).toMatchObject({
+      completedAt: '2026-02-08',
+      status: 'completed',
+    })
+  })
+
+  it('skips a suggestion and suppresses a new one during cooldown', async () => {
+    await db.workoutSessions.put(workoutSession({ date: '2026-01-01', id: 'session-1' }))
+    await getDeloadOverview('2026-02-05')
+    await skipDeloadSuggestion('2026-02-05')
+
+    expect(await getDeloadOverview('2026-02-06')).toMatchObject({
+      cooldownUntil: '2026-02-19',
+      phase: 'idle',
+      shouldNotify: false,
+    })
+  })
+
+  it('completes an active deload manually', async () => {
+    await startDeloadNow('2026-02-01')
+    await completeActiveDeload('2026-02-03')
+
+    await expect(db.deloadCycles.toArray()).resolves.toEqual([
+      expect.objectContaining({ completedAt: '2026-02-03', status: 'completed' }),
+    ])
+  })
+
+  it('updates deload reduction settings with clamped values', async () => {
+    await updateDeloadReductionSettings({
+      seriesReductionPercent: 99,
+      weightReductionPercent: 10,
+    })
+
+    await expect(db.settings.get('app')).resolves.toMatchObject({
+      deloadSeriesReductionPercent: 60,
+      deloadWeightReductionPercent: 70,
+    })
+  })
+})
 
 function appSettings(): AppSettings {
   return {
@@ -233,5 +353,19 @@ async function seedProgressData(input: { dayName: string; exerciseName: string; 
     }
 
     await db.dropSetLogs.put(dropSetLog)
+  }
+}
+
+function workoutSession(input: { date: string; id: string }): WorkoutSession {
+  return {
+    createdAt: now,
+    date: input.date,
+    dayId: 'day-1',
+    displayUnit: 'kg',
+    id: input.id,
+    notes: '',
+    routineId: 'routine-1',
+    status: 'completed',
+    updatedAt: now,
   }
 }

@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { DEFAULT_AVAILABLE_PLATES_KG, loadSettingsForEquipment, normalizeAvailablePlateWeightsKg, normalizeEquipment } from '../calculations/equipmentLoad'
+import { DEFAULT_DELOAD_SERIES_PERCENT, DEFAULT_DELOAD_WEIGHT_PERCENT, normalizeDeloadSeriesPercent, normalizeDeloadWeightPercent } from '../calculations/deload'
 import { normalizeWarmupProtocol } from '../calculations/warmups'
 
 const equipmentSchema = z.string().transform(normalizeEquipment)
@@ -18,7 +19,22 @@ const weightUnitSchema = z.enum(['kg', 'lb'])
 const exerciseStateSchema = z.enum(['pending', 'in_progress', 'skipped', 'done'])
 const setKindSchema = z.enum(['main', 'warmup'])
 const catalogOriginSchema = z.enum(['user', 'sinful-shell'])
+const deloadCycleStatusSchema = z.enum(['suggested', 'scheduled', 'active', 'completed', 'skipped'])
 
+
+export const deloadCycleSchema = z
+  .object({
+    completedAt: z.string().nullable().optional().default(null),
+    createdAt: z.string(),
+    id: z.string().min(1),
+    scheduledStartDate: z.string().nullable().optional().default(null),
+    skippedAt: z.string().nullable().optional().default(null),
+    startedAt: z.string().nullable().optional().default(null),
+    status: deloadCycleStatusSchema,
+    suggestedAt: z.string().nullable().optional().default(null),
+    updatedAt: z.string(),
+  })
+  .passthrough()
 export const routineSchema = z
   .object({
     createdAt: z.string(),
@@ -148,6 +164,8 @@ export const appSettingsSchema = z
     availablePlateWeightsKg: z.array(z.number()).optional().default(DEFAULT_AVAILABLE_PLATES_KG).transform(normalizeAvailablePlateWeightsKg),
     createdAt: z.string(),
     deloadNotifications: z.boolean(),
+    deloadSeriesReductionPercent: z.number().optional().default(DEFAULT_DELOAD_SERIES_PERCENT).transform(normalizeDeloadSeriesPercent),
+    deloadWeightReductionPercent: z.number().optional().default(DEFAULT_DELOAD_WEIGHT_PERCENT).transform(normalizeDeloadWeightPercent),
     id: z.literal('app'),
     lastDeloadNotificationDate: z.string().nullable().optional(),
     notificationPermission: z.enum(['default', 'denied', 'granted', 'unsupported']).optional(),
@@ -258,6 +276,7 @@ export const backupSchema = z
     schemaVersion: z.number().optional(),
     tables: z
       .object({
+        deloadCycles: z.array(deloadCycleSchema).optional().default([]),
         dropSetLogs: z.array(dropSetLogSchema).optional().default([]),
         exerciseAssets: z.array(exerciseAssetSchema).optional().default([]),
         exerciseCatalog: z.array(exerciseCatalogItemSchema).optional().default([]),

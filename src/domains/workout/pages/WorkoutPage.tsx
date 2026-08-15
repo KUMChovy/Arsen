@@ -1,4 +1,4 @@
-import { Check, ChevronLeft, ChevronRight, Dumbbell, Info, Pencil, Trash2, TrendingUp, X } from 'lucide-react'
+import { Check, ChevronLeft, ChevronRight, Dumbbell, Info, Moon, Pencil, Trash2, TrendingUp, X } from 'lucide-react'
 import { useEffect, useMemo, useState, useTransition } from 'react'
 import { ActionButton } from '../../../shared/components/ActionButton'
 import { Card } from '../../../shared/components/Card'
@@ -8,6 +8,7 @@ import type { WeightIncreaseRecommendation } from '../../../shared/calculations/
 import { buildEquipmentLoadNote } from '../../../shared/calculations/equipmentLoad'
 import { totalVolume } from '../../../shared/calculations/workout'
 import { buildWarmupSets } from '../../../shared/calculations/warmups'
+import { getDeloadSuggestedWeightKg, getDeloadTargetSets } from '../../../shared/calculations/deload'
 import { localDateKey } from '../../../shared/utils/date'
 import { confirmDanger } from '../../../shared/utils/alerts'
 import { formatRepRange } from '../../../shared/utils/reps'
@@ -18,9 +19,11 @@ import type { Routine, RoutineDay, RoutineExercise } from '../../routine/types'
 import { RegisterSetSheet } from '../components/RegisterSetSheet'
 import { EditSetSheet } from '../components/EditSetSheet'
 import { getDefaultWorkoutDayId } from '../calculations/trainingRotation'
-import { useLastSessionReferencesForDay, useWeightIncreaseRecommendations, useWorkoutProgress, useWorkoutRotationStatus } from '../hooks'
+import { useDeloadOverview, useLastSessionReferencesForDay, useWeightIncreaseRecommendations, useWorkoutProgress, useWorkoutRotationStatus } from '../hooks'
 import { addDropSet, completeSessionForDay, deleteDropSet, deleteMainSet, skipRoutineExerciseForDay, updateDropSet, updateMainSet } from '../services'
 import { setActiveRoutine } from '../../routine/services'
+import { completeActiveDeload } from '../../settings/services'
+import type { DeloadOverview } from '../../settings/types'
 import type { ExerciseState, LastSessionReference, SetLog, WeightUnit } from '../types'
 
 type ExerciseFilter = 'all' | 'pending' | 'in_progress' | 'skipped' | 'done'
@@ -59,6 +62,7 @@ export function WorkoutPage() {
     todayWeekday: selectedDate.getDay(),
   })
   const weightIncreaseRecommendations = useWeightIncreaseRecommendations(dayExercises)
+  const deload = useDeloadOverview()
   const [selectedExerciseId, setSelectedExerciseId] = useState<string | null>(null)
   const [currentExerciseId, setCurrentExerciseId] = useState<string | null>(null)
   const [activeExerciseId, setActiveExerciseId] = useState<string | null>(null)
@@ -83,10 +87,19 @@ export function WorkoutPage() {
   const completedCount = dailyProgress.completedCount
   const totalCount = dayExercises.length
   const preferredUnit = workoutDay?.settings.preferredUnit ?? 'kg'
+  const deloadActive = deload?.phase === 'active'
+  const currentDeloadWeightKg = currentExercise
+    ? getDeloadSuggestedWeightKg(currentExercise.currentWeightKg, deload?.weightReductionPercent ?? 80)
+    : 0
+  const currentDeloadTargetSets = currentExercise
+    ? getDeloadTargetSets(currentExercise.targetSets, deload?.seriesReductionPercent ?? 50)
+    : 0
+  const currentTargetWeightKg = deloadActive ? currentDeloadWeightKg : currentExercise?.currentWeightKg ?? 0
+  const currentTargetSets = deloadActive ? currentDeloadTargetSets : currentExercise?.targetSets ?? 0
   const availablePlateWeightsKg = workoutDay?.settings.availablePlateWeightsKg
   const selectedWeekday = workoutDay?.day.weekday
   const isOffCalendar = selectedWeekday !== undefined && selectedWeekday !== null && selectedWeekday !== selectedDate.getDay()
-  const warmups = buildWarmupsForExercise(currentExercise, preferredUnit)
+  const warmups = buildWarmupsForExercise(currentExercise, preferredUnit, currentTargetWeightKg)
   const currentLoadNote = currentExercise
     ? buildEquipmentLoadNote({
         availablePlateWeightsKg,
@@ -94,7 +107,7 @@ export function WorkoutPage() {
         equipment: currentExercise.equipment,
         loadMode: currentExercise.loadMode,
         unit: preferredUnit,
-        weightKg: currentExercise.currentWeightKg,
+        weightKg: currentTargetWeightKg,
       })
     : null
   const currentLastSessionReference = currentExercise ? lastSessionReferences.get(currentExercise.id) : undefined
@@ -142,6 +155,14 @@ export function WorkoutPage() {
       action()
         .then(() => setMessage(success))
         .catch((error: unknown) => setMessage(error instanceof Error ? error.message : 'Accion no completada'))
+    })
+  }
+
+  function finishDeload() {
+    startTransition(() => {
+      completeActiveDeload()
+        .then(() => setMessage('Deload finalizado'))
+        .catch((error: unknown) => setMessage(error instanceof Error ? error.message : 'No se pudo finalizar deload'))
     })
   }
 
@@ -325,6 +346,10 @@ export function WorkoutPage() {
         </div>
       ) : null}
 
+      {deloadActive ? (
+        <DeloadStatusCard deload={deload} disabled={isPending} onComplete={finishDeload} />
+      ) : null}
+
       {rotationStatus.shouldShow && !missedNoticeDismissed ? (
         <MissedTrainingNotice
           daysWithoutTraining={rotationStatus.daysWithoutTraining}
@@ -392,8 +417,8 @@ export function WorkoutPage() {
 
           <div className="grid grid-cols-4 gap-0 py-3 text-center">
             {[
-              ['Peso anterior', formatWeight(currentExercise?.currentWeightKg ?? 0, preferredUnit), 'text-arsen-acid'],
-              ['Series', String(currentExercise?.targetSets ?? 0), 'text-arsen-ink'],
+              [deloadActive ? 'Peso deload' : 'Peso anterior', formatWeight(currentTargetWeightKg, preferredUnit), 'text-arsen-acid'],
+              [deloadActive ? 'Series deload' : 'Series', String(currentTargetSets), 'text-arsen-ink'],
               ['Reps', currentExercise ? formatRepRange(currentExercise.repsMin, currentExercise.repsMax) : '-', 'text-arsen-ink'],
               ['RIR', currentExercise?.recommendedRir ?? '-', 'text-arsen-ink'],
             ].map(([label, value, tone]) => (
@@ -746,10 +771,10 @@ function dismissMissedNotice(date: string) {
   if (typeof window !== 'undefined') window.localStorage.setItem(missedNoticeDismissedStorageKey, date)
 }
 
-function buildWarmupsForExercise(exercise: RoutineExercise | null | undefined, unit: WeightUnit) {
+function buildWarmupsForExercise(exercise: RoutineExercise | null | undefined, unit: WeightUnit, targetWeightKg?: number) {
   if (!exercise) return []
 
-  return buildWarmupSets(exercise.currentWeightKg, exercise.warmupProtocol).map((set) => ({
+  return buildWarmupSets(targetWeightKg ?? exercise.currentWeightKg, exercise.warmupProtocol).map((set) => ({
     reps: set.reps,
     rir: set.rir,
     weight: formatWeight(set.weightKg, unit),
@@ -970,6 +995,48 @@ function LastSessionReferenceBlock({
       )}
     </section>
   )
+}
+function DeloadStatusCard({
+  deload,
+  disabled,
+  onComplete,
+}: {
+  deload: DeloadOverview | undefined
+  disabled: boolean
+  onComplete: () => void
+}) {
+  return (
+    <Card className="border-arsen-acid/35 bg-arsen-acid/10 p-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 gap-3">
+          <div className="grid size-10 shrink-0 place-items-center rounded-[10px] bg-arsen-bg/75 text-arsen-acid">
+            <Moon aria-hidden="true" className="size-5" />
+          </div>
+          <div className="min-w-0">
+            <strong className="block text-sm text-arsen-acid">Modo deload activo</strong>
+            <span className="mt-1 block text-xs text-arsen-muted">
+              <span>{formatDeloadDays(deload?.daysRemaining)}</span>
+              <span> - {deload?.seriesReductionPercent ?? 50}% series - {deload?.weightReductionPercent ?? 80}% peso</span>
+            </span>
+          </div>
+        </div>
+        <button
+          className="min-h-9 shrink-0 rounded-[10px] border border-arsen-acid/40 px-3 text-xs font-extrabold text-arsen-acid disabled:opacity-60"
+          disabled={disabled}
+          onClick={onComplete}
+          type="button"
+        >
+          Finalizar deload
+        </button>
+      </div>
+    </Card>
+  )
+}
+
+function formatDeloadDays(daysRemaining: number | null | undefined) {
+  const days = daysRemaining ?? 0
+
+  return `${days} ${days === 1 ? 'dia restante' : 'dias restantes'}`
 }
 function WeightIncreaseCard({
   recommendations,

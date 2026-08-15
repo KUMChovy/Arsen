@@ -4,6 +4,7 @@ import type { RoutineDay, RoutineExercise } from '../routine/types'
 import type { ExerciseState, LastSessionReference } from './types'
 import { buildMissedTrainingNotice } from './calculations/trainingRotation'
 import { getLastSessionReferencesForDay, getSessionsWithMainSets, getWeightIncreaseRecommendations, getWorkoutProgressForDay } from './repository'
+import { getDeloadOverview } from '../settings/services'
 
 export function useWorkoutProgress(date: string, dayId: string | undefined, exercises: RoutineExercise[]) {
   const progress = useLiveQuery(() => getWorkoutProgressForDay(date, dayId), [date, dayId], undefined)
@@ -104,4 +105,8 @@ export function useWorkoutRotationStatus(input: {
       sessionsWithMainSets: sessionsWithMainSets ?? [],
     }
   }, [input.activeRoutineId, input.dateKey, input.days, input.todayWeekday, sessionsWithMainSets])
+}
+
+export function useDeloadOverview() {
+  return useLiveQuery(() => getDeloadOverview(), [], undefined)
 }

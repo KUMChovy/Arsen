@@ -159,6 +159,70 @@ describe('Arsen import schemas', () => {
     ).toBe(true)
   })
 
+  it('defaults deload settings and accepts missing deload cycles in old backups', () => {
+    const result = backupSchema.safeParse({
+      tables: {
+        settings: [
+          {
+            activeRoutineId: 'routine-1',
+            createdAt: '2026-01-01T00:00:00.000Z',
+            deloadNotifications: true,
+            id: 'app',
+            preferredUnit: 'kg',
+            schemaVersion: 6,
+            storagePersisted: null,
+            updatedAt: '2026-01-01T00:00:00.000Z',
+          },
+        ],
+      },
+    })
+
+    expect(result.success).toBe(true)
+    if (!result.success) return
+    expect(result.data.tables.deloadCycles).toEqual([])
+    expect(result.data.tables.settings[0]?.deloadSeriesReductionPercent).toBe(50)
+    expect(result.data.tables.settings[0]?.deloadWeightReductionPercent).toBe(80)
+  })
+
+  it('clamps imported deload reduction settings and parses deload cycles', () => {
+    const result = backupSchema.safeParse({
+      tables: {
+        deloadCycles: [
+          {
+            completedAt: null,
+            createdAt: '2026-01-01T00:00:00.000Z',
+            id: 'deload-1',
+            scheduledStartDate: '2026-02-01',
+            skippedAt: null,
+            startedAt: null,
+            status: 'scheduled',
+            suggestedAt: '2026-01-20',
+            updatedAt: '2026-01-01T00:00:00.000Z',
+          },
+        ],
+        settings: [
+          {
+            activeRoutineId: 'routine-1',
+            createdAt: '2026-01-01T00:00:00.000Z',
+            deloadNotifications: true,
+            deloadSeriesReductionPercent: 99,
+            deloadWeightReductionPercent: 10,
+            id: 'app',
+            preferredUnit: 'kg',
+            schemaVersion: 6,
+            storagePersisted: null,
+            updatedAt: '2026-01-01T00:00:00.000Z',
+          },
+        ],
+      },
+    })
+
+    expect(result.success).toBe(true)
+    if (!result.success) return
+    expect(result.data.tables.settings[0]?.deloadSeriesReductionPercent).toBe(60)
+    expect(result.data.tables.settings[0]?.deloadWeightReductionPercent).toBe(70)
+    expect(result.data.tables.deloadCycles[0]?.status).toBe('scheduled')
+  })
   it('defaults legacy backup routine and catalog fields', () => {
     const catalogItem = {
       aliases: [],

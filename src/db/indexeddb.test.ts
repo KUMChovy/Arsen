@@ -3,7 +3,7 @@ import Dexie from 'dexie'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { db } from './schema'
 import type { ExerciseAsset, ExerciseCatalogItem, Routine, RoutineDay, RoutineExercise } from '../domains/routine/types'
-import type { AppSettings } from '../domains/settings/types'
+import type { AppSettings, DeloadCycle } from '../domains/settings/types'
 import { addCatalogExerciseToDay, createCatalogExercise, createExerciseAsset, updateCatalogExercise } from '../domains/routine/services'
 import { buildProgressExport, importFullBackup } from '../domains/settings/services'
 import {
@@ -78,6 +78,29 @@ describe('IndexedDB integration', () => {
     })
   })
 
+  it('imports deload cycles in full backups', async () => {
+    await importFullBackup(
+      backupFile({
+        deloadCycles: [
+          {
+            completedAt: '2026-02-08',
+            createdAt: now,
+            id: 'deload-1',
+            scheduledStartDate: null,
+            skippedAt: null,
+            startedAt: '2026-02-01',
+            status: 'completed',
+            suggestedAt: '2026-01-25',
+            updatedAt: now,
+          },
+        ],
+        settings: [settings('routine-1', 'kg')],
+      }),
+      'replace',
+    )
+
+    await expect(db.deloadCycles.get('deload-1')).resolves.toMatchObject({ status: 'completed' })
+  })
   it('registers main sets, drop sets and completes exercise state', async () => {
     const exercise = routineExercise()
     await db.routineExercises.put(exercise)
@@ -1044,6 +1067,7 @@ async function resetDb() {
 }
 
 function backupFile(tables: {
+  deloadCycles?: DeloadCycle[]
   exerciseAssets?: ExerciseAsset[]
   exerciseCatalog?: ExerciseCatalogItem[]
   routineExercises?: RoutineExercise[]

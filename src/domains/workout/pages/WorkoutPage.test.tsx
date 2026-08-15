@@ -9,8 +9,10 @@ import type { DropSetLog, ExerciseLog, LastSessionReference, SetLog, WorkoutSess
 import { confirmDanger } from '../../../shared/utils/alerts'
 import { completeSessionForDay, deleteMainSet, updateMainSet } from '../services'
 import { setActiveRoutine } from '../../routine/services'
+import type { DeloadOverview } from '../../settings/types'
 
 const workoutMocks = vi.hoisted(() => ({
+  completeActiveDeload: vi.fn(() => Promise.resolve()),
   setLogs: [] as SetLog[],
   sessionStatus: 'draft' as WorkoutSession['status'],
   rotationStatus: {
@@ -22,6 +24,19 @@ const workoutMocks = vi.hoisted(() => ({
   },
   weightIncreaseRecommendations: [] as WeightIncreaseRecommendation[],
   lastSessionReferences: new Map<string, LastSessionReference>(),
+  deloadOverview: {
+    anchorDate: '2026-07-01',
+    cooldownUntil: null,
+    currentCycle: null,
+    daysRemaining: null,
+    firstLogDate: '2026-07-01',
+    lastCompletedDate: null,
+    phase: 'idle',
+    seriesReductionPercent: 50,
+    shouldNotify: false,
+    weeksSinceAnchor: 2,
+    weightReductionPercent: 80,
+  } as DeloadOverview,
 }))
 
 vi.mock('../../routine/hooks', () => ({
@@ -57,6 +72,7 @@ vi.mock('../../routine/hooks', () => ({
 }))
 
 vi.mock('../hooks', () => ({
+  useDeloadOverview: () => workoutMocks.deloadOverview,
   useWeightIncreaseRecommendations: () => workoutMocks.weightIncreaseRecommendations,
   useWorkoutRotationStatus: () => workoutMocks.rotationStatus,
   useLastSessionReferencesForDay: () => workoutMocks.lastSessionReferences,
@@ -126,6 +142,19 @@ describe('WorkoutPage', () => {
     }
     workoutMocks.weightIncreaseRecommendations = []
     workoutMocks.lastSessionReferences = new Map()
+    workoutMocks.deloadOverview = {
+      anchorDate: '2026-07-01',
+      cooldownUntil: null,
+      currentCycle: null,
+      daysRemaining: null,
+      firstLogDate: '2026-07-01',
+      lastCompletedDate: null,
+      phase: 'idle',
+      seriesReductionPercent: 50,
+      shouldNotify: false,
+      weeksSinceAnchor: 2,
+      weightReductionPercent: 80,
+    } as DeloadOverview
     exercise.equipment = 'Barra'
     exercise.loadMode = 'split'
     exercise.barWeightKg = 20
@@ -169,6 +198,41 @@ describe('WorkoutPage', () => {
     expect(screen.getByText('+2.5 kg')).toBeInTheDocument()
   })
 
+  it('applies active deload targets to the current workout', async () => {
+    workoutMocks.deloadOverview = {
+      anchorDate: '2026-07-01',
+      cooldownUntil: null,
+      currentCycle: {
+        completedAt: null,
+        createdAt: '2026-07-20T00:00:00.000Z',
+        id: 'deload-active',
+        scheduledStartDate: null,
+        skippedAt: null,
+        startedAt: '2026-07-20',
+        status: 'active',
+        suggestedAt: null,
+        updatedAt: '2026-07-20T00:00:00.000Z',
+      },
+      daysRemaining: 5,
+      firstLogDate: '2026-07-01',
+      lastCompletedDate: null,
+      phase: 'active',
+      seriesReductionPercent: 50,
+      shouldNotify: false,
+      weeksSinceAnchor: 6,
+      weightReductionPercent: 80,
+    }
+
+    render(<WorkoutPage />)
+
+    expect(screen.getByText('Modo deload activo')).toBeInTheDocument()
+    expect(screen.getByText('5 dias restantes')).toBeInTheDocument()
+    expect(screen.getByText('Peso deload')).toBeInTheDocument()
+    expect(screen.getByText('48 kg')).toBeInTheDocument()
+    expect(screen.getByText('Series deload').closest('div')).toHaveTextContent('2')
+
+    expect(screen.getByRole('button', { name: 'Finalizar deload' })).toBeEnabled()
+  })
   it('shows barbell load note on the current exercise card', () => {
     render(<WorkoutPage />)
 

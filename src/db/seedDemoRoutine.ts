@@ -1,6 +1,7 @@
 import type { Equipment, RoutineDay, RoutineExercise } from '../domains/routine/types'
 import type { AppSettings } from '../domains/settings/types'
 import { DEFAULT_AVAILABLE_PLATES_KG, loadSettingsForEquipment } from '../shared/calculations/equipmentLoad'
+import { DEFAULT_DELOAD_SERIES_PERCENT, DEFAULT_DELOAD_WEIGHT_PERCENT } from '../shared/calculations/deload'
 import { bundledAssetIdForExercise } from '../shared/assets/exerciseImages'
 import { createId } from '../shared/utils/id'
 import { canonicalName } from '../shared/utils/normalize'
@@ -102,6 +103,8 @@ export async function ensureDemoData() {
     preferredUnit: 'kg',
     availablePlateWeightsKg: DEFAULT_AVAILABLE_PLATES_KG,
     deloadNotifications: true,
+    deloadSeriesReductionPercent: DEFAULT_DELOAD_SERIES_PERCENT,
+    deloadWeightReductionPercent: DEFAULT_DELOAD_WEIGHT_PERCENT,
     lastDeloadNotificationDate: null,
     notificationPermission: 'default',
     storagePersisted: null,

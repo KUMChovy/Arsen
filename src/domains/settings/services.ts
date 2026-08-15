@@ -8,12 +8,22 @@ import type {
   RoutineExercise,
   WeeklyVolumeTarget,
 } from '../routine/types'
-import type { AppSettings } from './types'
+import type { AppSettings, DeloadCycle, DeloadOverview, DeloadPhase } from './types'
 import type { DropSetLog, ExerciseLog, SetLog, SkipLog, WeightUnit, WorkoutSession } from '../workout/types'
 import { loadSettingsForEquipment, normalizeAvailablePlateWeightsKg } from '../../shared/calculations/equipmentLoad'
-import { performanceScore, volumeForSet } from '../../shared/calculations/workout'
+import { performanceScore, volumeForSet, weeksSince } from '../../shared/calculations/workout'
 import { normalizeWarmupProtocol } from '../../shared/calculations/warmups'
+import {
+  DELOAD_SKIP_COOLDOWN_DAYS,
+  addDays,
+  daysRemainingInDeload,
+  isDeloadComplete,
+  isDeloadSuggestionWindow,
+  normalizeDeloadSeriesPercent,
+  normalizeDeloadWeightPercent,
+} from '../../shared/calculations/deload'
 import { downloadJson, downloadText } from '../../shared/utils/download'
+import { createId } from '../../shared/utils/id'
 import { localDateKey } from '../../shared/utils/date'
 import { backupSchema } from '../../shared/validation/arsenImportSchemas'
 import { deleteWorkoutSession } from '../workout/services'
@@ -27,6 +37,7 @@ export async function exportFullBackup() {
     exportedAt: new Date().toISOString(),
     schemaVersion: CURRENT_SCHEMA_VERSION,
     tables: {
+      deloadCycles: await db.deloadCycles.toArray(),
       dropSetLogs: await db.dropSetLogs.toArray(),
       exerciseAssets: await db.exerciseAssets.toArray(),
       exerciseCatalog: (await db.exerciseCatalog.toArray()).map(stripLegacyCatalogProgression),
@@ -57,6 +68,7 @@ export async function importFullBackup(file: File, mode: BackupImportMode = 'rep
   await db.transaction(
     'rw',
     [
+      db.deloadCycles,
       db.dropSetLogs,
       db.exerciseAssets,
       db.exerciseCatalog,
@@ -79,6 +91,7 @@ export async function importFullBackup(file: File, mode: BackupImportMode = 'rep
 
 async function clearBackupTables() {
   await Promise.all([
+    db.deloadCycles.clear(),
     db.dropSetLogs.clear(),
     db.exerciseAssets.clear(),
     db.exerciseCatalog.clear(),
@@ -98,6 +111,7 @@ async function putBackupTables(tables: BackupTables, mode: BackupImportMode) {
   const shouldImportSettings = mode === 'replace' || !(await db.settings.get('app'))
 
   await Promise.all([
+    db.deloadCycles.bulkPut(tables.deloadCycles ?? []),
     db.dropSetLogs.bulkPut(tables.dropSetLogs ?? []),
     db.exerciseAssets.bulkPut(tables.exerciseAssets ?? []),
     db.exerciseCatalog.bulkPut((tables.exerciseCatalog ?? []).map(stripLegacyCatalogProgression)),
@@ -136,6 +150,246 @@ export async function exportProgressCsv(filters: ProgressExportFilters = {}) {
 ${Papa.unparse(rows, { delimiter: ';' })}`
 
   downloadText(progressExportFilename(filters, 'csv'), csv, 'text/csv;charset=utf-8')
+}
+
+const OPEN_DELOAD_STATUSES = ['suggested', 'scheduled', 'active'] as const
+
+function isOpenDeloadStatus(status: DeloadCycle['status']) {
+  return OPEN_DELOAD_STATUSES.some((candidate) => candidate === status)
+}
+
+export async function getDeloadOverview(currentDate = localDateKey(new Date())): Promise<DeloadOverview> {
+  await applyDeloadDateTransitions(currentDate)
+
+  const [settings, firstSession, cycles] = await Promise.all([
+    db.settings.get('app'),
+    db.workoutSessions.orderBy('date').first(),
+    db.deloadCycles.toArray(),
+  ])
+  const sortedCycles = [...cycles].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+  const currentCycle = sortedCycles.find((cycle) => isOpenDeloadStatus(cycle.status)) ?? null
+  const lastCompleted = cycles
+    .filter((cycle) => cycle.status === 'completed' && cycle.completedAt)
+    .sort((a, b) => b.completedAt!.localeCompare(a.completedAt!))[0] ?? null
+  const lastSkipped = cycles
+    .filter((cycle) => cycle.status === 'skipped' && cycle.skippedAt)
+    .sort((a, b) => b.skippedAt!.localeCompare(a.skippedAt!))[0] ?? null
+  const cooldownUntil = lastSkipped?.skippedAt ? addDays(lastSkipped.skippedAt, DELOAD_SKIP_COOLDOWN_DAYS) : null
+  const cooldownActive = Boolean(cooldownUntil && currentDate < cooldownUntil)
+  const firstLogDate = firstSession?.date ?? null
+  const lastCompletedDate = lastCompleted?.completedAt ?? null
+  const anchorDate = lastCompletedDate ?? firstLogDate
+  const weeksSinceAnchor = anchorDate ? weeksSince(anchorDate, currentDate) : 0
+  const seriesReductionPercent = normalizeDeloadSeriesPercent(settings?.deloadSeriesReductionPercent)
+  const weightReductionPercent = normalizeDeloadWeightPercent(settings?.deloadWeightReductionPercent)
+
+  if (currentCycle) {
+    const phase: DeloadPhase = currentCycle.status === 'active' ? 'active' : currentCycle.status === 'scheduled' ? 'scheduled' : 'suggested'
+
+    return {
+      anchorDate,
+      cooldownUntil: cooldownActive ? cooldownUntil : null,
+      currentCycle,
+      daysRemaining:
+        currentCycle.status === 'active' && currentCycle.startedAt
+          ? daysRemainingInDeload(currentCycle.startedAt, currentDate)
+          : null,
+      firstLogDate,
+      lastCompletedDate,
+      phase,
+      seriesReductionPercent,
+      shouldNotify: currentCycle.status === 'suggested',
+      weeksSinceAnchor,
+      weightReductionPercent,
+    }
+  }
+
+  const justCompleted = sortedCycles.find((cycle) => cycle.status === 'completed' && cycle.completedAt === currentDate) ?? null
+  if (justCompleted) {
+    return {
+      anchorDate: justCompleted.completedAt,
+      cooldownUntil: null,
+      currentCycle: justCompleted,
+      daysRemaining: null,
+      firstLogDate,
+      lastCompletedDate: justCompleted.completedAt,
+      phase: 'completed',
+      seriesReductionPercent,
+      shouldNotify: false,
+      weeksSinceAnchor: 0,
+      weightReductionPercent,
+    }
+  }
+
+  if (!cooldownActive && isDeloadSuggestionWindow(anchorDate, currentDate)) {
+    const suggested = await createSuggestedDeload(currentDate)
+
+    return {
+      anchorDate,
+      cooldownUntil: null,
+      currentCycle: suggested,
+      daysRemaining: null,
+      firstLogDate,
+      lastCompletedDate,
+      phase: 'suggested',
+      seriesReductionPercent,
+      shouldNotify: true,
+      weeksSinceAnchor,
+      weightReductionPercent,
+    }
+  }
+
+  return {
+    anchorDate,
+    cooldownUntil: cooldownActive ? cooldownUntil : null,
+    currentCycle: null,
+    daysRemaining: null,
+    firstLogDate,
+    lastCompletedDate,
+    phase: 'idle',
+    seriesReductionPercent,
+    shouldNotify: false,
+    weeksSinceAnchor,
+    weightReductionPercent,
+  }
+}
+
+export async function scheduleDeload(startDate: string, currentDate = localDateKey(new Date())) {
+  if (!startDate || startDate <= currentDate) throw new Error('Programa una fecha futura')
+  const now = new Date().toISOString()
+
+  await db.transaction('rw', db.deloadCycles, async () => {
+    await closeOpenDeloadCycles(now, currentDate)
+    await db.deloadCycles.add({
+      completedAt: null,
+      createdAt: now,
+      id: createId('deload'),
+      scheduledStartDate: startDate,
+      skippedAt: null,
+      startedAt: null,
+      status: 'scheduled',
+      suggestedAt: null,
+      updatedAt: now,
+    })
+  })
+}
+
+export async function startDeloadNow(currentDate = localDateKey(new Date())) {
+  const now = new Date().toISOString()
+
+  await db.transaction('rw', db.deloadCycles, async () => {
+    await closeOpenDeloadCycles(now, currentDate)
+    await db.deloadCycles.add({
+      completedAt: null,
+      createdAt: now,
+      id: createId('deload'),
+      scheduledStartDate: null,
+      skippedAt: null,
+      startedAt: currentDate,
+      status: 'active',
+      suggestedAt: null,
+      updatedAt: now,
+    })
+  })
+}
+
+export async function skipDeloadSuggestion(currentDate = localDateKey(new Date())) {
+  const open = await getOpenDeloadCycle()
+  if (!open || open.status !== 'suggested') return
+
+  await db.deloadCycles.update(open.id, {
+    skippedAt: currentDate,
+    status: 'skipped',
+    updatedAt: new Date().toISOString(),
+  })
+}
+
+export async function completeActiveDeload(currentDate = localDateKey(new Date())) {
+  const open = await getOpenDeloadCycle()
+  if (!open || open.status !== 'active') return
+
+  await db.deloadCycles.update(open.id, {
+    completedAt: currentDate,
+    status: 'completed',
+    updatedAt: new Date().toISOString(),
+  })
+}
+
+export async function updateDeloadReductionSettings(input: {
+  seriesReductionPercent: number
+  weightReductionPercent: number
+}) {
+  await db.settings.update('app', {
+    deloadSeriesReductionPercent: normalizeDeloadSeriesPercent(input.seriesReductionPercent),
+    deloadWeightReductionPercent: normalizeDeloadWeightPercent(input.weightReductionPercent),
+    updatedAt: new Date().toISOString(),
+  })
+}
+
+async function applyDeloadDateTransitions(currentDate: string) {
+  const open = await getOpenDeloadCycle()
+  if (!open) return
+
+  const now = new Date().toISOString()
+  if (open.status === 'scheduled' && open.scheduledStartDate && open.scheduledStartDate <= currentDate) {
+    await db.deloadCycles.update(open.id, {
+      startedAt: open.scheduledStartDate,
+      status: 'active',
+      updatedAt: now,
+    })
+    return
+  }
+
+  if (open.status === 'active' && open.startedAt && isDeloadComplete(open.startedAt, currentDate)) {
+    await db.deloadCycles.update(open.id, {
+      completedAt: currentDate,
+      status: 'completed',
+      updatedAt: now,
+    })
+  }
+}
+
+async function getOpenDeloadCycle() {
+  const cycles = await db.deloadCycles.toArray()
+
+  return cycles
+    .filter((cycle) => isOpenDeloadStatus(cycle.status))
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0] ?? null
+}
+
+async function createSuggestedDeload(currentDate: string) {
+  const existing = await getOpenDeloadCycle()
+  if (existing) return existing
+
+  const now = new Date().toISOString()
+  const cycle: DeloadCycle = {
+    completedAt: null,
+    createdAt: now,
+    id: createId('deload'),
+    scheduledStartDate: null,
+    skippedAt: null,
+    startedAt: null,
+    status: 'suggested',
+    suggestedAt: currentDate,
+    updatedAt: now,
+  }
+  await db.deloadCycles.add(cycle)
+
+  return cycle
+}
+
+async function closeOpenDeloadCycles(now: string, currentDate: string) {
+  const openCycles = (await db.deloadCycles.toArray()).filter((cycle) => isOpenDeloadStatus(cycle.status))
+
+  await Promise.all(
+    openCycles.map((cycle) =>
+      db.deloadCycles.update(cycle.id, {
+        skippedAt: currentDate,
+        status: 'skipped',
+        updatedAt: now,
+      }),
+    ),
+  )
 }
 
 export async function getStorageOverview() {
@@ -456,6 +710,7 @@ function progressExportFilename(filters: ProgressExportFilters, extension: 'csv'
 }
 
 type BackupTables = {
+  deloadCycles?: DeloadCycle[]
   dropSetLogs?: DropSetLog[]
   exerciseAssets?: ExerciseAsset[]
   exerciseCatalog?: ExerciseCatalogItem[]

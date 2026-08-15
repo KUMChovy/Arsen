@@ -40,12 +40,19 @@ select {
   font: inherit;
 }
 
+
+[data-deload-active="true"] {
+  --color-arsen-purple: oklch(0.58 0.17 25);
+  --color-arsen-purple2: oklch(0.72 0.16 22);
+  --color-arsen-acid: oklch(0.78 0.18 34);
+  --color-arsen-acid2: oklch(0.66 0.19 28);
+}
 button:focus-visible,
 a:focus-visible,
 input:focus-visible,
 textarea:focus-visible,
 select:focus-visible {
-  outline: 2px solid oklch(0.86 0.20 125);
+  outline: 2px solid var(--color-arsen-acid);
   outline-offset: 2px;
 }
 

@@ -1,18 +1,8 @@
 import { db } from '../../db/schema'
-import { shouldNotifyDeload, weeksSince } from '../../shared/calculations/workout'
 import { localDateKey } from '../../shared/utils/date'
+import { getDeloadOverview } from './services'
 
-export async function getDeloadOverview() {
-  const firstSession = await db.workoutSessions.orderBy('date').first()
-  const today = localDateKey(new Date())
-  const weeks = firstSession ? weeksSince(firstSession.date, today) : 0
-
-  return {
-    firstLogDate: firstSession?.date ?? null,
-    shouldNotify: shouldNotifyDeload(firstSession?.date ?? null, today),
-    weeks,
-  }
-}
+export { getDeloadOverview } from './services'
 
 export async function requestDeloadNotifications() {
   const permission = await getNotificationPermission(true)
@@ -33,7 +23,7 @@ export async function notifyDeloadIfNeeded() {
   const today = localDateKey(new Date())
   if (settings.lastDeloadNotificationDate === today) return false
 
-  const deload = await getDeloadOverview()
+  const deload = await getDeloadOverview(today)
   if (!deload.shouldNotify) return false
 
   const permission = await getNotificationPermission(false)
@@ -43,7 +33,7 @@ export async function notifyDeloadIfNeeded() {
   }
 
   new Notification('Arsen: semana de deload', {
-    body: `Van ${deload.weeks} semanas desde tu primer registro. Considera una semana de descarga.`,
+    body: `Van ${deload.weeksSinceAnchor} semanas desde tu ultima referencia. Considera una semana de descarga.`,
     icon: '/icon.svg',
   })
   await db.settings.update('app', {

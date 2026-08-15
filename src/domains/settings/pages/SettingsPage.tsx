@@ -11,6 +11,7 @@ import {
   FileUp,
   Flame,
   Folder,
+  Moon,
   Scale,
   Settings,
   Trash2,
@@ -21,6 +22,7 @@ import { PageHeader } from '../../../shared/components/PageHeader'
 import { importRoutineJson } from '../../routine/importExport'
 import { confirmAction, confirmDanger } from '../../../shared/utils/alerts'
 import {
+  completeActiveDeload,
   exportFullBackup,
   exportProgressCsv,
   exportProgressJson,
@@ -28,17 +30,23 @@ import {
   deleteAllWorkoutLogs,
   deleteWorkoutLogsByDateRange,
   getAppSettings,
+  getDeloadOverview,
   getStorageOverview,
   importFullBackup,
   requestPersistentStorage,
   resolveAvailablePlateWeightsKg,
+  scheduleDeload,
+  skipDeloadSuggestion,
+  startDeloadNow,
   updateAvailablePlateWeights,
+  updateDeloadReductionSettings,
   updatePreferredUnit,
   type BackupImportMode,
 } from '../services'
-import { getDeloadOverview, requestDeloadNotifications } from '../notifications'
+import { requestDeloadNotifications } from '../notifications'
 import { localDateKey } from '../../../shared/utils/date'
 import { kgToUnit, unitToKg } from '../../../shared/utils/weight'
+import type { DeloadPhase } from '../types'
 
 const routineActions = [
   { icon: Folder, label: 'Rutinas guardadas', meta: 'Cambiar, duplicar o eliminar' },
@@ -54,12 +62,15 @@ export function SettingsPage() {
   const [busyAction, setBusyAction] = useState<string | null>(null)
   const [cleanupEndDate, setCleanupEndDate] = useState(today)
   const [cleanupStartDate, setCleanupStartDate] = useState(today)
+  const [deloadStartDate, setDeloadStartDate] = useState(today)
   const [message, setMessage] = useState<string | null>(null)
   const appSettings = useLiveQuery(() => getAppSettings(), [], undefined)
   const preferredUnit = appSettings?.preferredUnit ?? 'kg'
   const resolvedPlates = resolveAvailablePlateWeightsKg(appSettings)
   const resolvedPlateKey = resolvedPlates.join('|')
   const [platesValue, setPlatesValue] = useState('')
+  const [seriesReductionValue, setSeriesReductionValue] = useState('50')
+  const [weightReductionValue, setWeightReductionValue] = useState('80')
   const deload = useLiveQuery(() => getDeloadOverview(), [], undefined)
   const storage = useLiveQuery(() => getStorageOverview(), [], undefined)
   const storagePercent = storage?.usage && storage.quota ? Math.min(100, Math.round((storage.usage / storage.quota) * 100)) : 0
@@ -67,6 +78,19 @@ export function SettingsPage() {
   useEffect(() => {
     setPlatesValue(resolvedPlates.map((plate) => formatPlateInputValue(plate, preferredUnit)).join(', '))
   }, [preferredUnit, resolvedPlateKey])
+
+  useEffect(() => {
+    if (!deload) return
+
+    setSeriesReductionValue(String(deload.seriesReductionPercent))
+    setWeightReductionValue(String(deload.weightReductionPercent))
+    setDeloadStartDate(deload.currentCycle?.scheduledStartDate ?? today)
+  }, [
+    deload?.currentCycle?.scheduledStartDate,
+    deload?.seriesReductionPercent,
+    deload?.weightReductionPercent,
+    today,
+  ])
 
   async function runAction(id: string, action: () => Promise<void | boolean>, success: string) {
     try {
@@ -94,6 +118,29 @@ export function SettingsPage() {
       'plates',
       () => updateAvailablePlateWeights(values.map((value) => unitToKg(value, preferredUnit))),
       'Discos actualizados',
+    )
+  }
+
+  function saveDeloadReductions() {
+    void runAction(
+      'deload-settings',
+      async () => {
+        await updateDeloadReductionSettings({
+          seriesReductionPercent: Number(seriesReductionValue),
+          weightReductionPercent: Number(weightReductionValue),
+        })
+      },
+      'Deload actualizado',
+    )
+  }
+
+  function programDeload() {
+    void runAction(
+      'deload-schedule',
+      async () => {
+        await scheduleDeload(deloadStartDate)
+      },
+      'Deload programado',
     )
   }
 
@@ -262,16 +309,140 @@ export function SettingsPage() {
         />
       </SettingsSection>
 
-      <SettingsSection title="Notificaciones">
+      <SettingsSection title="Deload">
+        <Card className="overflow-hidden p-0">
+          <div className="border-b border-white/10 bg-gradient-to-r from-arsen-purple/25 to-arsen-acid/15 p-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-3">
+                <div className="grid size-10 shrink-0 place-items-center rounded-[10px] bg-arsen-bg/70 text-arsen-acid">
+                  <Moon aria-hidden="true" className="size-6" />
+                </div>
+                <div className="min-w-0">
+                  <strong className="block text-white">Semana de descarga</strong>
+                  <span className="mt-1 block text-xs text-arsen-muted">
+                    {deload?.anchorDate ? `${deload.weeksSinceAnchor} semanas desde referencia` : 'Sin registros aun'}
+                  </span>
+                </div>
+              </div>
+              <span className="rounded-full border border-arsen-acid/35 bg-arsen-acid/10 px-2.5 py-1 text-xs font-black text-arsen-acid">
+                {deloadStatusLabel(deload?.phase)}
+              </span>
+            </div>
+          </div>
+          <div className="grid gap-3 p-3">
+            {deload?.phase === 'active' ? (
+              <button
+                className="min-h-10 rounded-[10px] bg-arsen-acid px-3 text-sm font-black text-arsen-bg disabled:opacity-60"
+                disabled={busyAction === 'deload-complete'}
+                onClick={() =>
+                  runAction(
+                    'deload-complete',
+                    async () => {
+                      await completeActiveDeload()
+                    },
+                    'Deload finalizado',
+                  )
+                }
+                type="button"
+              >
+                Finalizar deload
+              </button>
+            ) : (
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  className="min-h-10 rounded-[10px] bg-arsen-acid px-3 text-sm font-black text-arsen-bg disabled:opacity-60"
+                  disabled={busyAction === 'deload-start'}
+                  onClick={() =>
+                    runAction(
+                      'deload-start',
+                      async () => {
+                        await startDeloadNow()
+                      },
+                      'Deload iniciado',
+                    )
+                  }
+                  type="button"
+                >
+                  Iniciar deload ahora
+                </button>
+                <button
+                  className="min-h-10 rounded-[10px] border border-white/10 px-3 text-sm font-extrabold text-arsen-muted disabled:opacity-60"
+                  disabled={busyAction === 'deload-skip' || deload?.phase !== 'suggested'}
+                  onClick={() =>
+                    runAction(
+                      'deload-skip',
+                      async () => {
+                        await skipDeloadSuggestion()
+                      },
+                      'Deload pausado 14 dias',
+                    )
+                  }
+                  type="button"
+                >
+                  Ahora no
+                </button>
+              </div>
+            )}
+            <div>
+              <label className="block">
+                <span className="mb-1 block text-xs font-bold text-arsen-muted">Fecha de inicio deload</span>
+                <input
+                  className="min-h-10 w-full rounded-[10px] border border-white/10 bg-arsen-bg px-2 text-sm font-extrabold text-arsen-ink"
+                  min={today}
+                  onChange={(event) => setDeloadStartDate(event.target.value)}
+                  type="date"
+                  value={deloadStartDate}
+                />
+              </label>
+
+            </div>
+            <button
+              className="min-h-10 rounded-[10px] border border-arsen-purple/35 px-3 text-sm font-extrabold text-arsen-purple2 disabled:opacity-60"
+              disabled={busyAction === 'deload-schedule'}
+              onClick={programDeload}
+              type="button"
+            >
+              Programar deload
+            </button>
+            <div className="grid grid-cols-2 gap-2">
+              <label className="block">
+                <span className="mb-1 block text-xs font-bold text-arsen-muted">Series deload</span>
+                <input
+                  className="min-h-10 w-full rounded-[10px] border border-white/10 bg-arsen-bg px-2 text-sm font-extrabold text-arsen-ink"
+                  max={60}
+                  min={40}
+                  onChange={(event) => setSeriesReductionValue(event.target.value)}
+                  type="number"
+                  value={seriesReductionValue}
+                />
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-xs font-bold text-arsen-muted">Peso deload</span>
+                <input
+                  className="min-h-10 w-full rounded-[10px] border border-white/10 bg-arsen-bg px-2 text-sm font-extrabold text-arsen-ink"
+                  max={90}
+                  min={70}
+                  onChange={(event) => setWeightReductionValue(event.target.value)}
+                  type="number"
+                  value={weightReductionValue}
+                />
+              </label>
+            </div>
+            <button
+              className="min-h-10 rounded-[10px] border border-arsen-acid/40 px-3 text-sm font-extrabold text-arsen-acid disabled:opacity-60"
+              disabled={busyAction === 'deload-settings'}
+              onClick={saveDeloadReductions}
+              type="button"
+            >
+              Guardar deload
+            </button>
+          </div>
+        </Card>
         <ActionRow
           busy={busyAction === 'notify'}
           icon={Flame}
-          label="Deload"
-          meta={
-            deload?.firstLogDate
-              ? `${deload.weeks} semanas · ${appSettings?.notificationPermission ?? 'sin permiso'}`
-              : 'Sin registros aun'
-          }
+          label="Notificacion deload"
+          meta={`${deload?.weeksSinceAnchor ?? 0} semanas - ${appSettings?.notificationPermission ?? 'sin permiso'}`}
           onClick={() =>
             runAction(
               'notify',
@@ -440,6 +611,15 @@ function Metric({ label, value }: { label: string; value: number }) {
       <div className="text-xs text-arsen-muted">{label}</div>
     </div>
   )
+}
+
+function deloadStatusLabel(phase?: DeloadPhase) {
+  if (phase === 'suggested') return 'Sugerido'
+  if (phase === 'scheduled') return 'Programado'
+  if (phase === 'active') return 'Activo'
+  if (phase === 'completed') return 'Completado'
+
+  return 'Sin sugerencia activa'
 }
 
 function formatBytes(value?: number | null) {

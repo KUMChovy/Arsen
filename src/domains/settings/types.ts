@@ -39,6 +39,8 @@ export type AppSettings = {
   deloadNotifications: boolean
   deloadSeriesReductionPercent?: number
   deloadWeightReductionPercent?: number
+  healthIntegrationEnabled?: boolean
+  healthIntegrationFirstConnectedAt?: string | null
   lastDeloadNotificationDate?: string | null
   notificationPermission?: NotificationPermission | 'unsupported'
   storagePersisted: boolean | null

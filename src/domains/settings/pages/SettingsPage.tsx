@@ -47,6 +47,15 @@ import { requestDeloadNotifications } from '../notifications'
 import { localDateKey } from '../../../shared/utils/date'
 import { kgToUnit, unitToKg } from '../../../shared/utils/weight'
 import type { DeloadPhase } from '../types'
+import {
+  disableHealthIntegration,
+  enableHealthIntegration,
+  getHealthPermissions,
+  isHealthConnectAvailabilityError,
+  openHealthConnectInstall,
+  openHealthConnectAccess,
+} from '../../health/services'
+import { HealthSetupWizard } from '../../health/components/HealthSetupWizard'
 
 const routineActions = [
   { icon: Folder, label: 'Rutinas guardadas', meta: 'Cambiar, duplicar o eliminar' },
@@ -64,6 +73,8 @@ export function SettingsPage() {
   const [cleanupStartDate, setCleanupStartDate] = useState(today)
   const [deloadStartDate, setDeloadStartDate] = useState(today)
   const [message, setMessage] = useState<string | null>(null)
+  const [healthAvailability, setHealthAvailability] = useState<'available' | 'unavailable' | 'provider-update-required' | 'not-native' | 'loading'>('loading')
+  const [healthPermissionsGranted, setHealthPermissionsGranted] = useState(0)
   const appSettings = useLiveQuery(() => getAppSettings(), [], undefined)
   const preferredUnit = appSettings?.preferredUnit ?? 'kg'
   const resolvedPlates = resolveAvailablePlateWeightsKg(appSettings)
@@ -91,6 +102,26 @@ export function SettingsPage() {
     deload?.weightReductionPercent,
     today,
   ])
+
+  useEffect(() => {
+    if (!appSettings?.healthIntegrationEnabled) return
+
+    // Ajustes refresca el estado de permisos sin activar la lectura de datos.
+    let cancelled = false
+    void getHealthPermissions()
+      .then((permissions) => {
+        if (cancelled) return
+        setHealthAvailability('available')
+        setHealthPermissionsGranted(permissions.granted.length)
+      })
+      .catch(() => {
+        if (!cancelled) setHealthPermissionsGranted(0)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [appSettings?.healthIntegrationEnabled])
 
   async function runAction(id: string, action: () => Promise<void | boolean>, success: string) {
     try {
@@ -142,6 +173,45 @@ export function SettingsPage() {
       },
       'Deload programado',
     )
+  }
+
+  function toggleHealthIntegration() {
+    if (appSettings?.healthIntegrationEnabled) {
+      void runAction('health-integration', disableHealthIntegration, 'Integración de salud desactivada')
+      return
+    }
+
+    // La activación distingue disponibilidad, permisos concedidos y apertura de Google Play.
+    void (async () => {
+      try {
+        setBusyAction('health-integration')
+        setMessage(null)
+        const permissions = await enableHealthIntegration()
+        setHealthAvailability('available')
+        setHealthPermissionsGranted(permissions.granted.length)
+        setMessage('Integración de salud activada')
+      } catch (error) {
+        if (isHealthConnectAvailabilityError(error)) {
+          const status = error.status ?? 'unavailable'
+          setHealthAvailability(status)
+          try {
+            await openHealthConnectInstall()
+            setMessage(status === 'provider-update-required' ? 'Health Connect necesita una actualización. Se abrió Google Play.' : 'Health Connect no está instalado. Se abrió Google Play.')
+            return
+          } catch (installError) {
+            setMessage(installError instanceof Error ? installError.message : 'No se pudo abrir Google Play')
+            return
+          }
+        }
+        setMessage(error instanceof Error ? error.message : 'No se pudo activar la integración de salud')
+      } finally {
+        setBusyAction(null)
+      }
+    })()
+  }
+
+  function manageHealthConnectAccess() {
+    void runAction('health-access', openHealthConnectAccess, 'Se abrió Health Connect para agregar Arsen')
   }
 
   return (
@@ -273,6 +343,17 @@ export function SettingsPage() {
             Guardar discos
           </button>
         </Card>
+      </SettingsSection>
+
+      <SettingsSection title="Salud opcional">
+        <HealthSetupWizard
+          availability={healthAvailability}
+          busyAction={busyAction}
+          healthEnabled={appSettings?.healthIntegrationEnabled === true}
+          onActivate={toggleHealthIntegration}
+          onOpenAccess={manageHealthConnectAccess}
+          permissionsGranted={healthPermissionsGranted}
+        />
       </SettingsSection>
 
       <SettingsSection title="Rutinas">

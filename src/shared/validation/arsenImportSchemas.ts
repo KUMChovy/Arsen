@@ -21,6 +21,37 @@ const setKindSchema = z.enum(['main', 'warmup'])
 const catalogOriginSchema = z.enum(['user', 'sinful-shell'])
 const deloadCycleStatusSchema = z.enum(['suggested', 'scheduled', 'active', 'completed', 'skipped'])
 
+const healthMetricSummarySchema = z.object({
+  activeCaloriesKcal: z.number().nullable(),
+  heartRateAvgBpm: z.number().nullable(),
+  heartRateMaxBpm: z.number().nullable(),
+  heartRateMinBpm: z.number().nullable(),
+  oxygenSaturationAvgPercent: z.number().nullable(),
+  steps: z.number().nullable(),
+})
+
+const healthWindowSummarySchema = z.object({
+  metrics: healthMetricSummarySchema,
+  rangeEnd: z.string(),
+  rangeStart: z.string(),
+})
+
+const healthExerciseSummarySchema = healthWindowSummarySchema.extend({
+  canonicalName: z.string(),
+  exerciseLogId: z.string(),
+  exerciseName: z.string(),
+  routineExerciseId: z.string(),
+  setCount: z.number().int().nonnegative(),
+})
+
+const healthSummarySchema = z.object({
+  day: healthWindowSummarySchema,
+  exercises: z.array(healthExerciseSummarySchema).optional(),
+  session: healthWindowSummarySchema.optional(),
+  sessionEndSource: z.enum(['completed', 'last-exercise', 'sync-time']).optional(),
+  syncedAt: z.string(),
+})
+
 
 export const deloadCycleSchema = z
   .object({
@@ -166,6 +197,8 @@ export const appSettingsSchema = z
     deloadNotifications: z.boolean(),
     deloadSeriesReductionPercent: z.number().optional().default(DEFAULT_DELOAD_SERIES_PERCENT).transform(normalizeDeloadSeriesPercent),
     deloadWeightReductionPercent: z.number().optional().default(DEFAULT_DELOAD_WEIGHT_PERCENT).transform(normalizeDeloadWeightPercent),
+    healthIntegrationEnabled: z.boolean().optional().default(false),
+    healthIntegrationFirstConnectedAt: z.string().nullable().optional().default(null),
     id: z.literal('app'),
     lastDeloadNotificationDate: z.string().nullable().optional(),
     notificationPermission: z.enum(['default', 'denied', 'granted', 'unsupported']).optional(),
@@ -178,14 +211,18 @@ export const appSettingsSchema = z
 
 export const workoutSessionSchema = z
   .object({
+    completedAt: z.string().nullable().optional(),
     createdAt: z.string(),
     date: z.string(),
     dayId: z.string().min(1),
     displayUnit: weightUnitSchema,
+    health: healthSummarySchema.optional(),
     id: z.string().min(1),
+    lastExerciseAt: z.string().nullable().optional(),
     notes: z.string(),
     routineId: z.string().min(1),
     status: z.enum(['draft', 'completed']),
+    startedAt: z.string().nullable().optional(),
     updatedAt: z.string(),
   })
   .passthrough()

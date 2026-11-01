@@ -1,4 +1,25 @@
 apply plugin: 'com.android.application'
+apply plugin: 'org.jetbrains.kotlin.android'
+
+def arsenPackageSuffix = (project.findProperty('arsenPackageSuffix') ?: 'v3').toString()
+def arsenVersionCode = (project.findProperty('arsenVersionCode') ?: (arsenPackageSuffix.replaceAll('[^0-9]', '') ?: '3')).toInteger()
+def webBuildIndex = file("$rootDir/../dist/index.html")
+def packagedWebIndex = file("$projectDir/src/main/assets/public/index.html")
+
+tasks.register('verifyCapacitorWebAssets') {
+    doLast {
+        if (!webBuildIndex.exists()) {
+            throw new GradleException('Falta dist/index.html. Ejecuta pnpm build antes de generar el APK.')
+        }
+        if (!packagedWebIndex.exists() || webBuildIndex.getText('UTF-8') != packagedWebIndex.getText('UTF-8')) {
+            throw new GradleException('Los assets web del APK están desactualizados. Ejecuta pnpm cap:sync o pnpm cap:build antes de usar Gradle.')
+        }
+    }
+}
+
+tasks.named('preBuild').configure {
+    dependsOn('verifyCapacitorWebAssets')
+}
 
 android {
     namespace = "com.kumchovy.arsen.codex"
@@ -7,8 +28,8 @@ android {
         applicationId "com.kumchovy.arsen.codex"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode arsenVersionCode
+        versionName "1.0.0-${arsenPackageSuffix}"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -20,6 +41,12 @@ android {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    applicationVariants.all { variant ->
+        variant.outputs.all {
+            outputFileName = "Arsen-${arsenPackageSuffix}-${variant.name}.apk"
         }
     }
 }
@@ -36,6 +63,8 @@ dependencies {
     implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
     implementation project(':capacitor-android')
+    implementation 'androidx.health.connect:connect-client:1.1.0'
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2'
     testImplementation "junit:junit:$junitVersion"
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"

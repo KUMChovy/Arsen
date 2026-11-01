@@ -41,6 +41,11 @@ vi.mock('../hooks', () => ({
 vi.mock('../../settings/services', () => ({
   exportProgressCsv: vi.fn(),
   exportProgressJson: vi.fn(),
+  getAppSettings: vi.fn(() => Promise.resolve(null)),
+}))
+
+vi.mock('../../health/hooks', () => ({
+  useHealthProgressOverview: () => null,
 }))
 
 describe('ProgressPage', () => {

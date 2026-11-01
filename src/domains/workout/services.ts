@@ -26,6 +26,9 @@ export async function getOrCreateSessionForDay(input: {
     notes: '',
     displayUnit: input.displayUnit,
     status: 'draft',
+    startedAt: null,
+    lastExerciseAt: null,
+    completedAt: null,
     createdAt: now,
     updatedAt: now,
   }
@@ -108,7 +111,7 @@ export async function saveMainSet(input: {
     await refreshExerciseState(input.exerciseLogId)
   })
 
-  return set.id
+  return set
 }
 
 export async function registerMainSetForExercise(input: {
@@ -133,7 +136,7 @@ export async function registerMainSetForExercise(input: {
     routineId: input.routineId,
   })
   const exerciseLogId = await ensureExerciseLog(sessionId, input.exercise)
-  const setLogId = await saveMainSet({
+  const set = await saveMainSet({
     displayUnit: input.displayUnit,
     exerciseLogId,
     reps: input.reps,
@@ -146,23 +149,27 @@ export async function registerMainSetForExercise(input: {
       displayUnit: input.displayUnit,
       reps: input.dropSet.reps,
       rir: input.dropSet.rir,
-      setLogId,
+      setLogId: set.id,
       weightKg: input.dropSet.weightKg,
     })
   }
 
+  const currentSession = await db.workoutSessions.get(sessionId)
+  const now = new Date().toISOString()
   await Promise.all([
     db.workoutSessions.update(sessionId, {
-      updatedAt: new Date().toISOString(),
+      lastExerciseAt: set.createdAt,
+      startedAt: currentSession?.startedAt ?? set.createdAt,
+      updatedAt: now,
     }),
     db.routineExercises.update(input.exercise.id, {
       currentWeightKg: input.weightKg,
-      updatedAt: new Date().toISOString(),
+      updatedAt: now,
     }),
   ])
   await syncSessionStatusFromExercises(sessionId)
 
-  return { exerciseLogId, sessionId, setLogId }
+  return { exerciseLogId, sessionId, setLogId: set.id }
 }
 
 export async function addDropSet(input: {
@@ -294,9 +301,11 @@ export async function completeSessionForDay(input: {
     routineId: input.routineId,
   })
 
+  const completedAt = new Date().toISOString()
   await db.workoutSessions.update(sessionId, {
+    completedAt,
     status: 'completed',
-    updatedAt: new Date().toISOString(),
+    updatedAt: completedAt,
   })
 
   return sessionId
@@ -394,6 +403,7 @@ export async function moveMainSetToExercise(setLogId: string, routineExerciseId:
 export async function deleteMainSet(setLogId: string) {
   const set = await db.setLogs.get(setLogId)
   if (!set) throw new Error('Serie no encontrada')
+  const exerciseLog = await db.exerciseLogs.get(set.exerciseLogId)
 
   await db.transaction('rw', [db.setLogs, db.dropSetLogs, db.exerciseLogs], async () => {
     await db.dropSetLogs.where('setLogId').equals(setLogId).delete()
@@ -401,6 +411,7 @@ export async function deleteMainSet(setLogId: string) {
     await refreshExerciseState(set.exerciseLogId)
   })
   await syncSessionStatusFromExerciseLog(set.exerciseLogId)
+  if (exerciseLog) await refreshSessionActivityTimestamps(exerciseLog.sessionId)
 }
 
 export async function deleteWorkoutSession(sessionId: string) {
@@ -452,9 +463,35 @@ async function syncSessionStatusFromExercises(sessionId: string) {
   const nextStatus = isCompleted ? 'completed' : 'draft'
 
   if (session.status !== nextStatus) {
+    const now = new Date().toISOString()
     await db.workoutSessions.update(sessionId, {
+      completedAt: nextStatus === 'completed' ? now : null,
       status: nextStatus,
-      updatedAt: new Date().toISOString(),
+      updatedAt: now,
     })
   }
+}
+
+/**
+ * Deleting the last set can otherwise leave the session interval pointing at
+ * an exercise that no longer exists. Recompute both bounds from surviving main
+ * sets so the next health sync reflects the actual workout history.
+ */
+async function refreshSessionActivityTimestamps(sessionId: string) {
+  const session = await db.workoutSessions.get(sessionId)
+  if (!session) return
+
+  const exerciseLogs = await db.exerciseLogs.where('sessionId').equals(sessionId).toArray()
+  const exerciseLogIds = exerciseLogs.map((log) => log.id)
+  const setLogs = exerciseLogIds.length > 0
+    ? await db.setLogs.where('exerciseLogId').anyOf(exerciseLogIds).toArray()
+    : []
+  const mainSets = setLogs.filter((set) => set.kind === 'main').sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+  const now = new Date().toISOString()
+
+  await db.workoutSessions.update(sessionId, {
+    lastExerciseAt: mainSets.at(-1)?.createdAt ?? null,
+    startedAt: mainSets[0]?.createdAt ?? null,
+    updatedAt: now,
+  })
 }

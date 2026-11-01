@@ -1,11 +1,16 @@
 import { lazy, Suspense, useEffect, useMemo, useState, useTransition } from 'react'
 import { ChartLine, Check, Download, NotebookTabs, Pencil, Trash2, Trophy, X } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
+import { useLiveQuery } from 'dexie-react-hooks'
 import { Card } from '../../../shared/components/Card'
 import { ExerciseArt } from '../../../shared/components/ExerciseArt'
 import { PageHeader } from '../../../shared/components/PageHeader'
 import { ActionButton } from '../../../shared/components/ActionButton'
+import { HealthSummaryCard } from '../../health/components/HealthSummaryCard'
 import { exportProgressCsv, exportProgressJson } from '../../settings/services'
+import { getAppSettings } from '../../settings/services'
+import { HealthProgressCard } from '../../health/components/HealthProgressCard'
+import { useHealthProgressOverview } from '../../health/hooks'
 import { TrainingCalendarSheet } from '../components/TrainingCalendarSheet'
 import { useProgressDayOptions, useProgressExerciseOptions, useProgressOverview, useTrainingDates } from '../hooks'
 import type { ProgressBestMark, ProgressEditOptions, RecentSessionSummary, SessionDetail } from '../repository'
@@ -47,6 +52,15 @@ export function ProgressPage() {
     [activeDayId, selectedExercise],
   )
   const overview = useProgressOverview(progressFilters)
+  const appSettings = useLiveQuery(() => getAppSettings(), [], undefined)
+  const healthEnabled = appSettings?.healthIntegrationEnabled === true
+  // Progreso solo consulta el repositorio local cuando la integración está activa.
+  const healthOverview = useHealthProgressOverview(activeDayId, healthEnabled)
+  const selectedExerciseHealth = selectedExercise && healthOverview
+    ? [...healthOverview.exercisePoints]
+        .filter((point) => point.canonicalName === selectedExercise)
+        .sort((a, b) => b.date.localeCompare(a.date))[0] ?? null
+    : null
   const trainingDates = useTrainingDates(progressFilters) ?? []
   const chartData = overview?.chartData ?? []
   const latestScore = chartData.at(-1)?.score ?? 0
@@ -210,7 +224,34 @@ export function ProgressPage() {
                 <span className="text-sm">/100</span>
               </div>
             </div>
+            {selectedExerciseHealth ? (
+              <div className="mt-4 border-t border-white/10 pt-3">
+                <div className="text-xs font-extrabold text-arsen-purple2">Salud del ejercicio</div>
+                <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+                  <div className="rounded-[10px] border border-white/10 bg-arsen-bg/45 p-2">
+                    <span className="block text-arsen-muted">Ventana</span>
+                    <strong className="mt-1 block">{formatHealthRange(selectedExerciseHealth.rangeStart, selectedExerciseHealth.rangeEnd)}</strong>
+                  </div>
+                  <div className="rounded-[10px] border border-white/10 bg-arsen-bg/45 p-2">
+                    <span className="block text-arsen-muted">Duracion</span>
+                    <strong className="mt-1 block">{selectedExerciseHealth.durationMinutes} min · {selectedExerciseHealth.setCount} series</strong>
+                  </div>
+                  <div className="rounded-[10px] border border-white/10 bg-arsen-bg/45 p-2">
+                    <span className="block text-arsen-muted">Pulso promedio</span>
+                    <strong className="mt-1 block">{formatHealthValue(selectedExerciseHealth.metrics.heartRateAvgBpm, ' lpm')}</strong>
+                  </div>
+                  <div className="rounded-[10px] border border-white/10 bg-arsen-bg/45 p-2">
+                    <span className="block text-arsen-muted">Calorías · pasos</span>
+                    <strong className="mt-1 block">
+                      {formatHealthValue(selectedExerciseHealth.metrics.activeCaloriesKcal, ' kcal')} · {formatHealthInteger(selectedExerciseHealth.metrics.steps)}
+                    </strong>
+                  </div>
+                </div>
+              </div>
+            ) : null}
           </Card>
+
+          {healthEnabled && healthOverview?.points.length ? <HealthProgressCard overview={healthOverview} /> : null}
 
           <section>
             <div className="mb-2 text-xs font-extrabold text-arsen-muted">Metricas clave</div>
@@ -306,6 +347,20 @@ function BestMarksPanel({ marks }: { marks: ProgressBestMark[] }) {
   )
 }
 
+function formatHealthRange(start: string, end: string) {
+  const startTime = new Date(start).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })
+  const endTime = new Date(end).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })
+  return `${startTime}–${endTime}`
+}
+
+function formatHealthValue(value: number | null, suffix: string) {
+  return value === null ? '—' : `${value.toLocaleString('es-MX', { maximumFractionDigits: 1 })}${suffix}`
+}
+
+function formatHealthInteger(value: number | null) {
+  return value === null ? '—' : Math.round(value).toLocaleString('es-MX')
+}
+
 export function HistoryPanel({ sessions, trainingDate }: { sessions: RecentSessionSummary[]; trainingDate: string | null }) {
   const setCount = sessions.reduce((total, session) => total + session.setCount, 0)
   const volume = sessions.reduce((total, session) => total + session.volumeKg, 0)
@@ -383,12 +438,14 @@ export function SessionRow({
 export function SessionDetailSheet({
   detail,
   disabled,
+  healthEnabled,
   onClose,
   onDeleteSet,
   onEditSet,
 }: {
   detail: SessionDetail | null | undefined
   disabled: boolean
+  healthEnabled: boolean
   onClose: () => void
   onDeleteSet: (setLogId: string) => void
   onEditSet: (set: EditSetState) => void
@@ -412,6 +469,7 @@ export function SessionDetailSheet({
         </div>
 
         <div className="space-y-3">
+          {healthEnabled ? <HealthSummaryCard onSync={() => undefined} showSync={false} summary={detail?.health} /> : null}
           {detail?.exercises.map((exercise) => (
             <Card className="p-3" key={exercise.exerciseLogId}>
               <div className="mb-2 flex items-center gap-3">

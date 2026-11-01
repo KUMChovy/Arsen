@@ -1,3 +1,5 @@
+import type { HealthSummary } from '../health/types'
+
 export type ExerciseState = 'pending' | 'in_progress' | 'skipped' | 'done'
 export type SetKind = 'main' | 'warmup'
 export type WeightUnit = 'kg' | 'lb'
@@ -10,6 +12,10 @@ export type WorkoutSession = {
   notes: string
   displayUnit: WeightUnit
   status: 'draft' | 'completed'
+  startedAt?: string | null
+  lastExerciseAt?: string | null
+  completedAt?: string | null
+  health?: HealthSummary
   createdAt: string
   updatedAt: string
 }

@@ -2,7 +2,7 @@ import type { CapacitorConfig } from '@capacitor/cli'
 
 const config: CapacitorConfig = {
   appId: 'com.kumchovy.arsen.codex',
-  appName: 'Arsen Codex',
+  appName: 'ARSEN',
   webDir: 'dist',
 }
 

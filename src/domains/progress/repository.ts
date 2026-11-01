@@ -1,5 +1,6 @@
 import { db } from '../../db/schema'
 import { bestSet, performanceScore, totalVolume } from '../../shared/calculations/workout'
+import type { HealthSummary } from '../health/types'
 import type { DropSetLog } from '../workout/types'
 
 export type ProgressPoint = {
@@ -87,6 +88,7 @@ export type SessionDetail = {
   dayName: string
   exercises: SessionExerciseDetail[]
   id: string
+  health?: HealthSummary
   routineId: string
   routineName: string
 }
@@ -358,6 +360,7 @@ export async function getSessionDetail(sessionId: string, filters: ProgressOverv
         })),
     })),
     id: session.id,
+    health: session.health,
     routineId: session.routineId,
     routineName: routine?.name ?? 'Rutina eliminada',
   }

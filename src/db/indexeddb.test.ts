@@ -4,6 +4,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { db } from './schema'
 import type { ExerciseAsset, ExerciseCatalogItem, Routine, RoutineDay, RoutineExercise } from '../domains/routine/types'
 import type { AppSettings, DeloadCycle } from '../domains/settings/types'
+import type { HealthSummary } from '../domains/health/types'
+import type { WorkoutSession } from '../domains/workout/types'
 import { addCatalogExerciseToDay, createCatalogExercise, createExerciseAsset, updateCatalogExercise } from '../domains/routine/services'
 import { buildProgressExport, importFullBackup } from '../domains/settings/services'
 import {
@@ -100,6 +102,66 @@ describe('IndexedDB integration', () => {
     )
 
     await expect(db.deloadCycles.get('deload-1')).resolves.toMatchObject({ status: 'completed' })
+  })
+
+  it('restores session health summaries from a full backup and accepts legacy sessions', async () => {
+    const health: HealthSummary = {
+      day: {
+        metrics: healthMetrics(),
+        rangeEnd: '2026-07-20T20:04:00.000Z',
+        rangeStart: '2026-07-20T00:00:00.000Z',
+      },
+      session: {
+        metrics: healthMetrics(),
+        rangeEnd: '2026-07-20T18:30:00.000Z',
+        rangeStart: '2026-07-20T16:42:00.000Z',
+      },
+      sessionEndSource: 'completed',
+      syncedAt: '2026-07-20T20:04:00.000Z',
+    }
+    const session: WorkoutSession = {
+      completedAt: '2026-07-20T18:30:00.000Z',
+      createdAt: now,
+      date: '2026-07-20',
+      dayId: 'day-1',
+      displayUnit: 'kg',
+      health,
+      id: 'session-health',
+      lastExerciseAt: '2026-07-20T18:25:00.000Z',
+      notes: '',
+      routineId: 'routine-1',
+      startedAt: '2026-07-20T16:42:00.000Z',
+      status: 'completed',
+      updatedAt: now,
+    }
+
+    await importFullBackup(backupFile({ workoutSessions: [session] }), 'replace')
+
+    await expect(db.workoutSessions.get(session.id)).resolves.toMatchObject({
+      health: {
+        day: { metrics: healthMetrics() },
+        session: { rangeEnd: '2026-07-20T18:30:00.000Z' },
+      },
+      lastExerciseAt: '2026-07-20T18:25:00.000Z',
+    })
+
+    await importFullBackup(
+      backupFile({
+        workoutSessions: [
+          {
+            ...session,
+            health: undefined,
+            id: 'legacy-session',
+            startedAt: undefined,
+            lastExerciseAt: undefined,
+            completedAt: undefined,
+          },
+        ],
+      }),
+      'replace',
+    )
+
+    await expect(db.workoutSessions.get('legacy-session')).resolves.toMatchObject({ id: 'legacy-session' })
   })
   it('registers main sets, drop sets and completes exercise state', async () => {
     const exercise = routineExercise()
@@ -1073,6 +1135,7 @@ function backupFile(tables: {
   routineExercises?: RoutineExercise[]
   routines?: Routine[]
   settings?: AppSettings[]
+  workoutSessions?: WorkoutSession[]
 }) {
   return new File(
     [
@@ -1085,6 +1148,17 @@ function backupFile(tables: {
     'backup.json',
     { type: 'application/json' },
   )
+}
+
+function healthMetrics() {
+  return {
+    activeCaloriesKcal: 420,
+    heartRateAvgBpm: 132,
+    heartRateMaxBpm: 168,
+    heartRateMinBpm: 92,
+    oxygenSaturationAvgPercent: 97,
+    steps: 1850,
+  }
 }
 
 function routine(id: string, name: string): Routine {

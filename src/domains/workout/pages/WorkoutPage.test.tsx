@@ -11,8 +11,13 @@ import { completeSessionForDay, deleteMainSet, updateMainSet } from '../services
 import { setActiveRoutine } from '../../routine/services'
 import type { DeloadOverview } from '../../settings/types'
 
+vi.mock('dexie-react-hooks', () => ({
+  useLiveQuery: (callback: () => unknown) => callback(),
+}))
+
 const workoutMocks = vi.hoisted(() => ({
   completeActiveDeload: vi.fn(() => Promise.resolve()),
+  healthEnabled: false,
   setLogs: [] as SetLog[],
   sessionStatus: 'draft' as WorkoutSession['status'],
   rotationStatus: {
@@ -116,6 +121,15 @@ vi.mock('../../routine/services', () => ({
   setActiveRoutine: vi.fn(() => Promise.resolve()),
 }))
 
+vi.mock('../../settings/services', () => ({
+  completeActiveDeload: vi.fn(() => Promise.resolve()),
+  getAppSettings: vi.fn(() => ({ healthIntegrationEnabled: workoutMocks.healthEnabled })),
+}))
+
+vi.mock('../../health/services', () => ({
+  syncAllWorkoutHealth: vi.fn(() => Promise.resolve({ syncedSessions: 0 })),
+}))
+
 vi.mock('../../../shared/utils/alerts', () => ({
   confirmDanger: vi.fn(() => Promise.resolve(true)),
 }))
@@ -132,6 +146,7 @@ describe('WorkoutPage', () => {
     vi.setSystemTime(new Date('2026-07-20T12:00:00'))
     vi.clearAllMocks()
     workoutMocks.setLogs = [setLog, otherSetLog]
+    workoutMocks.healthEnabled = false
     workoutMocks.sessionStatus = 'draft'
     workoutMocks.rotationStatus = {
       daysWithoutTraining: 0,
@@ -171,6 +186,19 @@ describe('WorkoutPage', () => {
     expect(screen.getByText('Descanso')).toBeInTheDocument()
     expect(screen.getByText('1:30 min')).toBeInTheDocument()
     expect(screen.getByLabelText('Descanso recomendado')).toHaveTextContent('Descanso1:30 min')
+  })
+
+  it('explains when Health Connect completes a read without published records', async () => {
+    workoutMocks.healthEnabled = true
+
+    render(<WorkoutPage />)
+
+    const syncButton = await screen.findByRole('button', { name: 'Sincronizar salud' })
+    fireEvent.click(syncButton)
+
+    await waitFor(() => {
+      expect(screen.getByText('No hay sesiones para sincronizar')).toBeInTheDocument()
+    })
   })
 
   it('completes current session', async () => {

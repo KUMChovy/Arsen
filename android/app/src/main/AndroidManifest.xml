@@ -1,11 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <queries>
+        <!-- Health Connect is an optional provider; this lets availability checks
+             distinguish a missing provider from a permission the user declined. -->
+        <package android:name="com.google.android.apps.healthdata" />
+    </queries>
+
     <application
         android:allowBackup="true"
-        android:icon="@drawable/ic_launcher_codex"
+        android:icon="@drawable/arsen_logo"
         android:label="@string/app_name"
-        android:roundIcon="@drawable/ic_launcher_codex"
+        android:roundIcon="@drawable/arsen_logo"
         android:supportsRtl="true"
         android:theme="@style/AppTheme">
 
@@ -24,6 +30,29 @@
 
         </activity>
 
+        <!-- Health Connect requires a privacy rationale activity so the user
+             can understand how Arsen handles the requested health data. -->
+        <activity
+            android:name=".health.HealthConnectRationaleActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />
+            </intent-filter>
+        </activity>
+
+        <!-- Android 14+ uses this alias when Health Connect opens the app's
+             privacy/data-access explanation from its permission screen. -->
+        <activity-alias
+            android:name=".health.ViewPermissionUsageActivity"
+            android:exported="true"
+            android:targetActivity=".health.HealthConnectRationaleActivity"
+            android:permission="android.permission.START_VIEW_PERMISSION_USAGE">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW_PERMISSION_USAGE" />
+                <category android:name="android.intent.category.HEALTH_PERMISSIONS" />
+            </intent-filter>
+        </activity-alias>
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
@@ -38,4 +67,8 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.health.READ_HEART_RATE" />
+    <uses-permission android:name="android.permission.health.READ_ACTIVE_CALORIES_BURNED" />
+    <uses-permission android:name="android.permission.health.READ_STEPS" />
+    <uses-permission android:name="android.permission.health.READ_OXYGEN_SATURATION" />
 </manifest>

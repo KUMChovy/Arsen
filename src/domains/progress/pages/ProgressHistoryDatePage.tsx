@@ -6,6 +6,7 @@ import { ActionButton } from '../../../shared/components/ActionButton'
 import { Card } from '../../../shared/components/Card'
 import { ExerciseArt } from '../../../shared/components/ExerciseArt'
 import { PageHeader } from '../../../shared/components/PageHeader'
+import { HealthSummaryCard } from '../../health/components/HealthSummaryCard'
 import { confirmDanger } from '../../../shared/utils/alerts'
 import { localDateKey } from '../../../shared/utils/date'
 import { deleteMainSet, deleteWorkoutSession, moveMainSetToExercise, registerMainSetForExercise, updateMainSet, updateWorkoutSession } from '../../workout/services'
@@ -121,6 +122,7 @@ export function ProgressHistoryDatePage() {
                 <SessionDetailInline
                   detail={expandedDetail}
                   disabled={isPending}
+                  healthEnabled={appSettings?.healthIntegrationEnabled === true}
                   onDeleteSet={async (setLogId) => {
                     if (!(await confirmDanger('Eliminar serie', 'Se borrara esta serie desde la sesion.'))) return
                     runHistoryAction(() => deleteMainSet(setLogId), 'Serie eliminada')
@@ -232,11 +234,13 @@ function HistorySessionCard({
 function SessionDetailInline({
   detail,
   disabled,
+  healthEnabled,
   onDeleteSet,
   onEditSet,
 }: {
   detail: SessionDetail | null | undefined
   disabled: boolean
+  healthEnabled: boolean
   onDeleteSet: (setLogId: string) => void
   onEditSet: (set: EditSetState) => void
 }) {
@@ -244,6 +248,7 @@ function SessionDetailInline({
 
   return (
     <div className="space-y-2">
+      {healthEnabled ? <HealthSummaryCard onSync={() => undefined} showSync={false} summary={detail.health} /> : null}
       {detail.exercises.map((exercise) => (
         <Card className="p-3" key={exercise.exerciseLogId}>
           <div className="mb-2 flex items-center gap-3">

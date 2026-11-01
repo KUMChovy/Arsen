@@ -16,6 +16,16 @@ const settingsPageMocks = vi.hoisted(() => ({
   updateDeloadReductionSettings: vi.fn(() => Promise.resolve()),
 }))
 
+const healthPageMocks = vi.hoisted(() => ({
+  disableHealthIntegration: vi.fn(() => Promise.resolve()),
+  enableHealthIntegration: vi.fn(() => Promise.resolve({ granted: [] as string[], requested: [] as string[] })),
+  getHealthAvailability: vi.fn(() => Promise.resolve({ status: 'available' })),
+  getHealthPermissions: vi.fn(() => Promise.resolve({ granted: [], requested: [] })),
+  isHealthConnectAvailabilityError: vi.fn(() => false),
+  openHealthConnectAccess: vi.fn(() => Promise.resolve()),
+  openHealthConnectInstall: vi.fn(() => Promise.resolve()),
+}))
+
 vi.mock('dexie-react-hooks', () => ({
   useLiveQuery: (callback: () => unknown) => callback(),
 }))
@@ -78,6 +88,8 @@ vi.mock('../../routine/importExport', () => ({
   importRoutineJson: vi.fn(),
 }))
 
+vi.mock('../../health/services', () => healthPageMocks)
+
 describe('SettingsPage', () => {
   afterEach(() => {
     cleanup()
@@ -88,6 +100,13 @@ describe('SettingsPage', () => {
     settingsPageMocks.startDeloadNow.mockClear()
     settingsPageMocks.updateAvailablePlateWeights.mockClear()
     settingsPageMocks.updateDeloadReductionSettings.mockClear()
+    healthPageMocks.disableHealthIntegration.mockClear()
+    healthPageMocks.enableHealthIntegration.mockClear()
+    healthPageMocks.getHealthAvailability.mockClear()
+    healthPageMocks.getHealthPermissions.mockClear()
+    healthPageMocks.isHealthConnectAvailabilityError.mockClear()
+    healthPageMocks.openHealthConnectAccess.mockClear()
+    healthPageMocks.openHealthConnectInstall.mockClear()
   })
 
   it('shows safe backup import modes and cleanup controls', () => {
@@ -139,6 +158,79 @@ describe('SettingsPage', () => {
     expect(screen.getByLabelText('Series deload')).toHaveValue(50)
     expect(screen.getByLabelText('Peso deload')).toHaveValue(80)
     expect(screen.getByRole('button', { name: 'Guardar deload' })).toBeInTheDocument()
+  })
+
+  it('defers Health Connect detection until activation', async () => {
+    render(
+      <MemoryRouter>
+        <SettingsPage />
+      </MemoryRouter>,
+    )
+
+    expect(healthPageMocks.getHealthAvailability).not.toHaveBeenCalled()
+    expect(screen.getByText(/Mi Fitness/i)).toBeInTheDocument()
+    expect(healthPageMocks.enableHealthIntegration).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Activar integración' }))
+
+    await waitFor(() => {
+      expect(healthPageMocks.enableHealthIntegration).toHaveBeenCalledOnce()
+    })
+  })
+
+  it('refreshes the granted permission count after activation', async () => {
+    healthPageMocks.enableHealthIntegration.mockResolvedValueOnce({
+      granted: ['android.permission.health.READ_STEPS', 'android.permission.health.READ_HEART_RATE'],
+      requested: [],
+    })
+
+    render(
+      <MemoryRouter>
+        <SettingsPage />
+      </MemoryRouter>,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Activar integración' }))
+
+    await waitFor(() => {
+      expect(screen.getByText('2 de 4 permisos activos')).toBeInTheDocument()
+    })
+  })
+
+  it('opens installation from activation when Health Connect is unavailable', async () => {
+    const availabilityError = Object.assign(new Error('Health Connect no está disponible'), { status: 'unavailable' })
+    healthPageMocks.enableHealthIntegration.mockRejectedValueOnce(availabilityError)
+    healthPageMocks.isHealthConnectAvailabilityError.mockReturnValue(true)
+
+    render(
+      <MemoryRouter>
+        <SettingsPage />
+      </MemoryRouter>,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Activar integración' }))
+
+    await waitFor(() => {
+      expect(healthPageMocks.openHealthConnectInstall).toHaveBeenCalledOnce()
+    })
+    expect(screen.getByText('Health Connect no está instalado. Se abrió Google Play.')).toBeInTheDocument()
+  })
+
+  it('offers the Play Store when Health Connect is unavailable', async () => {
+    healthPageMocks.enableHealthIntegration.mockRejectedValueOnce(new Error('Health Connect no está disponible'))
+    healthPageMocks.isHealthConnectAvailabilityError.mockReturnValue(true)
+
+    render(
+      <MemoryRouter>
+        <SettingsPage />
+      </MemoryRouter>,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Activar integración' }))
+
+    await waitFor(() => {
+      expect(healthPageMocks.openHealthConnectInstall).toHaveBeenCalledOnce()
+    })
   })
 
   it('saves configurable deload reductions', async () => {

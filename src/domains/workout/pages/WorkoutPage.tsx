@@ -1,4 +1,5 @@
 import { Check, ChevronLeft, ChevronRight, Dumbbell, Info, Moon, Pencil, Trash2, TrendingUp, X } from 'lucide-react'
+import { useLiveQuery } from 'dexie-react-hooks'
 import { useEffect, useMemo, useState, useTransition } from 'react'
 import { ActionButton } from '../../../shared/components/ActionButton'
 import { Card } from '../../../shared/components/Card'
@@ -23,7 +24,10 @@ import { useDeloadOverview, useLastSessionReferencesForDay, useWeightIncreaseRec
 import { addDropSet, completeSessionForDay, deleteDropSet, deleteMainSet, skipRoutineExerciseForDay, updateDropSet, updateMainSet } from '../services'
 import { setActiveRoutine } from '../../routine/services'
 import { completeActiveDeload } from '../../settings/services'
+import { getAppSettings } from '../../settings/services'
 import type { DeloadOverview } from '../../settings/types'
+import { HealthSummaryCard } from '../../health/components/HealthSummaryCard'
+import { syncAllWorkoutHealth } from '../../health/services'
 import type { ExerciseState, LastSessionReference, SetLog, WeightUnit } from '../types'
 
 type ExerciseFilter = 'all' | 'pending' | 'in_progress' | 'skipped' | 'done'
@@ -49,6 +53,7 @@ export function WorkoutPage() {
   const workoutDay = useWorkoutDayById(selectedDayId)
   const dayExercises = workoutDay?.dayExercises ?? []
   const dailyProgress = useWorkoutProgress(dateKey, workoutDay?.day.id, dayExercises)
+  const appSettings = useLiveQuery(() => getAppSettings(), [], undefined)
   const lastSessionReferences = useLastSessionReferencesForDay({
     date: dateKey,
     dayId: workoutDay?.day.id,
@@ -74,6 +79,7 @@ export function WorkoutPage() {
   const [missedNoticeDismissed, setMissedNoticeDismissed] = useState(() => isMissedNoticeDismissed(dateKey))
   const [isPending, startTransition] = useTransition()
   const [message, setMessage] = useState<string | null>(null)
+  const healthEnabled = appSettings?.healthIntegrationEnabled === true
   const navigableExercises = useMemo(
     () => dayExercises.filter((exercise) => (dailyProgress.stateByExerciseId.get(exercise.id) ?? 'pending') !== 'done'),
     [dailyProgress.stateByExerciseId, dayExercises],
@@ -178,6 +184,17 @@ export function WorkoutPage() {
       })
         .then(() => setMessage('Sesion finalizada'))
         .catch((error: unknown) => setMessage(error instanceof Error ? error.message : 'No se pudo finalizar'))
+    })
+  }
+
+  function syncHealth() {
+    // Entreno dispara la sincronización manual de todas las sesiones que Health Connect pueda leer.
+    startTransition(() => {
+      syncAllWorkoutHealth()
+        .then(({ syncedSessions }) => {
+          setMessage(syncedSessions > 0 ? `Salud sincronizada en ${syncedSessions} ${syncedSessions === 1 ? 'sesión' : 'sesiones'}` : 'No hay sesiones para sincronizar')
+        })
+        .catch((error: unknown) => setMessage(error instanceof Error ? error.message : 'No se pudo sincronizar salud'))
     })
   }
 
@@ -467,6 +484,17 @@ export function WorkoutPage() {
           ))}
         </div>
       </section>
+
+      {healthEnabled ? (
+        // La tarjeta consume el resumen persistido de la sesión actual y ofrece el botón de lectura.
+        <HealthSummaryCard
+          currentExerciseId={currentExercise ? dailyProgress.exerciseLogByExerciseId.get(currentExercise.id)?.id : null}
+          currentExerciseName={currentExercise?.name}
+          disabled={isPending}
+          onSync={syncHealth}
+          summary={dailyProgress.progress?.session?.health}
+        />
+      ) : null}
 
       <WeightIncreaseCard recommendations={currentExerciseRecommendations} unit={preferredUnit} />
 

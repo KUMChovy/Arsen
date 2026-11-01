@@ -1,8 +1,8 @@
 import 'fake-indexeddb/auto'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { db } from '../../db/schema'
 import type { RoutineExercise } from '../routine/types'
-import { ensureExerciseLog } from './services'
+import { completeSessionForDay, deleteMainSet, ensureExerciseLog, registerMainSetForExercise } from './services'
 
 async function resetDb() {
   db.close()
@@ -14,6 +14,7 @@ describe('workout services snapshots', () => {
   beforeEach(resetDb)
 
   afterEach(async () => {
+    vi.useRealTimers()
     db.close()
     await db.delete()
   })
@@ -43,6 +44,87 @@ describe('workout services snapshots', () => {
         mainMuscle: 'Pecho',
         name: 'Press inclinado',
       },
+    })
+  })
+
+  it('captures the first and last registered exercise times and completion time', async () => {
+    const exercise = routineExercise()
+    await db.routineExercises.put(exercise)
+
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-08-11T16:42:00.000Z'))
+    const first = await registerMainSetForExercise({
+      date: '2026-08-11',
+      dayId: exercise.dayId,
+      displayUnit: 'kg',
+      exercise,
+      reps: 8,
+      rir: 1,
+      routineId: exercise.routineId,
+      weightKg: 60,
+    })
+
+    vi.setSystemTime(new Date('2026-08-11T18:30:00.000Z'))
+    await registerMainSetForExercise({
+      date: '2026-08-11',
+      dayId: exercise.dayId,
+      displayUnit: 'kg',
+      exercise,
+      reps: 7,
+      rir: 1,
+      routineId: exercise.routineId,
+      weightKg: 62.5,
+    })
+
+    vi.setSystemTime(new Date('2026-08-11T18:40:00.000Z'))
+    await completeSessionForDay({
+      date: '2026-08-11',
+      dayId: exercise.dayId,
+      displayUnit: 'kg',
+      routineId: exercise.routineId,
+    })
+
+    await expect(db.workoutSessions.get(first.sessionId)).resolves.toMatchObject({
+      completedAt: '2026-08-11T18:40:00.000Z',
+      lastExerciseAt: '2026-08-11T18:30:00.000Z',
+      startedAt: '2026-08-11T16:42:00.000Z',
+    })
+  })
+
+  it('recomputes the health interval after deleting the latest main set', async () => {
+    const exercise = routineExercise()
+    await db.routineExercises.put(exercise)
+
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-08-11T16:42:00.000Z'))
+    const first = await registerMainSetForExercise({
+      date: '2026-08-11',
+      dayId: exercise.dayId,
+      displayUnit: 'kg',
+      exercise,
+      reps: 8,
+      rir: 1,
+      routineId: exercise.routineId,
+      weightKg: 60,
+    })
+
+    vi.setSystemTime(new Date('2026-08-11T18:30:00.000Z'))
+    const second = await registerMainSetForExercise({
+      date: '2026-08-11',
+      dayId: exercise.dayId,
+      displayUnit: 'kg',
+      exercise,
+      reps: 7,
+      rir: 1,
+      routineId: exercise.routineId,
+      weightKg: 62.5,
+    })
+
+    await deleteMainSet(second.setLogId)
+
+    await expect(db.workoutSessions.get(first.sessionId)).resolves.toMatchObject({
+      lastExerciseAt: '2026-08-11T16:42:00.000Z',
+      startedAt: '2026-08-11T16:42:00.000Z',
     })
   })
 })

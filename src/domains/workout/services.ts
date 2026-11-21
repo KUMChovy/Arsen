@@ -115,6 +115,30 @@ export async function saveMainSet(input: {
   return set
 }
 
+export async function registerWarmupForExercise(input: {
+  date: string
+  dayId: string
+  displayUnit: WeightUnit
+  exercise: RoutineExercise
+  reps: number
+  rir: number
+  routineId: string
+  weightKg: number
+}) {
+  if (!Number.isFinite(input.weightKg) || input.weightKg < 0 || !Number.isInteger(input.reps) || input.reps <= 0 || !Number.isFinite(input.rir) || input.rir < 0) {
+    throw new Error('Los datos del calentamiento no son válidos')
+  }
+  return db.transaction('rw', [db.workoutSessions, db.exerciseLogs, db.setLogs], async () => {
+    const sessionId = await getOrCreateSessionForDay(input)
+    const exerciseLogId = await ensureExerciseLog(sessionId, input.exercise)
+    const order = await db.setLogs.where('exerciseLogId').equals(exerciseLogId).and((set) => set.kind === 'warmup').count()
+    const now = new Date().toISOString()
+    const setLogId = createId('set')
+    await db.setLogs.add({ id: setLogId, exerciseLogId, kind: 'warmup', order, weightKg: input.weightKg, displayUnit: input.displayUnit, reps: input.reps, rir: input.rir, createdAt: now, updatedAt: now })
+    return { exerciseLogId, sessionId, setLogId }
+  })
+}
+
 export async function registerMainSetForExercise(input: {
   date: string
   dayId: string
@@ -130,47 +154,53 @@ export async function registerMainSetForExercise(input: {
   routineId: string
   weightKg: number
 }) {
-  const sessionId = await getOrCreateSessionForDay({
-    date: input.date,
-    dayId: input.dayId,
-    displayUnit: input.displayUnit,
-    routineId: input.routineId,
-  })
-  const exerciseLogId = await ensureExerciseLog(sessionId, input.exercise)
-  const set = await saveMainSet({
-    displayUnit: input.displayUnit,
-    exerciseLogId,
-    reps: input.reps,
-    rir: input.rir,
-    weightKg: input.weightKg,
-  })
-
-  if (input.dropSet) {
-    await addDropSet({
-      displayUnit: input.displayUnit,
-      reps: input.dropSet.reps,
-      rir: input.dropSet.rir,
-      setLogId: set.id,
-      weightKg: input.dropSet.weightKg,
-    })
+  if (!Number.isFinite(input.weightKg) || input.weightKg < 0 || !Number.isInteger(input.reps) || input.reps <= 0 || !Number.isFinite(input.rir) || input.rir < 0) {
+    throw new Error('Los datos de la serie no son válidos')
   }
+  return db.transaction('rw', [db.workoutSessions, db.exerciseLogs, db.setLogs, db.dropSetLogs, db.routineExercises, db.skipLogs], async () => {
+    const sessionId = await getOrCreateSessionForDay({
+      date: input.date,
+      dayId: input.dayId,
+      displayUnit: input.displayUnit,
+      routineId: input.routineId,
+    })
+    const exerciseLogId = await ensureExerciseLog(sessionId, input.exercise)
+    await db.skipLogs.where('sessionId').equals(sessionId).filter((skip) => skip.routineExerciseId === input.exercise.id).delete()
+    const set = await saveMainSet({
+      displayUnit: input.displayUnit,
+      exerciseLogId,
+      reps: input.reps,
+      rir: input.rir,
+      weightKg: input.weightKg,
+    })
 
-  const currentSession = await db.workoutSessions.get(sessionId)
-  const now = new Date().toISOString()
-  await Promise.all([
-    db.workoutSessions.update(sessionId, {
-      lastExerciseAt: set.createdAt,
-      startedAt: currentSession?.startedAt ?? set.createdAt,
-      updatedAt: now,
-    }),
-    db.routineExercises.update(input.exercise.id, {
-      currentWeightKg: input.weightKg,
-      updatedAt: now,
-    }),
-  ])
-  await syncSessionStatusFromExercises(sessionId)
+    if (input.dropSet) {
+      await addDropSet({
+        displayUnit: input.displayUnit,
+        reps: input.dropSet.reps,
+        rir: input.dropSet.rir,
+        setLogId: set.id,
+        weightKg: input.dropSet.weightKg,
+      })
+    }
 
-  return { exerciseLogId, sessionId, setLogId: set.id }
+    const currentSession = await db.workoutSessions.get(sessionId)
+    const now = new Date().toISOString()
+    await Promise.all([
+      db.workoutSessions.update(sessionId, {
+        lastExerciseAt: set.createdAt,
+        startedAt: currentSession?.startedAt ?? set.createdAt,
+        updatedAt: now,
+      }),
+      db.routineExercises.update(input.exercise.id, {
+        currentWeightKg: input.weightKg,
+        updatedAt: now,
+      }),
+    ])
+    await syncSessionStatusFromExercises(sessionId)
+
+    return { exerciseLogId, sessionId, setLogId: set.id }
+  })
 }
 
 export async function addDropSet(input: {
@@ -180,7 +210,7 @@ export async function addDropSet(input: {
   setLogId: string
   weightKg: number
 }) {
-  if (!Number.isFinite(input.weightKg) || input.weightKg < 0 || !Number.isInteger(input.reps) || input.reps <= 0 || !Number.isFinite(input.rir)) {
+  if (!Number.isFinite(input.weightKg) || input.weightKg < 0 || !Number.isInteger(input.reps) || input.reps <= 0 || !Number.isFinite(input.rir) || input.rir < 0) {
     throw new Error('Los datos del drop set no son vÃ¡lidos')
   }
   const parentSet = await db.setLogs.get(input.setLogId)
@@ -212,6 +242,9 @@ export async function updateDropSet(
     weightKg: number
   },
 ) {
+  if (!Number.isFinite(input.weightKg) || input.weightKg < 0 || !Number.isInteger(input.reps) || input.reps <= 0 || !Number.isFinite(input.rir) || input.rir < 0) {
+    throw new Error('Los datos del drop set no son válidos')
+  }
   const dropSet = await db.dropSetLogs.get(dropSetId)
   if (!dropSet) throw new Error('Drop set no encontrado')
 
@@ -233,7 +266,8 @@ export async function deleteDropSet(dropSetId: string) {
 export async function skipExercise(sessionId: string, routineExerciseId: string, reason = '') {
   const now = new Date().toISOString()
   await db.transaction('rw', [db.skipLogs, db.exerciseLogs], async () => {
-    await db.skipLogs.add({
+    const existingSkip = await db.skipLogs.where('sessionId').equals(sessionId).filter((skip) => skip.routineExerciseId === routineExerciseId).first()
+    if (!existingSkip) await db.skipLogs.add({
       id: createId('skip'),
       sessionId,
       routineExerciseId,
@@ -294,6 +328,41 @@ export async function updateSessionNotesForDay(input: {
   return sessionId
 }
 
+export async function updateExerciseNotesForDay(input: {
+  date: string
+  dayId: string
+  displayUnit: WeightUnit
+  exercise: RoutineExercise
+  notes: string
+  routineId: string
+}) {
+  return db.transaction('rw', [db.workoutSessions, db.exerciseLogs], async () => {
+    const sessionId = await getOrCreateSessionForDay(input)
+    const exerciseLogId = await ensureExerciseLog(sessionId, input.exercise)
+    await db.exerciseLogs.update(exerciseLogId, { notes: input.notes, updatedAt: new Date().toISOString() })
+    return exerciseLogId
+  })
+}
+
+export async function updateSessionExercisePlan(input: {
+  date: string
+  dayId: string
+  displayUnit: WeightUnit
+  exercises: RoutineExercise[]
+  routineId: string
+}) {
+  if (new Set(input.exercises.map((exercise) => exercise.id)).size !== input.exercises.length || input.exercises.some((exercise) => exercise.dayId !== input.dayId || exercise.routineId !== input.routineId)) {
+    throw new Error('Los ejercicios de la sesión no son válidos')
+  }
+  return db.transaction('rw', db.workoutSessions, async () => {
+    const sessionId = await getOrCreateSessionForDay(input)
+    const session = await db.workoutSessions.get(sessionId)
+    if (session?.status === 'completed' && session.manuallyCompleted !== false) throw new Error('La sesión ya está finalizada')
+    await db.workoutSessions.update(sessionId, { sessionExercises: input.exercises, ...(session?.status === 'completed' ? { status: 'draft', completedAt: null } : {}), updatedAt: new Date().toISOString() })
+    return sessionId
+  })
+}
+
 export async function completeSessionForDay(input: {
   date: string
   dayId: string
@@ -310,6 +379,7 @@ export async function completeSessionForDay(input: {
   const completedAt = new Date().toISOString()
   await db.workoutSessions.update(sessionId, {
     completedAt,
+    manuallyCompleted: true,
     status: 'completed',
     updatedAt: completedAt,
   })
@@ -347,6 +417,29 @@ export async function updateMainSet(
   await updateHistoricalSet({ ...input, setLogId })
 }
 
+export async function updateSetWithDrops(setLogId: string, input: {
+  main: { reps: number; rir: number; weightKg: number }
+  drops: Array<{ id: string | null; reps: number; rir: number; weightKg: number }>
+  deletedDropSetIds: string[]
+}) {
+  const valid = (value: { reps: number; rir: number; weightKg: number }) => Number.isFinite(value.weightKg) && value.weightKg >= 0 && Number.isInteger(value.reps) && value.reps > 0 && Number.isFinite(value.rir) && value.rir >= 0
+  if (!valid(input.main) || input.drops.some((drop) => !valid(drop))) throw new Error('Los datos de la serie no son válidos')
+  await db.transaction('rw', [db.setLogs, db.dropSetLogs, db.exerciseLogs, db.workoutSessions, db.routineExercises], async () => {
+    const set = await db.setLogs.get(setLogId)
+    if (!set) throw new Error('Serie no encontrada')
+    const existing = await db.dropSetLogs.where('setLogId').equals(setLogId).toArray()
+    const existingIds = new Set(existing.map((drop) => drop.id))
+    if (input.deletedDropSetIds.some((id) => !existingIds.has(id)) || input.drops.some((drop) => drop.id && !existingIds.has(drop.id))) throw new Error('Drop set no encontrado')
+    if (set.kind !== 'main' && input.drops.length) throw new Error('Los calentamientos no admiten drop sets')
+    await updateHistoricalSet({ ...input.main, setLogId })
+    for (const id of input.deletedDropSetIds) await db.dropSetLogs.delete(id)
+    for (const drop of input.drops) {
+      if (drop.id) await updateDropSet(drop.id, drop)
+      else await addDropSet({ ...drop, displayUnit: set.displayUnit, setLogId })
+    }
+  })
+}
+
 export async function updateHistoricalSession(
   sessionId: string,
   input: { date: string; dayId: string; notes?: string; routineId: string; status?: WorkoutSession['status'] },
@@ -368,6 +461,7 @@ export async function updateHistoricalSession(
     ...(input.notes === undefined ? {} : { notes: input.notes }),
     ...(input.status === undefined ? {} : {
       completedAt: input.status === 'completed' ? session.completedAt ?? now : null,
+      manuallyCompleted: input.status === 'completed',
       status: input.status,
     }),
     date: input.date,
@@ -378,7 +472,7 @@ export async function updateHistoricalSession(
 }
 
 export async function updateHistoricalSet(input: { order?: number; reps: number; rir: number; setLogId: string; weightKg: number }) {
-  if (!Number.isFinite(input.weightKg) || input.weightKg < 0 || !Number.isInteger(input.reps) || input.reps <= 0 || !Number.isFinite(input.rir)) {
+  if (!Number.isFinite(input.weightKg) || input.weightKg < 0 || !Number.isInteger(input.reps) || input.reps <= 0 || !Number.isFinite(input.rir) || input.rir < 0) {
     throw new Error('Los datos de la serie no son válidos')
   }
   const set = await db.setLogs.get(input.setLogId)
@@ -392,9 +486,9 @@ export async function updateHistoricalSet(input: { order?: number; reps: number;
       updatedAt: new Date().toISOString(),
       weightKg: input.weightKg,
     })
-    await refreshExerciseState(set.exerciseLogId)
+    if (set.kind === 'main') await refreshExerciseState(set.exerciseLogId)
   })
-  await syncSessionStatusFromExerciseLog(set.exerciseLogId)
+  if (set.kind === 'main') await syncSessionStatusFromExerciseLog(set.exerciseLogId)
 }
 
 export async function deleteHistoricalExercise(exerciseLogId: string) {
@@ -432,6 +526,7 @@ export async function duplicateSessionAsDraft(input: { sourceSessionId: string; 
     date: input.targetDate,
     id: createId('session'),
     lastExerciseAt: null,
+    manuallyCompleted: false,
     startedAt: null,
     status: 'draft',
     updatedAt: now,
@@ -496,10 +591,10 @@ export async function deleteMainSet(setLogId: string) {
   await db.transaction('rw', [db.setLogs, db.dropSetLogs, db.exerciseLogs], async () => {
     await db.dropSetLogs.where('setLogId').equals(setLogId).delete()
     await db.setLogs.delete(setLogId)
-    await refreshExerciseState(set.exerciseLogId)
+    if (set.kind === 'main') await refreshExerciseState(set.exerciseLogId)
   })
-  await syncSessionStatusFromExerciseLog(set.exerciseLogId)
-  if (exerciseLog) await refreshSessionActivityTimestamps(exerciseLog.sessionId)
+  if (set.kind === 'main') await syncSessionStatusFromExerciseLog(set.exerciseLogId)
+  if (exerciseLog && set.kind === 'main') await refreshSessionActivityTimestamps(exerciseLog.sessionId)
 }
 
 export async function deleteWorkoutSession(sessionId: string) {
@@ -541,8 +636,9 @@ async function syncSessionStatusFromExerciseLog(exerciseLogId: string) {
 async function syncSessionStatusFromExercises(sessionId: string) {
   const session = await db.workoutSessions.get(sessionId)
   if (!session) return
+  if (session.status === 'completed' && session.manuallyCompleted !== false) return
 
-  const exercises = await db.routineExercises.where('dayId').equals(session.dayId).toArray()
+  const exercises = session.sessionExercises ?? await db.routineExercises.where('dayId').equals(session.dayId).toArray()
   if (exercises.length === 0) return
 
   const logs = await db.exerciseLogs.where('sessionId').equals(sessionId).toArray()
@@ -554,6 +650,7 @@ async function syncSessionStatusFromExercises(sessionId: string) {
     const now = new Date().toISOString()
     await db.workoutSessions.update(sessionId, {
       completedAt: nextStatus === 'completed' ? now : null,
+      manuallyCompleted: false,
       status: nextStatus,
       updatedAt: now,
     })

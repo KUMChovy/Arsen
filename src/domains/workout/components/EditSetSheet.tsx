@@ -1,9 +1,12 @@
-import { useState, useTransition } from 'react'
+import { useRef, useState, useTransition } from 'react'
 import { Check, Flame, Trash2, X } from 'lucide-react'
 import { ActionButton } from '../../../shared/components/ActionButton'
 import { Card } from '../../../shared/components/Card'
+import { useDialogFocus } from '../../../shared/components/useDialogFocus'
+import { confirmDanger } from '../../../shared/utils/alerts'
 import { unitToKg, kgToUnit } from '../../../shared/utils/weight'
 import type { DropSetLog, SetLog, WeightUnit } from '../types'
+import { NumberField } from './NumberField'
 
 type EditableDropSet = {
   enabled: boolean
@@ -50,13 +53,28 @@ export function EditSetSheet({ disabled, dropSets, onClose, onDelete, onSave, se
   )
   const [message, setMessage] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
-  const blocked = disabled || isPending
+  const [saving, setSaving] = useState(false)
+  const savingRef = useRef(false)
+  const blocked = disabled || isPending || saving
+  const dialogRef = useDialogFocus(() => { void requestClose() })
+
+  async function requestClose() {
+    if (blocked) return
+    const dirty = weightValue !== String(kgToUnit(set.weightKg, unit)) || reps !== String(set.reps) || rir !== String(set.rir) ||
+      drops.some((drop) => {
+        const original = dropSets.find((item) => item.id === drop.id)
+        return !original || !drop.enabled || drop.weightValue !== String(kgToUnit(original.weightKg, unit)) || drop.reps !== String(original.reps) || drop.rir !== String(original.rir)
+      })
+    if (dirty && !(await confirmDanger('Descartar cambios', 'Los cambios de esta serie no se han guardado.'))) return
+    onClose()
+  }
 
   function save() {
+    if (savingRef.current) return
     const nextWeight = numberOrNull(weightValue)
     const nextReps = numberOrNull(reps)
     const nextRir = numberOrNull(rir)
-    if (nextWeight === null || nextWeight <= 0 || nextReps === null || nextReps <= 0 || nextRir === null || nextRir < 0) {
+    if (nextWeight === null || nextWeight < 0 || nextReps === null || !Number.isInteger(nextReps) || nextReps <= 0 || nextRir === null || nextRir < 0) {
       setMessage('Revisa peso, reps y RIR')
       return
     }
@@ -67,12 +85,14 @@ export function EditSetSheet({ disabled, dropSets, onClose, onDelete, onSave, se
       weight: numberOrNull(drop.weightValue),
     }))
     if (
-      parsedDrops.some((drop) => drop.weight === null || drop.weight <= 0 || drop.reps === null || drop.reps <= 0 || drop.rir === null || drop.rir < 0)
+      parsedDrops.some((drop) => drop.weight === null || drop.weight < 0 || drop.reps === null || !Number.isInteger(drop.reps) || drop.reps <= 0 || drop.rir === null || drop.rir < 0)
     ) {
       setMessage('Revisa los drop sets')
       return
     }
 
+    savingRef.current = true
+    setSaving(true)
     startTransition(() => {
       onSave({
         deletedDropSetIds: drops.flatMap((drop) => (!drop.enabled && drop.id ? [drop.id] : [])),
@@ -86,39 +106,44 @@ export function EditSetSheet({ disabled, dropSets, onClose, onDelete, onSave, se
       })
         .then(onClose)
         .catch((error: unknown) => setMessage(error instanceof Error ? error.message : 'No se pudo guardar'))
+        .finally(() => { savingRef.current = false; setSaving(false) })
     })
   }
 
   function remove() {
+    if (savingRef.current) return
+    savingRef.current = true
+    setSaving(true)
     startTransition(() => {
       onDelete()
         .then((deleted) => {
           if (deleted !== false) onClose()
         })
         .catch((error: unknown) => setMessage(error instanceof Error ? error.message : 'No se pudo eliminar'))
+        .finally(() => { savingRef.current = false; setSaving(false) })
     })
   }
 
   return (
     <div className="fixed inset-0 z-50 mx-auto flex max-w-[430px] items-end bg-black/55">
-      <button aria-label="Cerrar editor" className="absolute inset-0 cursor-default" onClick={onClose} type="button" />
-      <section className="relative w-full rounded-t-[22px] border-t border-white/10 bg-arsen-bg2 p-4 shadow-[0_-16px_40px_rgb(0_0_0_/_0.35)]">
+      <button aria-label="Cerrar editor" className="absolute inset-0 cursor-default" onClick={() => void requestClose()} type="button" />
+      <section aria-labelledby="edit-set-title" aria-modal="true" className="relative max-h-[90dvh] w-full overflow-y-auto rounded-t-[22px] border-t border-white/10 bg-arsen-bg2 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-[0_-16px_40px_rgb(0_0_0_/_0.35)]" ref={dialogRef} role="dialog" tabIndex={-1}>
         <div className="mx-auto mb-4 h-1.5 w-14 rounded-full bg-white/25" />
         <div className="mb-4 flex items-start justify-between gap-4">
           <div className="min-w-0">
-            <h2 className="text-xl font-black">Editar serie</h2>
+            <h2 className="text-xl font-black" id="edit-set-title">Editar serie</h2>
             <p className="mt-1 truncate text-xs text-arsen-muted">Serie {set.order + 1} - modifica peso, reps y RIR</p>
           </div>
-          <button className="grid size-9 place-items-center rounded-[10px] text-arsen-muted" onClick={onClose} type="button">
+          <button className="grid size-9 place-items-center rounded-[10px] text-arsen-muted" onClick={() => void requestClose()} type="button">
             <X aria-hidden="true" className="size-5" />
             <span className="sr-only">Cerrar</span>
           </button>
         </div>
 
         <div className="grid grid-cols-3 gap-2">
-          <NumberField label={unit.toUpperCase()} onChange={setWeightValue} value={weightValue} />
-          <NumberField label="Reps" onChange={setReps} value={reps} />
-          <NumberField label="RIR" onChange={setRir} value={rir} />
+          <NumberField errorId={message ? 'edit-set-error' : undefined} label={unit.toUpperCase()} onChange={setWeightValue} step={unit === 'kg' ? 2.5 : 5} value={weightValue} />
+          <NumberField errorId={message ? 'edit-set-error' : undefined} label="Reps" onChange={setReps} step={1} value={reps} />
+          <NumberField errorId={message ? 'edit-set-error' : undefined} label="RIR" onChange={setRir} value={rir} />
         </div>
 
         <div className="mt-3 space-y-2">
@@ -150,12 +175,13 @@ export function EditSetSheet({ disabled, dropSets, onClose, onDelete, onSave, se
                 <div className="grid grid-cols-3 gap-2">
                   <NumberField
                     label={`${unit.toUpperCase()} drop`}
+                    errorId={message ? 'edit-set-error' : undefined}
                     disabled={!drop.enabled}
                     onChange={(value) => updateDropField(drop.localId, 'weightValue', value, setDrops)}
                     value={drop.weightValue}
                   />
-                  <NumberField disabled={!drop.enabled} label="Reps" onChange={(value) => updateDropField(drop.localId, 'reps', value, setDrops)} value={drop.reps} />
-                  <NumberField disabled={!drop.enabled} label="RIR" onChange={(value) => updateDropField(drop.localId, 'rir', value, setDrops)} value={drop.rir} />
+                  <NumberField disabled={!drop.enabled} errorId={message ? 'edit-set-error' : undefined} label="Reps" onChange={(value) => updateDropField(drop.localId, 'reps', value, setDrops)} value={drop.reps} />
+                  <NumberField disabled={!drop.enabled} errorId={message ? 'edit-set-error' : undefined} label="RIR" onChange={(value) => updateDropField(drop.localId, 'rir', value, setDrops)} value={drop.rir} />
                 </div>
               </Card>
             ))
@@ -164,7 +190,7 @@ export function EditSetSheet({ disabled, dropSets, onClose, onDelete, onSave, se
           )}
         </div>
 
-        {message ? <p className="mt-3 text-xs text-arsen-purple2">{message}</p> : null}
+        {message ? <p className="mt-3 text-xs text-arsen-purple2" id="edit-set-error" role="alert">{message}</p> : null}
 
         <div className="mt-4 grid grid-cols-[1fr_1.5fr] gap-2">
           <ActionButton disabled={blocked} onClick={remove} tone="danger">
@@ -190,23 +216,8 @@ function updateDropField(
   setDrops((current) => current.map((drop) => (drop.localId === localId ? { ...drop, [field]: value } : drop)))
 }
 
-function NumberField({ disabled, label, onChange, value }: { disabled?: boolean; label: string; onChange: (value: string) => void; value: string }) {
-  return (
-    <label className="block">
-      <span className="mb-1 block text-xs font-bold text-arsen-muted">{label}</span>
-      <input
-        className="min-h-12 w-full rounded-[10px] border border-white/10 bg-arsen-surface px-3 text-center text-base font-extrabold text-arsen-ink disabled:cursor-not-allowed"
-        disabled={disabled}
-        inputMode="decimal"
-        onChange={(event) => onChange(event.target.value)}
-        type="number"
-        value={value}
-      />
-    </label>
-  )
-}
-
 function numberOrNull(value: string) {
+  if (!value.trim()) return null
   const parsed = Number(value)
 
   return Number.isFinite(parsed) ? parsed : null

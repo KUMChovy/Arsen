@@ -1,13 +1,32 @@
 import 'fake-indexeddb/auto'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { db } from '../../db/schema'
-import { registerMainSetForExercise } from '../workout/services'
+import { registerMainSetForExercise, registerWarmupForExercise, updateExerciseNotesForDay } from '../workout/services'
 import type { Routine, RoutineDay, RoutineExercise } from '../routine/types'
 import { getHistory, getPersonalRecords, getProgressExerciseDetail, getProgressExerciseOptions, getProgressHistory, getProgressSummary, getSessionDetail } from './repository'
 
 describe('progress repository queries', () => {
   beforeEach(async () => resetDb())
   afterEach(async () => resetDb())
+
+  it('returns warmups separately from main sets in the session detail', async () => {
+    const routine = makeRoutine('routine-warmup', 'Rutina')
+    const day = makeDay('day-warmup', routine.id, 'Día')
+    const exercise = makeExercise('exercise-warmup', routine.id, day.id)
+    await db.routines.put(routine)
+    await db.routineDays.put(day)
+    const result = await registerWarmupForExercise({ date: '2026-08-01', dayId: day.id, displayUnit: 'kg', exercise, reps: 10, rir: 4, routineId: routine.id, weightKg: 30 })
+    expect(await getSessionDetail(result.sessionId)).toMatchObject({ exercises: [{ sets: [], warmupSets: [{ weightKg: 30, reps: 10 }] }] })
+  })
+
+  it('returns a session exercise note without replacing its routine instructions', async () => {
+    const routine = makeRoutine('routine-note', 'Rutina')
+    const day = makeDay('day-note', routine.id, 'Día')
+    const exercise = makeExercise('exercise-note', routine.id, day.id)
+    const logId = await updateExerciseNotesForDay({ date: '2026-08-01', dayId: day.id, displayUnit: 'kg', exercise, notes: 'Buena técnica', routineId: routine.id })
+    const log = await db.exerciseLogs.get(logId)
+    expect(await getSessionDetail(log!.sessionId)).toMatchObject({ exercises: [{ notes: 'Buena técnica' }] })
+  })
 
   it('summarizes all sessions without requiring a day and compares equal periods', async () => {
     const routine = makeRoutine('routine-a', 'Rutina A')

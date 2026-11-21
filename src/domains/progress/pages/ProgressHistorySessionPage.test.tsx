@@ -45,6 +45,14 @@ describe('ProgressHistorySessionPage', () => {
     expect(screen.getByText(/volver al historial/i)).toBeInTheDocument()
   })
 
+  it('shows warmups separately from main sets', () => {
+    const detail = detailFixture()
+    detail.exercises[0]!.warmupSets = [{ id: 'warmup-1', order: 0, displayUnit: 'kg', weightKg: 30, reps: 10, rir: 4 }]
+    mocks.detail = detail
+    renderPage()
+    expect(screen.getByText(/Calentamiento 1.*30 kg.*10/)).toBeInTheDocument()
+  })
+
   it('opens the session editor from the action menu', () => {
     mocks.detail = detailFixture()
     renderPage()

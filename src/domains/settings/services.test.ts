@@ -2,12 +2,14 @@ import 'fake-indexeddb/auto'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { db } from '../../db/schema'
 import { DEFAULT_AVAILABLE_PLATES_KG } from '../../shared/calculations/equipmentLoad'
-import { downloadText } from '../../shared/utils/download'
+import { downloadJson, downloadText } from '../../shared/utils/download'
 import {
   buildProgressExport,
   buildSessionExport,
   completeActiveDeload,
   exportProgressCsv,
+  exportFullBackup,
+  importFullBackup,
   exportSessionCsv,
   getDeloadOverview,
   resolveAvailablePlateWeightsKg,
@@ -64,6 +66,18 @@ describe('settings export services', () => {
       routineName: 'Rutina A',
       volume: 600,
     })
+  })
+
+  it('restores session-local exercise plans and manual completion from a full backup', async () => {
+    await seedProgressData({ dayName: 'Día', exerciseName: 'Press', routineName: 'Rutina' })
+    const exercise = (await db.routineExercises.get('exercise-1'))!
+    await db.workoutSessions.update('session-1', { manuallyCompleted: true, sessionExercises: [{ ...exercise, id: 'session-extra', name: 'Remo' }] })
+    await exportFullBackup()
+    const data = vi.mocked(downloadJson).mock.calls.at(-1)?.[1]
+    expect(data).toBeDefined()
+    await db.workoutSessions.clear()
+    await importFullBackup({ text: async () => JSON.stringify(data) } as File, 'replace')
+    expect(await db.workoutSessions.get('session-1')).toMatchObject({ manuallyCompleted: true, sessionExercises: [{ id: 'session-extra', name: 'Remo' }] })
   })
 
 

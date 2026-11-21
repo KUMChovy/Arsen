@@ -3,13 +3,18 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import type { RoutineDay, RoutineExercise } from '../routine/types'
 import type { ExerciseState, LastSessionReference } from './types'
 import { buildMissedTrainingNotice } from './calculations/trainingRotation'
-import { getLastSessionReferencesForDay, getSessionsWithMainSets, getWeightIncreaseRecommendations, getWorkoutProgressForDay } from './repository'
+import { getLastSessionReferencesForDay, getPendingWorkoutSessions, getSessionsWithMainSets, getWeightIncreaseRecommendations, getWorkoutProgressForDay } from './repository'
 import { getDeloadOverview } from '../settings/services'
+
+export function usePendingWorkoutSessions() {
+  return useLiveQuery(() => getPendingWorkoutSessions(), [], []) ?? []
+}
 
 export function useWorkoutProgress(date: string, dayId: string | undefined, exercises: RoutineExercise[]) {
   const progress = useLiveQuery(() => getWorkoutProgressForDay(date, dayId), [date, dayId], undefined)
 
   return useMemo(() => {
+    const sessionExercises = progress?.session?.sessionExercises ?? exercises
     const exerciseLogByExerciseId = new Map(progress?.exerciseLogs.map((log) => [log.routineExerciseId, log]) ?? [])
     const setsByExerciseLogId = new Map<string, number>()
 
@@ -19,7 +24,7 @@ export function useWorkoutProgress(date: string, dayId: string | undefined, exer
     }
 
     const stateByExerciseId = new Map<string, ExerciseState>()
-    for (const exercise of exercises) {
+    for (const exercise of sessionExercises) {
       const log = exerciseLogByExerciseId.get(exercise.id)
       stateByExerciseId.set(exercise.id, log?.state ?? 'pending')
     }
@@ -33,7 +38,7 @@ export function useWorkoutProgress(date: string, dayId: string | undefined, exer
       if (state === 'skipped') skippedCount += 1
     }
 
-    const pendingCount = Math.max(exercises.length - completedCount - inProgressCount - skippedCount, 0)
+    const pendingCount = Math.max(sessionExercises.length - completedCount - inProgressCount - skippedCount, 0)
 
     return {
       completedCount,

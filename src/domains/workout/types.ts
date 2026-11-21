@@ -1,4 +1,5 @@
 import type { HealthSummary } from '../health/types'
+import type { RoutineExercise } from '../routine/types'
 
 export type ExerciseState = 'pending' | 'in_progress' | 'skipped' | 'done'
 export type SetKind = 'main' | 'warmup'
@@ -12,6 +13,8 @@ export type WorkoutSession = {
   notes: string
   displayUnit: WeightUnit
   status: 'draft' | 'completed'
+  manuallyCompleted?: boolean
+  sessionExercises?: RoutineExercise[]
   startedAt?: string | null
   lastExerciseAt?: string | null
   completedAt?: string | null

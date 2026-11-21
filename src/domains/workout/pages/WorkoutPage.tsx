@@ -1,10 +1,11 @@
-import { Check, ChevronLeft, ChevronRight, Dumbbell, Info, Moon, Pencil, Trash2, TrendingUp, X } from 'lucide-react'
+import { ArrowDownUp, Check, ChevronDown, ChevronLeft, ChevronRight, Dumbbell, Info, Moon, MoreVertical, Pencil, Repeat2, RotateCcw, SkipForward, Trash2, TrendingUp, X } from 'lucide-react'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { useEffect, useMemo, useState, useTransition } from 'react'
+import { useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import { ActionButton } from '../../../shared/components/ActionButton'
 import { Card } from '../../../shared/components/Card'
 import { ExerciseArt } from '../../../shared/components/ExerciseArt'
 import { PageHeader } from '../../../shared/components/PageHeader'
+import { useDialogFocus } from '../../../shared/components/useDialogFocus'
 import type { WeightIncreaseRecommendation } from '../../../shared/calculations/progression'
 import { buildEquipmentLoadNote } from '../../../shared/calculations/equipmentLoad'
 import { totalVolume } from '../../../shared/calculations/workout'
@@ -15,13 +16,14 @@ import { confirmDanger } from '../../../shared/utils/alerts'
 import { formatRepRange } from '../../../shared/utils/reps'
 import { formatRestSeconds } from '../../../shared/utils/time'
 import { formatWeight } from '../../../shared/utils/weight'
-import { useActiveRoutineBundle, useExerciseAssets, useRoutines, useWorkoutDayById } from '../../routine/hooks'
+import { createId } from '../../../shared/utils/id'
+import { useActiveRoutineBundle, useExerciseAssets, useExerciseCatalog, useRoutines, useWorkoutDayById } from '../../routine/hooks'
 import type { Routine, RoutineDay, RoutineExercise } from '../../routine/types'
 import { RegisterSetSheet } from '../components/RegisterSetSheet'
 import { EditSetSheet } from '../components/EditSetSheet'
 import { getDefaultWorkoutDayId } from '../calculations/trainingRotation'
-import { useDeloadOverview, useLastSessionReferencesForDay, useWeightIncreaseRecommendations, useWorkoutProgress, useWorkoutRotationStatus } from '../hooks'
-import { addDropSet, completeSessionForDay, deleteDropSet, deleteMainSet, skipRoutineExerciseForDay, updateDropSet, updateMainSet } from '../services'
+import { useDeloadOverview, useLastSessionReferencesForDay, usePendingWorkoutSessions, useWeightIncreaseRecommendations, useWorkoutProgress, useWorkoutRotationStatus } from '../hooks'
+import { completeSessionForDay, deleteMainSet, reactivateExercise, registerWarmupForExercise, skipRoutineExerciseForDay, updateExerciseNotesForDay, updateSessionExercisePlan, updateSessionNotesForDay, updateSetWithDrops } from '../services'
 import { setActiveRoutine } from '../../routine/services'
 import { completeActiveDeload } from '../../settings/services'
 import { getAppSettings } from '../../settings/services'
@@ -40,19 +42,23 @@ type SelectionSnapshot = {
 
 export function WorkoutPage() {
   const today = useMemo(() => new Date(), [])
-  const dateKey = useMemo(() => localDateKey(today), [today])
+  const todayKey = useMemo(() => localDateKey(today), [today])
+  const [dateKey, setDateKey] = useState(todayKey)
   const selectedDate = useMemo(() => new Date(`${dateKey}T12:00:00`), [dateKey])
   const bundle = useActiveRoutineBundle()
   const exerciseAssets = useExerciseAssets() ?? []
+  const exerciseCatalog = useExerciseCatalog() ?? []
   const imageSrcByAssetId = useMemo(() => new Map(exerciseAssets.map((asset) => [asset.id, asset.dataUrl])), [exerciseAssets])
   const routines = useRoutines() ?? []
+  const pendingSessions = usePendingWorkoutSessions()
   const days = bundle?.days ?? []
   const activeRoutineId = bundle?.routine.id
   const defaultDayId = getDefaultWorkoutDayId(days, selectedDate.getDay())
   const [selectedDayId, setSelectedDayId] = useState<string | null>(null)
   const workoutDay = useWorkoutDayById(selectedDayId)
-  const dayExercises = workoutDay?.dayExercises ?? []
-  const dailyProgress = useWorkoutProgress(dateKey, workoutDay?.day.id, dayExercises)
+  const routineExercises = workoutDay?.dayExercises ?? []
+  const dailyProgress = useWorkoutProgress(dateKey, workoutDay?.day.id, routineExercises)
+  const dayExercises = dailyProgress.progress?.session?.sessionExercises ?? routineExercises
   const appSettings = useLiveQuery(() => getAppSettings(), [], undefined)
   const lastSessionReferences = useLastSessionReferencesForDay({
     date: dateKey,
@@ -69,21 +75,27 @@ export function WorkoutPage() {
   const weightIncreaseRecommendations = useWeightIncreaseRecommendations(dayExercises)
   const deload = useDeloadOverview()
   const [selectedExerciseId, setSelectedExerciseId] = useState<string | null>(null)
+  const [duplicateSet, setDuplicateSet] = useState<SetLog | null>(null)
   const [currentExerciseId, setCurrentExerciseId] = useState<string | null>(null)
-  const [activeExerciseId, setActiveExerciseId] = useState<string | null>(null)
+  const [activeExerciseId, setActiveExerciseId] = useState<string | null | undefined>(undefined)
+  const [optionsOpen, setOptionsOpen] = useState(false)
+  const optionsRef = useDialogFocus(() => setOptionsOpen(false), optionsOpen)
   const [exerciseFilter, setExerciseFilter] = useState<ExerciseFilter>('all')
   const [editingSet, setEditingSet] = useState<{ exercise: RoutineExercise; set: SetLog } | null>(null)
   const [noteSheetExercise, setNoteSheetExercise] = useState<RoutineExercise | null>(null)
   const [routineSheetOpen, setRoutineSheetOpen] = useState(false)
+  const [resumeTarget, setResumeTarget] = useState<{ routineId: string; dayId: string; date: string } | null>(null)
+  const [reviewOpen, setReviewOpen] = useState(false)
+  const reviewRef = useDialogFocus(() => setReviewOpen(false), reviewOpen)
+  const [catalogExerciseId, setCatalogExerciseId] = useState('')
   const [lastSelectionChange, setLastSelectionChange] = useState<SelectionSnapshot | null>(null)
   const [missedNoticeDismissed, setMissedNoticeDismissed] = useState(() => isMissedNoticeDismissed(dateKey))
   const [isPending, startTransition] = useTransition()
+  const [actionBusy, setActionBusy] = useState(false)
+  const actionPending = useRef(false)
   const [message, setMessage] = useState<string | null>(null)
   const healthEnabled = appSettings?.healthIntegrationEnabled === true
-  const navigableExercises = useMemo(
-    () => dayExercises.filter((exercise) => (dailyProgress.stateByExerciseId.get(exercise.id) ?? 'pending') !== 'done'),
-    [dailyProgress.stateByExerciseId, dayExercises],
-  )
+  const navigableExercises = dayExercises
   const currentExercise = navigableExercises.find((exercise) => exercise.id === currentExerciseId) ?? navigableExercises[0] ?? null
   const currentExerciseIndex = currentExercise ? navigableExercises.findIndex((exercise) => exercise.id === currentExercise.id) : -1
   const selectedExercise = selectedExerciseId ? dayExercises.find((exercise) => exercise.id === selectedExerciseId) : null
@@ -137,10 +149,21 @@ export function WorkoutPage() {
   ]
 
   useEffect(() => {
+    if (resumeTarget) return
     if (selectedDayId && days.some((day) => day.id === selectedDayId)) return
     const storedDayId = readStoredDaySelection(dateKey, activeRoutineId)
     setSelectedDayId(storedDayId && days.some((day) => day.id === storedDayId) ? storedDayId : defaultDayId)
-  }, [activeRoutineId, dateKey, days, defaultDayId, selectedDayId])
+  }, [activeRoutineId, dateKey, days, defaultDayId, selectedDayId, resumeTarget])
+
+  useEffect(() => {
+    if (!resumeTarget || activeRoutineId !== resumeTarget.routineId || !days.some((day) => day.id === resumeTarget.dayId)) return
+    setDateKey(resumeTarget.date)
+    setSelectedDayId(resumeTarget.dayId)
+    setCurrentExerciseId(null)
+    setActiveExerciseId(null)
+    writeStoredDaySelection(resumeTarget.date, resumeTarget.routineId, resumeTarget.dayId)
+    setResumeTarget(null)
+  }, [activeRoutineId, days, resumeTarget])
 
   useEffect(() => {
     if (currentExerciseId && navigableExercises.some((exercise) => exercise.id === currentExerciseId)) return
@@ -148,19 +171,28 @@ export function WorkoutPage() {
   }, [currentExerciseId, navigableExercises])
 
   useEffect(() => {
+    if (activeExerciseId === null) return
     if (activeExerciseId && dayExercises.some((exercise) => exercise.id === activeExerciseId)) return
     setActiveExerciseId(currentExercise?.id ?? dayExercises[0]?.id ?? null)
   }, [activeExerciseId, currentExercise?.id, dayExercises])
+
+  useEffect(() => {
+    setOptionsOpen(false)
+  }, [currentExercise?.id])
 
   useEffect(() => {
     setMissedNoticeDismissed(isMissedNoticeDismissed(dateKey))
   }, [dateKey])
 
   function runSetAction(action: () => Promise<void>, success: string) {
+    if (actionPending.current) return
+    actionPending.current = true
+    setActionBusy(true)
     startTransition(() => {
       action()
         .then(() => setMessage(success))
         .catch((error: unknown) => setMessage(error instanceof Error ? error.message : 'Accion no completada'))
+        .finally(() => { actionPending.current = false; setActionBusy(false) })
     })
   }
 
@@ -182,7 +214,7 @@ export function WorkoutPage() {
         displayUnit: workoutDay.settings.preferredUnit,
         routineId: workoutDay.routine.id,
       })
-        .then(() => setMessage('Sesion finalizada'))
+        .then(() => { setReviewOpen(false); setMessage('Sesion finalizada') })
         .catch((error: unknown) => setMessage(error instanceof Error ? error.message : 'No se pudo finalizar'))
     })
   }
@@ -281,31 +313,72 @@ export function WorkoutPage() {
     setActiveExerciseId(previousExerciseId)
   }
 
+  function goToNextExercise() {
+    const nextExerciseId = navigableExercises[currentExerciseIndex + 1]?.id
+    if (!nextExerciseId) return
+    setCurrentExerciseId(nextExerciseId)
+    setActiveExerciseId(nextExerciseId)
+  }
+
+  function continueSession(session: { routineId: string; dayId: string; date: string }) {
+    if (hasOpenRegisteredSetsToday || isPending) return
+    setResumeTarget(session)
+    if (session.routineId !== activeRoutineId) startTransition(() => { setActiveRoutine(session.routineId).catch((error: unknown) => { setResumeTarget(null); setMessage(error instanceof Error ? error.message : 'No se pudo continuar la sesión') }) })
+  }
+
+  function moveCurrentExercise(offset: number) {
+    if (!workoutDay || currentExerciseIndex < 0) return
+    const nextIndex = currentExerciseIndex + offset
+    if (nextIndex < 0 || nextIndex >= dayExercises.length) return
+    const reordered = [...dayExercises]
+    const [moving] = reordered.splice(currentExerciseIndex, 1)
+    if (!moving) return
+    reordered.splice(nextIndex, 0, moving)
+    runSetAction(async () => { await updateSessionExercisePlan({ date: dateKey, dayId: workoutDay.day.id, displayUnit: preferredUnit, exercises: reordered, routineId: workoutDay.routine.id }) }, 'Orden de sesión actualizado')
+  }
+
+  async function addSessionExercise(replace: boolean) {
+    if (!workoutDay) return
+    const item = exerciseCatalog.find((candidate) => candidate.id === catalogExerciseId)
+    if (!item || (replace && !currentExercise)) return
+    const hasExistingLog = !!currentExercise && dailyProgress.exerciseLogByExerciseId.has(currentExercise.id)
+    if (replace && hasExistingLog && !(await confirmDanger('Sustituir ejercicio', 'El ejercicio original y sus registros seguirán disponibles en la sesión.'))) return
+    const now = new Date().toISOString()
+    const added: RoutineExercise = {
+      id: createId('session-exercise'), routineId: workoutDay.routine.id, dayId: workoutDay.day.id,
+      sourceExerciseId: item.id, name: item.name, canonicalName: item.canonicalName, mainMuscle: item.mainMuscle,
+      equipment: item.equipment, loadMode: item.loadMode, barWeightKg: item.barWeightKg,
+      assetKind: item.assetKind, bundledAssetId: item.bundledAssetId, customAssetId: item.customAssetId,
+      targetSets: item.defaultTargetSets, repsMin: item.defaultRepsMin, repsMax: item.defaultRepsMax,
+      recommendedRir: item.defaultRecommendedRir, restSeconds: item.defaultRestSeconds, rest: formatRestSeconds(item.defaultRestSeconds),
+      warmupProtocol: item.warmupProtocol, warmupSets: 0, technicalNotes: item.technicalNotes,
+      currentWeightKg: 0, order: dayExercises.length, createdAt: now, updatedAt: now,
+    }
+    const next = [...dayExercises]
+    if (replace) next.splice(currentExerciseIndex, hasExistingLog ? 0 : 1, added)
+    else next.push(added)
+    runSetAction(async () => { await updateSessionExercisePlan({ date: dateKey, dayId: workoutDay.day.id, displayUnit: preferredUnit, exercises: next, routineId: workoutDay.routine.id }) }, replace ? 'Ejercicio sustituido en la sesión' : 'Ejercicio agregado a la sesión')
+  }
+
   function skipCurrentExercise() {
     if (!currentExercise || !workoutDay) return
     const nextExerciseId = navigableExercises[currentExerciseIndex + 1]?.id ?? navigableExercises[currentExerciseIndex - 1]?.id ?? null
-    startTransition(() => {
-      skipRoutineExerciseForDay({
+    runSetAction(async () => {
+      await skipRoutineExerciseForDay({
         date: dateKey,
         dayId: workoutDay.day.id,
         displayUnit: workoutDay.settings.preferredUnit,
         exercise: currentExercise,
         routineId: workoutDay.routine.id,
       })
-        .then(() => {
-          setCurrentExerciseId(nextExerciseId)
-          setActiveExerciseId(nextExerciseId)
-          setMessage('Ejercicio saltado')
-        })
-        .catch((error: unknown) => setMessage(error instanceof Error ? error.message : 'No se pudo saltar'))
-    })
+      setCurrentExerciseId(nextExerciseId)
+      setActiveExerciseId(nextExerciseId)
+    }, 'Ejercicio saltado')
   }
 
   function activateExercise(exercise: RoutineExercise) {
-    setActiveExerciseId(exercise.id)
-    if ((dailyProgress.stateByExerciseId.get(exercise.id) ?? 'pending') !== 'done') {
-      setCurrentExerciseId(exercise.id)
-    }
+    setActiveExerciseId((activeId) => activeId === exercise.id ? null : exercise.id)
+    setCurrentExerciseId(exercise.id)
   }
 
   function loggedRowsForExercise(exercise: RoutineExercise) {
@@ -323,7 +396,7 @@ export function WorkoutPage() {
 
   return (
     <div className="space-y-4">
-      <PageHeader eyebrow={`${weekdayLabel(selectedDate)} - ${workoutDay?.day.name ?? 'Cargando'} - sesion activa`} title="Entreno de hoy">
+      <PageHeader eyebrow={`${weekdayLabel(selectedDate)} - ${workoutDay?.day.name ?? 'Cargando'} - ${dailyProgress.progress?.session ? dailyProgress.progress.session.status === 'completed' ? 'sesión finalizada' : 'sesión en curso' : 'preparación'}`} title="Entreno de hoy">
         <button
           aria-label="Cambiar rutina y dia"
           className="relative grid size-11 shrink-0 place-items-center rounded-[12px] border border-arsen-purple/45 bg-arsen-surface text-arsen-purple2 shadow-[0_10px_28px_rgb(0_0_0_/_0.22)] focus:outline-none focus:ring-2 focus:ring-arsen-purple2"
@@ -335,6 +408,9 @@ export function WorkoutPage() {
           <span className="absolute right-1.5 top-1.5 size-2 rounded-full bg-arsen-acid" />
         </button>
       </PageHeader>
+
+      {dateKey !== todayKey ? <div className="rounded-[10px] border border-arsen-purple/40 p-3 text-sm">Sesión del {dateKey}<button className="ml-3 min-h-12 font-bold text-arsen-purple2 disabled:opacity-40" disabled={hasOpenRegisteredSetsToday || isPending} onClick={() => setDateKey(todayKey)} type="button">Volver a hoy</button></div> : null}
+      {pendingSessions.filter((session) => session.date !== dateKey).map((session) => <button className="min-h-12 w-full rounded-[10px] border border-arsen-purple/40 p-3 text-left text-sm font-bold text-arsen-purple2 disabled:opacity-40" disabled={hasOpenRegisteredSetsToday || isPending} key={session.id} onClick={() => continueSession(session)} type="button">Continuar sesión del {session.date}</button>)}
 
       {isOffCalendar ? (
         <div className="inline-flex min-h-8 items-center rounded-full border border-arsen-purple/40 bg-arsen-purple/15 px-3 text-xs font-extrabold text-arsen-purple2">
@@ -384,58 +460,71 @@ export function WorkoutPage() {
       <div>
         <div className="mb-2 text-xs font-extrabold text-arsen-purple2">Ejercicio actual</div>
         <Card className="min-w-0 p-3">
-          <div className="grid grid-cols-[28px_72px_minmax(0,1fr)_28px] items-center gap-4 border-b border-white/10 pb-4">
+          <div className="grid grid-cols-[48px_56px_minmax(0,1fr)_48px] items-center gap-2 border-b border-white/10 pb-4">
             <button
               aria-label="Regresar al ejercicio anterior"
-              className="grid size-8 place-items-center rounded-[10px] text-arsen-muted transition-colors enabled:hover:bg-white/5 enabled:hover:text-arsen-purple2 disabled:opacity-30"
+              className="grid size-12 place-items-center rounded-[10px] text-arsen-muted transition-colors enabled:hover:bg-white/5 enabled:hover:text-arsen-purple2 disabled:opacity-30"
               disabled={blockedNavigation(isPending, currentExerciseIndex <= 0)}
               onClick={goToPreviousExercise}
               type="button"
             >
               <ChevronLeft aria-hidden="true" className="size-6" />
             </button>
-            <div className="grid size-[72px] place-items-center overflow-hidden rounded-[14px] border border-arsen-purple/45 bg-arsen-purple/10 p-1">
+            <div className="grid size-14 place-items-center overflow-hidden rounded-[14px] border border-arsen-purple/45 bg-arsen-purple/10 p-1">
               <ExerciseArt
                 alt={currentExercise?.name ?? 'Ejercicio'}
                 bundledAssetId={currentExercise?.bundledAssetId}
-                className="size-16"
+                className="size-12"
                 customImageSrc={currentExercise?.customAssetId ? imageSrcByAssetId.get(currentExercise.customAssetId) : null}
                 muscle={currentExercise?.mainMuscle}
               />
             </div>
             <div className="min-w-0">
               <h2 className="truncate text-[22px] font-black leading-tight">{currentExercise?.name ?? 'Sin ejercicio pendiente'}</h2>
-              <div className="mt-1 flex items-center gap-2">
-                <span className="inline-flex rounded-full bg-arsen-purple/30 px-2 py-1 text-xs font-bold text-arsen-purple2">
-                  {currentExercise?.mainMuscle ?? 'Descanso'}
-                </span>
-                {currentExercise?.technicalNotes.trim() ? (
-                  <button
-                    aria-label={`Ver indicaciones de ${currentExercise.name}`}
-                    className="grid size-8 shrink-0 place-items-center rounded-[9px] border border-white/10 text-arsen-purple2"
-                    onClick={() => setNoteSheetExercise(currentExercise)}
-                    type="button"
-                  >
-                    <Info aria-hidden="true" className="size-4" />
-                  </button>
-                ) : null}
-              </div>
             </div>
             <button
-              aria-label="Saltar ejercicio actual"
-              className="grid size-8 place-items-center rounded-[10px] text-arsen-ink transition-colors enabled:hover:bg-white/5 enabled:hover:text-arsen-purple2 disabled:opacity-30"
-              disabled={blockedNavigation(isPending, !currentExercise)}
-              onClick={skipCurrentExercise}
+              aria-label="Ir al siguiente ejercicio"
+              className="grid size-12 place-items-center rounded-[10px] text-arsen-ink transition-colors enabled:hover:bg-white/5 enabled:hover:text-arsen-purple2 disabled:opacity-30"
+              disabled={blockedNavigation(isPending, currentExerciseIndex < 0 || currentExerciseIndex >= navigableExercises.length - 1)}
+              onClick={goToNextExercise}
               type="button"
             >
               <ChevronRight aria-hidden="true" className="size-6" />
             </button>
+            <div className="col-span-full flex flex-wrap items-center justify-end gap-2">
+              <span className="mr-auto inline-flex rounded-full bg-arsen-purple/30 px-2 py-1 text-xs font-bold text-arsen-purple2">
+                {currentExercise?.mainMuscle ?? 'Descanso'}
+              </span>
+              {currentExercise?.technicalNotes.trim() ? (
+                <button
+                  aria-label={`Ver indicaciones de ${currentExercise.name}`}
+                  className="grid size-12 shrink-0 place-items-center rounded-[9px] border border-white/10 text-arsen-purple2"
+                  onClick={() => setNoteSheetExercise(currentExercise)}
+                  type="button"
+                >
+                  <Info aria-hidden="true" className="size-4" />
+                </button>
+              ) : null}
+              {currentExercise ? (
+                <button
+                  aria-controls="current-exercise-options"
+                  aria-expanded={optionsOpen}
+                  aria-haspopup="dialog"
+                  aria-label={`Opciones de ${currentExercise.name}`}
+                  className="grid size-12 shrink-0 place-items-center rounded-[9px] border border-white/10 text-arsen-purple2"
+                  onClick={(event) => { event.currentTarget.focus(); setOptionsOpen((open) => !open) }}
+                  type="button"
+                >
+                  <MoreVertical aria-hidden="true" className="size-5" />
+                </button>
+              ) : null}
+            </div>
           </div>
 
           <div className="grid grid-cols-4 gap-0 py-3 text-center">
             {[
               [deloadActive ? 'Peso deload' : 'Peso anterior', formatWeight(currentTargetWeightKg, preferredUnit), 'text-arsen-acid'],
-              [deloadActive ? 'Series deload' : 'Series', String(currentTargetSets), 'text-arsen-ink'],
+              [deloadActive ? 'Series deload' : 'Series', `${currentExercise ? loggedRowsForExercise(currentExercise).length : 0} / ${currentTargetSets}`, 'text-arsen-ink'],
               ['Reps', currentExercise ? formatRepRange(currentExercise.repsMin, currentExercise.repsMax) : '-', 'text-arsen-ink'],
               ['RIR', currentExercise?.recommendedRir ?? '-', 'text-arsen-ink'],
             ].map(([label, value, tone]) => (
@@ -459,31 +548,108 @@ export function WorkoutPage() {
 
           {currentExercise ? <LastSessionReferenceBlock reference={currentLastSessionReference} unit={preferredUnit} /> : null}
 
+          {currentExercise ? <div className="mb-3 space-y-1" aria-label="Series del ejercicio actual">
+            {loggedRowsForExercise(currentExercise).map(({ set, dropSets }) => <p className="rounded-[10px] bg-arsen-surface2 p-2 text-sm" key={set.id}>Serie {set.order + 1} - {formatWeight(set.weightKg, preferredUnit)} - {set.reps} reps - RIR {set.rir}{dropSets.length ? ` - ${dropSets.length} drop${dropSets.length === 1 ? '' : 's'}` : ''}</p>)}
+          </div> : null}
+
+          {currentExercise && workoutDay ? <details className="my-3" key={`${currentExercise.id}:${dailyProgress.exerciseLogByExerciseId.get(currentExercise.id)?.id ?? ''}`}>
+            <summary className="cursor-pointer py-2 text-sm font-bold text-arsen-muted">Nota del ejercicio</summary>
+            <form onSubmit={(event) => {
+              event.preventDefault()
+              const notes = String(new FormData(event.currentTarget).get('notes') ?? '')
+              runSetAction(async () => { await updateExerciseNotesForDay({ date: dateKey, dayId: workoutDay.day.id, displayUnit: preferredUnit, exercise: currentExercise, notes, routineId: workoutDay.routine.id }) }, 'Nota guardada')
+            }}>
+              <label className="block text-sm text-arsen-muted">Nota del ejercicio
+                <textarea className="mt-1 min-h-20 w-full rounded-[10px] border border-white/10 bg-arsen-surface2 p-3 text-arsen-ink" defaultValue={dailyProgress.exerciseLogByExerciseId.get(currentExercise.id)?.notes ?? ''} name="notes" />
+              </label>
+              <button className="min-h-12 text-sm font-bold text-arsen-purple2" disabled={isPending} type="submit">Guardar nota del ejercicio</button>
+            </form>
+          </details> : null}
+
           <ActionButton className="w-full" disabled={!currentExercise} onClick={() => setSelectedExerciseId(currentExercise?.id ?? null)}>
             Registrar
             <ChevronRight aria-hidden="true" className="size-5" />
           </ActionButton>
+          {currentExercise && loggedRowsForExercise(currentExercise).length > 0 ? <button className="mt-2 min-h-12 w-full rounded-[10px] border border-white/10 text-sm font-bold text-arsen-purple2" onClick={() => setSelectedExerciseId(currentExercise.id)} type="button">Repetir última serie</button> : null}
         </Card>
       </div>
 
-      <section>
-        <div className="mb-2 flex items-center justify-between text-xs font-extrabold">
+      {optionsOpen && currentExercise ? (
+        <div className="fixed inset-0 z-50 mx-auto flex max-w-[430px] items-end bg-black/65">
+          <button aria-label="Cerrar panel de opciones" className="absolute inset-0 cursor-default" onClick={() => setOptionsOpen(false)} type="button" />
+          <section aria-labelledby="exercise-options-title" aria-modal="true" className="relative max-h-[90dvh] w-full overflow-y-auto rounded-t-[22px] border-t border-white/10 bg-arsen-bg2 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3 shadow-[0_-16px_40px_rgb(0_0_0_/_0.35)]" id="current-exercise-options" ref={optionsRef} role="dialog" tabIndex={-1}>
+            <div className="mx-auto mb-4 h-1.5 w-14 rounded-full bg-white/25" />
+            <div className="mb-5 flex items-start gap-3">
+              <div className="grid size-12 shrink-0 place-items-center rounded-[12px] bg-arsen-purple/20 text-arsen-purple2"><Dumbbell aria-hidden="true" className="size-5" /></div>
+              <div className="min-w-0 flex-1">
+                <h2 className="text-xl font-black" id="exercise-options-title">Opciones del ejercicio</h2>
+                <p className="mt-1 break-words text-sm text-arsen-muted">{currentExercise.name}</p>
+              </div>
+              <button aria-label="Cerrar opciones del ejercicio" className="grid size-12 shrink-0 place-items-center rounded-[10px] border border-white/10 text-arsen-muted" onClick={() => setOptionsOpen(false)} type="button"><X aria-hidden="true" className="size-5" /></button>
+            </div>
+            <div className="space-y-3">
+              {dailyProgress.stateByExerciseId.get(currentExercise.id) === 'skipped' && dailyProgress.progress?.session ? (
+                <button aria-label="Restaurar ejercicio" className="flex min-h-16 w-full items-center gap-3 rounded-[12px] border border-arsen-acid/30 bg-arsen-acid/10 p-3 text-left disabled:opacity-40" disabled={isPending || actionBusy} onClick={() => runSetAction(() => reactivateExercise(dailyProgress.progress!.session!.id, currentExercise.id), 'Ejercicio restaurado')} type="button">
+                  <RotateCcw aria-hidden="true" className="size-5 shrink-0 text-arsen-acid" /><span><strong className="block text-sm text-arsen-ink">Restaurar ejercicio</strong><span className="block text-xs text-arsen-muted">Volver a incluirlo en tu entreno</span></span>
+                </button>
+              ) : (
+                <button aria-label="Omitir ejercicio" className="flex min-h-16 w-full items-center gap-3 rounded-[12px] border border-white/10 bg-arsen-surface p-3 text-left disabled:opacity-40" disabled={isPending || actionBusy} onClick={skipCurrentExercise} type="button">
+                  <SkipForward aria-hidden="true" className="size-5 shrink-0 text-arsen-purple2" /><span><strong className="block text-sm text-arsen-ink">Omitir ejercicio</strong><span className="block text-xs text-arsen-muted">Puedes restaurarlo después</span></span>
+                </button>
+              )}
+              <details className="group rounded-[12px] border border-white/10 bg-arsen-surface">
+                <summary className="flex min-h-16 cursor-pointer items-center gap-3 p-3"><ArrowDownUp aria-hidden="true" className="size-5 shrink-0 text-arsen-purple2" /><span className="min-w-0 flex-1"><strong className="block text-sm text-arsen-ink">Orden de esta sesión</strong><span className="block text-xs text-arsen-muted">Cambia cuándo lo entrenas</span></span><ChevronDown aria-hidden="true" className="size-5 shrink-0 text-arsen-muted group-open:rotate-180" /></summary>
+                <div className="flex gap-2 px-3 pb-3">
+                  <button className="min-h-12 flex-1 rounded-[10px] border border-white/10 px-2 text-sm font-bold text-arsen-ink disabled:opacity-40" disabled={isPending || actionBusy || currentExerciseIndex <= 0} onClick={() => moveCurrentExercise(-1)} type="button">Mover ejercicio antes</button>
+                  <button className="min-h-12 flex-1 rounded-[10px] border border-white/10 px-2 text-sm font-bold text-arsen-ink disabled:opacity-40" disabled={isPending || actionBusy || currentExerciseIndex < 0 || currentExerciseIndex >= dayExercises.length - 1} onClick={() => moveCurrentExercise(1)} type="button">Mover ejercicio después</button>
+                </div>
+              </details>
+              <details className="group rounded-[12px] border border-white/10 bg-arsen-surface">
+                <summary className="flex min-h-16 cursor-pointer items-center gap-3 p-3"><Repeat2 aria-hidden="true" className="size-5 shrink-0 text-arsen-purple2" /><span className="min-w-0 flex-1"><strong className="block text-sm text-arsen-ink">Adaptar esta sesión</strong><span className="block text-xs text-arsen-muted">Agrega o sustituye un ejercicio</span></span><ChevronDown aria-hidden="true" className="size-5 shrink-0 text-arsen-muted group-open:rotate-180" /></summary>
+                <div className="space-y-3 px-3 pb-3">
+                  <label className="block text-xs font-bold text-arsen-muted">Ejercicio del catálogo
+                    <select className="mt-1 min-h-12 w-full rounded-[10px] border border-white/10 bg-arsen-surface2 px-3 text-base text-arsen-ink" value={catalogExerciseId} onChange={(event) => setCatalogExerciseId(event.target.value)}>
+                      <option value="">Selecciona un ejercicio</option>
+                      {exerciseCatalog.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                    </select>
+                  </label>
+                  <div className="grid grid-cols-1 gap-2 min-[360px]:grid-cols-2">
+                    <button className="min-h-12 rounded-[10px] bg-arsen-purple px-2 text-sm font-bold text-arsen-ink disabled:opacity-40" disabled={!catalogExerciseId || isPending || actionBusy} onClick={() => void addSessionExercise(false)} type="button">Agregar a esta sesión</button>
+                    <button className="min-h-12 rounded-[10px] border border-white/10 px-2 text-sm font-bold text-arsen-ink disabled:opacity-40" disabled={!catalogExerciseId || isPending || actionBusy} onClick={() => void addSessionExercise(true)} type="button">Sustituir ejercicio</button>
+                  </div>
+                </div>
+              </details>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      <details>
+        <summary className="mb-2 flex min-h-12 cursor-pointer items-center justify-between text-xs font-extrabold">
           <span className="text-arsen-muted">Calentamiento</span>
           <span className="text-arsen-purple2">{warmups.length} series</span>
-        </div>
+        </summary>
         <div className="space-y-2">
           {warmups.map((set, index) => (
-            <Card className="grid grid-cols-[28px_1fr_1fr_1fr] items-center gap-2 p-3 text-sm" key={`${set.weight}-${index}`}>
+            <Card className="grid grid-cols-[28px_minmax(0,1fr)_auto] items-center gap-2 p-3 text-sm" key={`${set.weight}-${index}`}>
               <span className="grid size-6 place-items-center rounded-full border border-white/15 text-xs text-arsen-muted">
                 {index + 1}
               </span>
-              <strong className="text-arsen-acid">{set.weight}</strong>
-              <span>{set.reps} reps</span>
-              <span>RIR {set.rir}</span>
+              <span className="min-w-0"><strong className="text-arsen-acid">{set.weight}</strong> · {set.reps} reps · RIR {set.rir}</span>
+              <button aria-label={`Registrar calentamiento ${index + 1}`} className="min-h-12 px-2 text-xs font-bold text-arsen-purple2 disabled:opacity-40" disabled={isPending || actionBusy || !currentExercise || !workoutDay} onClick={() => {
+                if (!currentExercise || !workoutDay) return
+                runSetAction(async () => { await registerWarmupForExercise({ date: dateKey, dayId: workoutDay.day.id, displayUnit: preferredUnit, exercise: currentExercise, reps: set.reps, rir: set.rir, routineId: workoutDay.routine.id, weightKg: set.weightKg }) }, 'Calentamiento registrado')
+              }} type="button">Registrar</button>
             </Card>
           ))}
+          {currentExercise ? dailyProgress.setLogs.filter((set) => set.kind === 'warmup' && set.exerciseLogId === dailyProgress.exerciseLogByExerciseId.get(currentExercise.id)?.id).sort((a, b) => a.order - b.order).map((set) => (
+            <div className="flex items-center justify-between gap-2 rounded-[10px] border border-white/10 p-3 text-sm" key={set.id}>
+              <span>Calentamiento {set.order + 1}: {formatWeight(set.weightKg, preferredUnit)} · {set.reps} reps · RIR {set.rir}</span>
+              <button aria-label={`Editar calentamiento ${set.order + 1}`} className="min-h-12 min-w-12 text-arsen-purple2" onClick={() => setEditingSet({ exercise: currentExercise, set })} type="button"><Pencil aria-hidden="true" className="mx-auto size-4" /></button>
+            </div>
+          )) : null}
         </div>
-      </section>
+      </details>
 
       {healthEnabled ? (
         // La tarjeta consume el resumen persistido de la sesión actual y ofrece el botón de lectura.
@@ -499,7 +665,7 @@ export function WorkoutPage() {
       <WeightIncreaseCard recommendations={currentExerciseRecommendations} unit={preferredUnit} />
 
       {message ? (
-        <div className="rounded-[10px] border border-arsen-purple/40 bg-arsen-purple/15 px-3 py-2 text-xs text-arsen-purple2">
+        <div className="rounded-[10px] border border-arsen-purple/40 bg-arsen-purple/15 px-3 py-2 text-xs text-arsen-purple2" role="status">
           {message}
         </div>
       ) : null}
@@ -521,20 +687,41 @@ export function WorkoutPage() {
           </span>
           <span>{dailyProgress.progress?.session?.status === 'completed' ? 'Finalizada' : workoutDay?.day.description ?? 'Sin rutina activa'}</span>
         </div>
-        <ActionButton className="mt-3 w-full" disabled={isPending || !workoutDay} onClick={completeSession} tone="ghost">
+        <ActionButton className="mt-3 w-full" disabled={isPending || !workoutDay} onClick={() => setReviewOpen(true)} tone="ghost">
           <Check aria-hidden="true" className="size-5" />
           Finalizar sesion
         </ActionButton>
       </Card>
 
-      <section className="grid grid-cols-4 gap-2">
+      {reviewOpen && workoutDay ? <div className="fixed inset-0 z-50 mx-auto flex max-w-[430px] items-end bg-black/55">
+        <section aria-labelledby="workout-review-title" aria-modal="true" className="relative max-h-[90dvh] w-full overflow-y-auto rounded-t-[22px] bg-arsen-bg2 p-4 pb-[max(1rem,env(safe-area-inset-bottom))]" ref={reviewRef} role="dialog" tabIndex={-1}>
+          <h2 className="text-xl font-black" id="workout-review-title">Revisar entrenamiento</h2>
+          <p className="mt-2 text-sm text-arsen-muted">{workoutDay.routine.name} · {workoutDay.day.name}</p>
+          <p className="mt-2 text-sm">{mainSets.length} series principales · {dailyProgress.dropSets.length} drop sets · {dailyVolume} kg de volumen</p>
+          <ul className="my-3 space-y-1 text-sm">
+            {dayExercises.map((exercise) => <li key={exercise.id}>{exercise.name} · {stateLabel(dailyProgress.stateByExerciseId.get(exercise.id) ?? 'pending')}{dailyProgress.exerciseLogByExerciseId.get(exercise.id)?.notes ? ` · ${dailyProgress.exerciseLogByExerciseId.get(exercise.id)?.notes}` : ''}</li>)}
+            {[...dailyProgress.exerciseLogByExerciseId.values()].filter((log) => !dayExercises.some((exercise) => exercise.id === log.routineExerciseId)).map((log) => <li key={log.id}>{log.snapshot.name} · {stateLabel(log.state)}{log.notes ? ` · ${log.notes}` : ''}</li>)}
+          </ul>
+          {dailyProgress.progress?.session?.notes ? <p className="text-sm text-arsen-muted">{dailyProgress.progress.session.notes}</p> : null}
+          {dailyProgress.progress?.session?.health ? <HealthSummaryCard onSync={() => undefined} showSync={false} summary={dailyProgress.progress.session.health} /> : null}
+          <div className="mt-4 grid grid-cols-2 gap-2">
+            <ActionButton disabled={isPending} onClick={() => setReviewOpen(false)} tone="ghost">Volver a editar</ActionButton>
+            <ActionButton disabled={isPending} onClick={completeSession} tone="acid">Confirmar finalización</ActionButton>
+          </div>
+        </section>
+      </div> : null}
+
+      <details>
+        <summary className="min-h-12 cursor-pointer py-3 text-sm font-bold text-arsen-muted">Estados del entrenamiento</summary>
+      <div className="grid grid-cols-4 gap-2">
         {statusSummary.map((item) => (
           <Card className="p-2 text-center" key={item.label}>
             <strong className={['block text-base', item.tone ?? 'text-arsen-ink'].join(' ')}>{item.value}</strong>
             <span className="mt-1 block text-xs text-arsen-muted">{item.label}</span>
           </Card>
         ))}
-      </section>
+      </div>
+      </details>
 
       <section>
         <div className="mb-2 text-xs font-extrabold text-arsen-muted">Resumen diario</div>
@@ -552,6 +739,19 @@ export function WorkoutPage() {
             <span className="mt-1 block text-xs text-arsen-muted">Volumen kg</span>
           </Card>
         </div>
+        {workoutDay ? <details className="mt-3" key={`${workoutDay.day.id}:${dailyProgress.progress?.session?.id ?? ''}`}>
+          <summary className="cursor-pointer py-2 text-sm font-bold text-arsen-muted">Nota de la sesión</summary>
+          <form onSubmit={(event) => {
+            event.preventDefault()
+            const notes = String(new FormData(event.currentTarget).get('notes') ?? '')
+            runSetAction(async () => { await updateSessionNotesForDay({ date: dateKey, dayId: workoutDay.day.id, displayUnit: preferredUnit, notes, routineId: workoutDay.routine.id }) }, 'Nota de sesión guardada')
+          }}>
+            <label className="block text-sm text-arsen-muted">Nota de la sesión
+              <textarea className="mt-1 min-h-20 w-full rounded-[10px] border border-white/10 bg-arsen-surface2 p-3 text-arsen-ink" defaultValue={dailyProgress.progress?.session?.notes ?? ''} name="notes" />
+            </label>
+            <button className="min-h-12 text-sm font-bold text-arsen-purple2" disabled={isPending} type="submit">Guardar nota de la sesión</button>
+          </form>
+        </details> : null}
       </section>
 
       <section>
@@ -631,34 +831,40 @@ export function WorkoutPage() {
                     <div className="space-y-2">
                       {loggedRows.length > 0 ? (
                         loggedRows.map(({ dropSets, set }) => (
-                          <div className="grid grid-cols-[1fr_auto] items-center gap-3 rounded-[10px] border border-white/10 bg-arsen-bg/45 p-3" key={set.id}>
+                          <div className="rounded-[10px] border border-white/10 bg-arsen-bg/45 p-3" key={set.id}>
                             <div className="min-w-0">
                               <strong className="block truncate text-sm">Serie {set.order + 1}</strong>
                               <span className="mt-1 block text-xs text-arsen-muted">
-                                Serie {set.order + 1} - {formatWeight(set.weightKg, preferredUnit)} - {set.reps} reps - RIR {set.rir}
+                                {formatWeight(set.weightKg, preferredUnit)} - {set.reps} reps - RIR {set.rir}
                                 {dropSets.length > 0 ? ` - ${dropSets.length} drop${dropSets.length === 1 ? '' : 's'}` : ''}
                               </span>
                             </div>
-                            <div className="flex items-center gap-1">
+                            <details className="group mt-2">
+                              <summary className="flex min-h-12 cursor-pointer items-center justify-between gap-2 rounded-[10px] border border-white/10 px-3 text-xs font-bold text-arsen-purple2">Acciones de serie {set.order + 1}<ChevronDown aria-hidden="true" className="size-4 shrink-0 group-open:rotate-180" /></summary>
+                              <div className="mt-2 grid grid-cols-1 gap-2 min-[360px]:grid-cols-3">
                               <button
                                 aria-label={`Editar serie ${set.order + 1} de ${exercise.name}`}
-                                className="grid size-9 place-items-center rounded-[10px] border border-white/10 text-arsen-purple2 disabled:opacity-40"
+                                className="flex min-h-12 items-center justify-center gap-2 rounded-[10px] border border-white/10 px-2 text-sm font-bold text-arsen-purple2 disabled:opacity-40"
                                 disabled={isPending}
                                 onClick={() => setEditingSet({ exercise, set })}
                                 type="button"
                               >
                                 <Pencil aria-hidden="true" className="size-4" />
+                                Editar
                               </button>
+                              <button aria-label={`Duplicar serie ${set.order + 1} de ${exercise.name}`} className="min-h-12 rounded-[10px] border border-white/10 px-2 text-sm font-bold text-arsen-purple2 disabled:opacity-40" disabled={isPending} onClick={() => { setDuplicateSet(set); setSelectedExerciseId(exercise.id) }} type="button">Duplicar</button>
                               <button
                                 aria-label={`Eliminar serie ${set.order + 1} de ${exercise.name}`}
-                                className="grid size-9 place-items-center rounded-[10px] border border-red-300/30 text-red-300 disabled:opacity-40"
+                                className="flex min-h-12 items-center justify-center gap-2 rounded-[10px] border border-red-300/30 px-2 text-sm font-bold text-red-300 disabled:opacity-40"
                                 disabled={isPending}
                                 onClick={() => deleteSet(set)}
                                 type="button"
                               >
                                 <Trash2 aria-hidden="true" className="size-4" />
+                                Eliminar
                               </button>
-                            </div>
+                              </div>
+                            </details>
                           </div>
                         ))
                       ) : (
@@ -683,7 +889,9 @@ export function WorkoutPage() {
           dayId={workoutDay.day.id}
           displayUnit={workoutDay.settings.preferredUnit}
           exercise={selectedExercise}
-          onClose={() => setSelectedExerciseId(null)}
+          onClose={() => { setSelectedExerciseId(null); setDuplicateSet(null) }}
+          onSaved={() => setMessage('Serie guardada')}
+          referenceSet={duplicateSet ?? loggedRowsForExercise(selectedExercise).at(-1)?.set ?? lastSessionReferences.get(selectedExercise.id)?.sets.at(-1)?.set}
           routineId={workoutDay.routine.id}
         />
       ) : null}
@@ -699,25 +907,7 @@ export function WorkoutPage() {
             return true
           }}
           onSave={async (input) => {
-            await updateMainSet(editingSet.set.id, input.main)
-            await Promise.all(input.deletedDropSetIds.map((dropSetId) => deleteDropSet(dropSetId)))
-            await Promise.all(
-              input.drops.map((dropSet) =>
-                dropSet.id
-                  ? updateDropSet(dropSet.id, {
-                      reps: dropSet.reps,
-                      rir: dropSet.rir,
-                      weightKg: dropSet.weightKg,
-                    })
-                  : addDropSet({
-                      displayUnit: preferredUnit,
-                      reps: dropSet.reps,
-                      rir: dropSet.rir,
-                      setLogId: editingSet.set.id,
-                      weightKg: dropSet.weightKg,
-                    }),
-              ),
-            )
+            await updateSetWithDrops(editingSet.set.id, input)
           }}
           set={editingSet.set}
           unit={preferredUnit}
@@ -806,6 +996,7 @@ function buildWarmupsForExercise(exercise: RoutineExercise | null | undefined, u
     reps: set.reps,
     rir: set.rir,
     weight: formatWeight(set.weightKg, unit),
+    weightKg: set.weightKg,
   }))
 }
 
@@ -980,17 +1171,20 @@ function LastSessionReferenceBlock({
 }) {
   return (
     <section className="mb-3 rounded-[10px] border border-dashed border-arsen-purple/35 bg-arsen-bg/40 p-3">
-      <div className="mb-2 flex items-center justify-between gap-2">
+      <details className="group">
+      <summary className="flex min-h-12 cursor-pointer items-center justify-between gap-2 rounded-[10px]">
         <div className="min-w-0">
           <strong className="block text-xs font-extrabold text-arsen-purple2">Ultima sesion</strong>
           <span className="mt-0.5 block text-xs text-arsen-muted">
             {reference ? formatShortWorkoutDate(reference.date) : 'Sin historial previo'}
           </span>
         </div>
-        <span className="shrink-0 rounded-full border border-arsen-purple/35 bg-arsen-purple/15 px-2 py-1 text-xs font-extrabold text-arsen-purple2">
-          Referencia
+        <span className="flex shrink-0 items-center gap-2 text-arsen-purple2">
+          <span className="rounded-full border border-arsen-purple/35 bg-arsen-purple/15 px-2 py-1 text-xs font-extrabold">Referencia</span>
+          <ChevronDown aria-hidden="true" className="size-4 group-open:rotate-180" />
         </span>
-      </div>
+      </summary>
+      <div className="mt-2">
       {reference ? (
         <div className="space-y-2">
           {reference.sets.length > 0 ? (
@@ -1021,6 +1215,8 @@ function LastSessionReferenceBlock({
           Primera vez con este ejercicio en este dia
         </div>
       )}
+      </div>
+      </details>
     </section>
   )
 }

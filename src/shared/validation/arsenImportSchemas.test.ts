@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { backupSchema, routineExportSchema } from './arsenImportSchemas'
+import { backupSchema, routineExportSchema, workoutSessionSchema } from './arsenImportSchemas'
 
 const routine = {
   createdAt: '2026-01-01T00:00:00.000Z',
@@ -48,6 +48,13 @@ const exercise = {
 }
 
 describe('Arsen import schemas', () => {
+  it('preserves session-local plans and manual completion in a backup round trip', () => {
+    const session = { id: 'session-1', routineId: 'routine-1', dayId: 'day-1', date: '2026-01-01', notes: '', displayUnit: 'kg', status: 'completed', manuallyCompleted: true, sessionExercises: [exercise], createdAt: exercise.createdAt, updatedAt: exercise.updatedAt }
+    const restored = workoutSessionSchema.parse(JSON.parse(JSON.stringify(session)))
+    expect(restored.manuallyCompleted).toBe(true)
+    expect(restored.sessionExercises?.[0]?.id).toBe('exercise-1')
+    expect(workoutSessionSchema.parse({ ...session, sessionExercises: undefined, manuallyCompleted: undefined }).sessionExercises).toBeUndefined()
+  })
   it('accepts a routine export with expected tables', () => {
     expect(
       routineExportSchema.safeParse({

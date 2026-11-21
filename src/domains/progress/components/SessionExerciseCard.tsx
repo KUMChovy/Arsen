@@ -78,6 +78,17 @@ export function SessionExerciseCard({
             <Metric label="Mejor serie" value={bestSet ? formatWeight(bestSet.weightKg, unit) + ' x ' + bestSet.reps : 'Sin datos'} />
           </div>
 
+          {exercise.notes ? <p className="text-sm text-arsen-muted">{exercise.notes}</p> : null}
+
+          {(exercise.warmupSets ?? []).length > 0 ? <div className="space-y-2">
+            <h4 className="text-sm font-black">Calentamientos</h4>
+            {exercise.warmupSets?.map((set) => <div className="flex items-center gap-2 rounded-[10px] border border-white/10 p-2" key={set.id}>
+              <span className="min-w-0 flex-1 text-sm">Calentamiento {set.order + 1} · {formatWeight(set.weightKg, unit)} × {set.reps} · RIR {set.rir}</span>
+              <button aria-label={`Editar calentamiento ${set.order + 1}`} className="min-h-12 min-w-12 text-arsen-purple2" disabled={saving} onClick={() => onEditSet({ ...set, dropSets: [] })} type="button"><Pencil aria-hidden="true" className="mx-auto size-4" /></button>
+              <button aria-label={`Eliminar calentamiento ${set.order + 1}`} className="min-h-12 min-w-12 text-red-300" disabled={saving} onClick={() => onRemoveSet(set.id)} type="button"><Trash2 aria-hidden="true" className="mx-auto size-4" /></button>
+            </div>)}
+          </div> : null}
+
           <div className="flex items-center justify-between gap-3">
             <h4 className="text-sm font-black">Series principales</h4>
             <span className="text-xs font-bold text-arsen-dim">{exercise.sets.length} registradas</span>

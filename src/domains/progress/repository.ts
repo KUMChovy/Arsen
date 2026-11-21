@@ -80,7 +80,9 @@ export type SessionExerciseDetail = {
   exerciseLogId: string
   exerciseName: string
   mainMuscle: string
+  notes?: string
   routineExerciseId: string
+  warmupSets?: Array<{ id: string; order: number; reps: number; rir: number; weightKg: number; displayUnit: string }>
   sets: Array<{
     displayUnit: string
     dropSets: Array<{
@@ -502,7 +504,12 @@ export async function getSessionDetail(sessionId: string, filters: ProgressOverv
       exerciseLogId: log.id,
       exerciseName: log.snapshot.name,
       mainMuscle: log.snapshot.mainMuscle,
+      notes: log.notes,
       routineExerciseId: log.routineExerciseId,
+      warmupSets: setLogs
+        .filter((set) => set.kind === 'warmup' && set.exerciseLogId === log.id)
+        .sort((a, b) => a.order - b.order)
+        .map(({ id, order, reps, rir, weightKg, displayUnit }) => ({ id, order, reps, rir, weightKg, displayUnit })),
       sets: setLogs
         .filter((set) => set.kind === 'main' && set.exerciseLogId === log.id)
         .sort((a, b) => a.order - b.order)

@@ -1,13 +1,16 @@
-import { useEffect, useState, useTransition } from 'react'
+import { useRef, useState, useTransition } from 'react'
 import { Check, Dumbbell, Flame, X } from 'lucide-react'
 import type { RoutineExercise } from '../../routine/types'
 import { ActionButton } from '../../../shared/components/ActionButton'
 import { Card } from '../../../shared/components/Card'
+import { useDialogFocus } from '../../../shared/components/useDialogFocus'
 import { buildEquipmentLoadNote } from '../../../shared/calculations/equipmentLoad'
 import { formatRepRange } from '../../../shared/utils/reps'
+import { confirmDanger } from '../../../shared/utils/alerts'
 import { kgToUnit, unitToKg } from '../../../shared/utils/weight'
 import { registerMainSetForExercise } from '../services'
-import type { WeightUnit } from '../types'
+import { NumberField } from './NumberField'
+import type { SetLog, WeightUnit } from '../types'
 
 type RegisterSetSheetProps = {
   availablePlateWeightsKg?: number[] | null
@@ -16,6 +19,8 @@ type RegisterSetSheetProps = {
   displayUnit: WeightUnit
   exercise: RoutineExercise | null
   onClose: () => void
+  onSaved?: () => void
+  referenceSet?: Pick<SetLog, 'weightKg' | 'reps' | 'rir'>
   routineId: string
 }
 
@@ -26,27 +31,33 @@ export function RegisterSetSheet({
   displayUnit,
   exercise,
   onClose,
+  onSaved,
+  referenceSet,
   routineId,
 }: RegisterSetSheetProps) {
-  const [weightValue, setWeightValue] = useState('60')
-  const [reps, setReps] = useState('8')
-  const [rir, setRir] = useState('2')
+  const initialWeight = referenceSet?.weightKg ?? exercise?.currentWeightKg ?? 0
+  const [weightValue, setWeightValue] = useState(() => String(kgToUnit(initialWeight, displayUnit)))
+  const [reps, setReps] = useState(() => String(referenceSet?.reps ?? exercise?.repsMin ?? 8))
+  const [rir, setRir] = useState(() => String(referenceSet?.rir ?? exercise?.recommendedRir ?? 2))
   const [dropEnabled, setDropEnabled] = useState(false)
-  const [dropWeightValue, setDropWeightValue] = useState('48')
+  const [dropWeightValue, setDropWeightValue] = useState(() => String(kgToUnit(initialWeight * 0.8, displayUnit)))
   const [dropReps, setDropReps] = useState('10')
   const [dropRir, setDropRir] = useState('2')
   const [message, setMessage] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
-
-  useEffect(() => {
-    if (!exercise) return
-    const baseWeight = exercise.currentWeightKg > 0 ? exercise.currentWeightKg : 60
-    setWeightValue(String(kgToUnit(baseWeight, displayUnit)))
-    setDropWeightValue(String(kgToUnit(baseWeight * 0.8, displayUnit)))
-  }, [displayUnit, exercise])
+  const [saving, setSaving] = useState(false)
+  const savingRef = useRef(false)
+  const initialRef = useRef({ weight: weightValue, reps, rir })
+  const dialogRef = useDialogFocus(() => { void requestClose() })
 
   if (!exercise) return null
   const activeExercise = exercise
+  async function requestClose() {
+    if (savingRef.current) return
+    const dirty = dropEnabled || weightValue !== initialRef.current.weight || reps !== initialRef.current.reps || rir !== initialRef.current.rir
+    if (dirty && !(await confirmDanger('Descartar cambios', 'Los datos de esta serie no se han guardado.'))) return
+    onClose()
+  }
   const equipmentLoadNote = buildEquipmentLoadNote({
     availablePlateWeightsKg,
     barWeightKg: activeExercise.barWeightKg,
@@ -57,6 +68,14 @@ export function RegisterSetSheet({
   })
 
   function saveSet() {
+    if (savingRef.current) return
+    const valid = (weight: string, count: string, effort: string) => weight.trim() !== '' && count.trim() !== '' && effort.trim() !== '' && Number.isFinite(Number(weight)) && Number(weight) >= 0 && Number.isInteger(Number(count)) && Number(count) > 0 && Number.isFinite(Number(effort)) && Number(effort) >= 0
+    if (!valid(weightValue, reps, rir) || (dropEnabled && !valid(dropWeightValue, dropReps, dropRir))) {
+      setMessage('Revisa el peso, las repeticiones y el RIR.')
+      return
+    }
+    savingRef.current = true
+    setSaving(true)
     startTransition(() => {
       registerMainSetForExercise({
         date,
@@ -76,21 +95,22 @@ export function RegisterSetSheet({
         weightKg: unitToKg(numberOrZero(weightValue), displayUnit),
       })
         .then(() => {
-          setMessage('Serie guardada')
+          onSaved?.()
           onClose()
         })
         .catch((error: unknown) => setMessage(error instanceof Error ? error.message : 'No se guardo la serie'))
+        .finally(() => { savingRef.current = false; setSaving(false) })
     })
   }
 
   return (
     <div className="fixed inset-0 z-50 mx-auto flex max-w-[430px] items-end bg-black/55">
-      <button aria-label="Cerrar registro" className="absolute inset-0 cursor-default" onClick={onClose} />
-      <section className="relative w-full rounded-t-[22px] border-t border-white/10 bg-arsen-bg2 p-4 shadow-[0_-16px_40px_rgb(0_0_0_/_0.35)]">
+      <button aria-label="Cerrar registro" className="absolute inset-0 cursor-default" onClick={() => void requestClose()} />
+      <section aria-labelledby="register-set-title" aria-modal="true" className="relative max-h-[90dvh] w-full overflow-y-auto rounded-t-[22px] border-t border-white/10 bg-arsen-bg2 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-[0_-16px_40px_rgb(0_0_0_/_0.35)]" ref={dialogRef} role="dialog" tabIndex={-1}>
         <div className="mx-auto mb-4 h-1.5 w-14 rounded-full bg-white/25" />
         <div className="mb-4 flex items-start justify-between gap-4">
           <div>
-            <h2 className="flex items-center gap-2 text-xl font-black">
+            <h2 className="flex items-center gap-2 text-xl font-black" id="register-set-title">
               <Dumbbell aria-hidden="true" className="size-5 text-arsen-purple2" />
               Registrar {activeExercise.name}
             </h2>
@@ -98,16 +118,16 @@ export function RegisterSetSheet({
               {activeExercise.targetSets} series - {formatRepRange(activeExercise.repsMin, activeExercise.repsMax)} reps - RIR {activeExercise.recommendedRir}
             </p>
           </div>
-          <button className="grid size-9 place-items-center rounded-[10px] text-arsen-muted" onClick={onClose}>
+          <button className="grid size-9 place-items-center rounded-[10px] text-arsen-muted" onClick={() => void requestClose()}>
             <X aria-hidden="true" className="size-5" />
             <span className="sr-only">Cerrar</span>
           </button>
         </div>
 
         <div className="grid grid-cols-3 gap-2">
-          <NumberField label={displayUnit.toUpperCase()} onChange={setWeightValue} value={weightValue} />
-          <NumberField label="Reps" onChange={setReps} value={reps} />
-          <NumberField label="RIR" onChange={setRir} value={rir} />
+          <NumberField errorId={message ? 'register-set-error' : undefined} label={displayUnit.toUpperCase()} onChange={setWeightValue} step={displayUnit === 'kg' ? 2.5 : 5} value={weightValue} />
+          <NumberField errorId={message ? 'register-set-error' : undefined} label="Reps" onChange={setReps} step={1} value={reps} />
+          <NumberField errorId={message ? 'register-set-error' : undefined} label="RIR" onChange={setRir} value={rir} />
         </div>
 
         {equipmentLoadNote ? (
@@ -131,47 +151,26 @@ export function RegisterSetSheet({
           </label>
           {dropEnabled ? (
             <div className="mt-3 grid grid-cols-3 gap-2">
-              <NumberField label={`${displayUnit.toUpperCase()} drop`} onChange={setDropWeightValue} value={dropWeightValue} />
-              <NumberField label="Reps" onChange={setDropReps} value={dropReps} />
-              <NumberField label="RIR" onChange={setDropRir} value={dropRir} />
+              <NumberField errorId={message ? 'register-set-error' : undefined} label={`${displayUnit.toUpperCase()} drop`} onChange={setDropWeightValue} value={dropWeightValue} />
+              <NumberField errorId={message ? 'register-set-error' : undefined} label="Reps" onChange={setDropReps} value={dropReps} />
+              <NumberField errorId={message ? 'register-set-error' : undefined} label="RIR" onChange={setDropRir} value={dropRir} />
             </div>
           ) : null}
         </Card>
 
-        {message ? <p className="mt-3 text-xs text-arsen-purple2">{message}</p> : null}
+        {message ? <p className="mt-3 text-xs text-arsen-purple2" id="register-set-error" role="alert">{message}</p> : null}
 
         <div className="mt-4 grid grid-cols-[1fr_1.5fr] gap-2">
-          <ActionButton disabled={isPending} onClick={onClose} tone="ghost">
+          <ActionButton disabled={isPending || saving} onClick={() => void requestClose()} tone="ghost">
             Cancelar
           </ActionButton>
-          <ActionButton disabled={isPending} onClick={saveSet} tone="acid">
+          <ActionButton disabled={isPending || saving} onClick={saveSet} tone="acid">
             <Check aria-hidden="true" className="size-5" />
             Guardar serie
           </ActionButton>
         </div>
       </section>
     </div>
-  )
-}
-
-type NumberFieldProps = {
-  label: string
-  onChange: (value: string) => void
-  value: string
-}
-
-function NumberField({ label, onChange, value }: NumberFieldProps) {
-  return (
-    <label className="block">
-      <span className="mb-1 block text-xs font-bold text-arsen-muted">{label}</span>
-      <input
-        className="min-h-12 w-full rounded-[10px] border border-white/10 bg-arsen-surface px-3 text-center text-base font-extrabold text-arsen-ink"
-        inputMode="decimal"
-        onChange={(event) => onChange(event.target.value)}
-        type="number"
-        value={value}
-      />
-    </label>
   )
 }
 

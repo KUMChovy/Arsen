@@ -7,7 +7,7 @@ import { WorkoutPage } from './WorkoutPage'
 import type { RoutineDay, RoutineExercise } from '../../routine/types'
 import type { DropSetLog, ExerciseLog, LastSessionReference, SetLog, WorkoutSession } from '../types'
 import { confirmDanger } from '../../../shared/utils/alerts'
-import { completeSessionForDay, deleteMainSet, updateMainSet } from '../services'
+import { completeSessionForDay, deleteMainSet, registerWarmupForExercise, skipRoutineExerciseForDay, updateSessionExercisePlan, updateSetWithDrops } from '../services'
 import { setActiveRoutine } from '../../routine/services'
 import type { DeloadOverview } from '../../settings/types'
 
@@ -20,6 +20,9 @@ const workoutMocks = vi.hoisted(() => ({
   healthEnabled: false,
   setLogs: [] as SetLog[],
   sessionStatus: 'draft' as WorkoutSession['status'],
+  exerciseSkipped: false,
+  sessionExercises: null as RoutineExercise[] | null,
+  pendingSessions: [] as WorkoutSession[],
   rotationStatus: {
     daysWithoutTraining: 0,
     missedScheduledDay: false,
@@ -58,6 +61,7 @@ vi.mock('../../routine/hooks', () => ({
     },
   }),
   useExerciseAssets: () => [],
+  useExerciseCatalog: () => [{ ...exercise, id: 'catalog-extra', name: 'Remo adicional', defaultTargetSets: 3, defaultRepsMin: 8, defaultRepsMax: 10, defaultRecommendedRir: 2, defaultRestSeconds: 90 }],
   useRoutines: () => [routine, routine2],
   useWorkoutDayById: (dayId: string | null) => {
     const selectedDay = dayId === day2.id ? day2 : day
@@ -78,6 +82,7 @@ vi.mock('../../routine/hooks', () => ({
 
 vi.mock('../hooks', () => ({
   useDeloadOverview: () => workoutMocks.deloadOverview,
+  usePendingWorkoutSessions: () => workoutMocks.pendingSessions,
   useWeightIncreaseRecommendations: () => workoutMocks.weightIncreaseRecommendations,
   useWorkoutRotationStatus: () => workoutMocks.rotationStatus,
   useLastSessionReferencesForDay: () => workoutMocks.lastSessionReferences,
@@ -95,6 +100,7 @@ vi.mock('../hooks', () => ({
         id: 'session-1',
         notes: 'Sesion inicial',
         status: workoutMocks.sessionStatus,
+        sessionExercises: workoutMocks.sessionExercises ?? undefined,
       },
     },
     setLogs: workoutMocks.setLogs,
@@ -103,7 +109,7 @@ vi.mock('../hooks', () => ({
       [otherExerciseLog.id, 1],
     ]),
     skippedCount: 0,
-    stateByExerciseId: new Map([[exercise.id, 'in_progress']]),
+    stateByExerciseId: new Map([[exercise.id, workoutMocks.exerciseSkipped ? 'skipped' : 'in_progress']]),
   }),
 }))
 
@@ -113,8 +119,14 @@ vi.mock('../services', () => ({
   deleteDropSet: vi.fn(() => Promise.resolve()),
   deleteMainSet: vi.fn(() => Promise.resolve()),
   skipRoutineExerciseForDay: vi.fn(() => Promise.resolve('session-1')),
+  reactivateExercise: vi.fn(() => Promise.resolve()),
+  registerWarmupForExercise: vi.fn(() => Promise.resolve({ exerciseLogId: 'log-1', sessionId: 'session-1', setLogId: 'warmup-1' })),
+  updateExerciseNotesForDay: vi.fn(() => Promise.resolve('log-1')),
+  updateSessionNotesForDay: vi.fn(() => Promise.resolve('session-1')),
+  updateSessionExercisePlan: vi.fn(() => Promise.resolve('session-1')),
   updateDropSet: vi.fn(() => Promise.resolve()),
   updateMainSet: vi.fn(() => Promise.resolve()),
+  updateSetWithDrops: vi.fn(() => Promise.resolve()),
 }))
 
 vi.mock('../../routine/services', () => ({
@@ -148,6 +160,9 @@ describe('WorkoutPage', () => {
     workoutMocks.setLogs = [setLog, otherSetLog]
     workoutMocks.healthEnabled = false
     workoutMocks.sessionStatus = 'draft'
+    workoutMocks.exerciseSkipped = false
+    workoutMocks.sessionExercises = null
+    workoutMocks.pendingSessions = []
     workoutMocks.rotationStatus = {
       daysWithoutTraining: 0,
       missedScheduledDay: false,
@@ -173,6 +188,7 @@ describe('WorkoutPage', () => {
     exercise.equipment = 'Barra'
     exercise.loadMode = 'split'
     exercise.barWeightKg = 20
+    exercise.warmupProtocol = 'none'
   })
 
   it('renders clean daily workout with current exercise rest visible', () => {
@@ -186,6 +202,192 @@ describe('WorkoutPage', () => {
     expect(screen.getByText('Descanso')).toBeInTheDocument()
     expect(screen.getByText('1:30 min')).toBeInTheDocument()
     expect(screen.getByLabelText('Descanso recomendado')).toHaveTextContent('Descanso1:30 min')
+  })
+
+  it('distinguishes a completed session from an active one', () => {
+    workoutMocks.sessionStatus = 'completed'
+    render(<WorkoutPage />)
+    expect(screen.getByText(/sesión finalizada/i)).toBeInTheDocument()
+  })
+
+  it('keeps secondary state statistics collapsed until requested', () => {
+    render(<WorkoutPage />)
+    const summary = screen.getByText('Estados del entrenamiento')
+    expect(summary.closest('details')).not.toHaveAttribute('open')
+    fireEvent.click(summary)
+    expect(summary.closest('details')).toHaveAttribute('open')
+  })
+
+  it('opens exercise options in a focused sheet and restores focus on close', () => {
+    render(<WorkoutPage />)
+    const options = screen.getByRole('button', { name: 'Opciones de Press inclinado' })
+    const instructions = screen.getAllByRole('button', { name: 'Ver indicaciones de Press inclinado' })[0]!
+    expect(options.parentElement).toBe(instructions.parentElement)
+    expect(options).toHaveAttribute('aria-expanded', 'false')
+    fireEvent.click(options)
+    expect(options).toHaveAttribute('aria-expanded', 'true')
+    const sheet = screen.getByRole('dialog', { name: 'Opciones del ejercicio' })
+    expect(sheet).toHaveTextContent('Press inclinado')
+    expect(sheet).toContainElement(document.activeElement as HTMLElement)
+    expect(screen.getByRole('button', { name: 'Omitir ejercicio' })).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'Cerrar opciones del ejercicio' }))
+    expect(options).toHaveAttribute('aria-expanded', 'false')
+    expect(options).toHaveFocus()
+  })
+
+  it('closes exercise options with Escape without discarding the catalog selection', () => {
+    render(<WorkoutPage />)
+    const options = screen.getByRole('button', { name: 'Opciones de Press inclinado' })
+    fireEvent.click(options)
+    fireEvent.click(screen.getByText('Adaptar esta sesión'))
+    fireEvent.change(screen.getByLabelText('Ejercicio del catálogo'), { target: { value: 'catalog-extra' } })
+    fireEvent.keyDown(screen.getByRole('dialog', { name: 'Opciones del ejercicio' }), { key: 'Escape' })
+    expect(options).toHaveFocus()
+    fireEvent.click(options)
+    expect(screen.getByLabelText('Ejercicio del catálogo')).toHaveValue('catalog-extra')
+  })
+
+  it('keeps keyboard focus on visible controls in the options sheet', () => {
+    render(<WorkoutPage />)
+    fireEvent.click(screen.getByRole('button', { name: 'Opciones de Press inclinado' }))
+    const close = screen.getByRole('button', { name: 'Cerrar opciones del ejercicio' })
+    expect(close).toHaveFocus()
+    fireEvent.keyDown(close, { key: 'Tab', shiftKey: true })
+    expect(screen.getByText('Adaptar esta sesión').closest('summary')).toHaveFocus()
+  })
+
+  it('collapses the same exercise and expands it again without changing the current exercise', () => {
+    render(<WorkoutPage />)
+    const row = screen.getByRole('button', { name: 'Ver series de Press inclinado' })
+    expect(row).toHaveAttribute('aria-expanded', 'true')
+    fireEvent.click(row)
+    expect(row).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.getByRole('heading', { level: 2, name: 'Press inclinado' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Editar serie 1 de Press inclinado' })).not.toBeInTheDocument()
+    fireEvent.click(row)
+    expect(row).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByRole('button', { name: 'Editar serie 1 de Press inclinado' })).toBeInTheDocument()
+  })
+
+  it('expands a different exercise after the current row is collapsed', () => {
+    render(<WorkoutPage />)
+    fireEvent.click(screen.getByRole('button', { name: 'Ver series de Press inclinado' }))
+    const next = screen.getByRole('button', { name: 'Ver series de Remo T' })
+    fireEvent.click(next)
+    expect(next).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByRole('heading', { level: 2, name: 'Remo T' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Ver series de Press inclinado' })).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  it('navigates to the next exercise without skipping it', () => {
+    render(<WorkoutPage />)
+    fireEvent.click(screen.getByRole('button', { name: 'Ir al siguiente ejercicio' }))
+    expect(screen.getByRole('heading', { level: 2, name: otherExercise.name })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Regresar al ejercicio anterior' })).toBeEnabled()
+  })
+
+  it('restores the exercise order saved for the session', () => {
+    workoutMocks.sessionExercises = [otherExercise, exercise]
+    render(<WorkoutPage />)
+    expect(screen.getByRole('heading', { level: 2, name: otherExercise.name })).toBeInTheDocument()
+  })
+
+  it('offers a way to continue an unfinished session from an earlier date', () => {
+    workoutMocks.setLogs = []
+    workoutMocks.pendingSessions = [{ id: 'old', routineId: 'routine-1', dayId: 'day-1', date: '2026-07-19', notes: '', displayUnit: 'kg', status: 'draft', createdAt: '2026-07-19', updatedAt: '2026-07-19' }]
+    render(<WorkoutPage />)
+    fireEvent.click(screen.getByRole('button', { name: /Continuar sesión del 2026-07-19/ }))
+    expect(screen.getByText(/2026-07-19/)).toBeInTheDocument()
+  })
+
+  it('moves an exercise within the current session', async () => {
+    render(<WorkoutPage />)
+    fireEvent.click(screen.getByRole('button', { name: 'Opciones de Press inclinado' }))
+    fireEvent.click(screen.getByText('Orden de esta sesión'))
+    fireEvent.click(screen.getByRole('button', { name: 'Mover ejercicio después' }))
+    expect(await screen.findByText('Orden de sesión actualizado')).toBeInTheDocument()
+  })
+
+  it('adds an occasional exercise to the current session', async () => {
+    render(<WorkoutPage />)
+    fireEvent.click(screen.getByRole('button', { name: 'Opciones de Press inclinado' }))
+    fireEvent.click(screen.getByText('Adaptar esta sesión'))
+    fireEvent.change(screen.getByLabelText('Ejercicio del catálogo'), { target: { value: 'catalog-extra' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Agregar a esta sesión' }))
+    expect(await screen.findByText('Ejercicio agregado a la sesión')).toBeInTheDocument()
+  })
+
+  it('keeps a worked exercise accessible when selecting a replacement', async () => {
+    render(<WorkoutPage />)
+    fireEvent.click(screen.getByRole('button', { name: 'Opciones de Press inclinado' }))
+    fireEvent.click(screen.getByText('Adaptar esta sesión'))
+    fireEvent.change(screen.getByLabelText('Ejercicio del catálogo'), { target: { value: 'catalog-extra' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Sustituir ejercicio' }))
+    await waitFor(() => expect(updateSessionExercisePlan).toHaveBeenCalled())
+    const input = vi.mocked(updateSessionExercisePlan).mock.calls[0]![0]
+    expect(input.exercises.map((item) => item.id)).toContain(exercise.id)
+    expect(input.exercises.some((item) => item.sourceExerciseId === 'catalog-extra')).toBe(true)
+  })
+
+  it('offers restoration for a skipped exercise', async () => {
+    workoutMocks.exerciseSkipped = true
+    render(<WorkoutPage />)
+    fireEvent.click(screen.getByRole('button', { name: 'Opciones de Press inclinado' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Restaurar ejercicio' }))
+    expect(await screen.findByText('Ejercicio restaurado')).toBeInTheDocument()
+  })
+
+  it('does not submit an omission twice while saving', () => {
+    vi.mocked(skipRoutineExerciseForDay).mockImplementationOnce(() => new Promise(() => {}))
+    render(<WorkoutPage />)
+    fireEvent.click(screen.getByRole('button', { name: 'Opciones de Press inclinado' }))
+    const button = screen.getByRole('button', { name: 'Omitir ejercicio' })
+    fireEvent.click(button)
+    fireEvent.click(button)
+    expect(skipRoutineExerciseForDay).toHaveBeenCalledTimes(1)
+  })
+
+  it('allows saving a personal note for the current exercise', async () => {
+    render(<WorkoutPage />)
+    fireEvent.change(screen.getByLabelText('Nota del ejercicio'), { target: { value: 'Buena técnica' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar nota del ejercicio' }))
+    expect(await screen.findByText('Nota guardada')).toBeInTheDocument()
+  })
+
+  it('allows saving a note for the session', async () => {
+    render(<WorkoutPage />)
+    fireEvent.change(screen.getByLabelText('Nota de la sesión'), { target: { value: 'Buen entrenamiento' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar nota de la sesión' }))
+    expect(await screen.findByText('Nota de sesión guardada')).toBeInTheDocument()
+  })
+
+  it('registers a suggested warmup separately from main sets', async () => {
+    exercise.warmupProtocol = 'hypertrophy'
+    render(<WorkoutPage />)
+    expect(screen.getByText('Calentamiento').closest('details')).not.toHaveAttribute('open')
+    fireEvent.click(screen.getByText('Calentamiento'))
+    expect(screen.getByText('Calentamiento').closest('details')).toHaveAttribute('open')
+    fireEvent.click(screen.getByRole('button', { name: 'Registrar calentamiento 1' }))
+    expect(await screen.findByText('Calentamiento registrado')).toBeInTheDocument()
+  })
+
+  it('does not register the same warmup twice while saving', () => {
+    exercise.warmupProtocol = 'hypertrophy'
+    vi.mocked(registerWarmupForExercise).mockImplementationOnce(() => new Promise(() => {}))
+    render(<WorkoutPage />)
+    fireEvent.click(screen.getByText('Calentamiento'))
+    const button = screen.getByRole('button', { name: 'Registrar calentamiento 1' })
+    fireEvent.click(button)
+    expect(button).toBeDisabled()
+    fireEvent.click(button)
+    expect(registerWarmupForExercise).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows an existing warmup with an edit action', () => {
+    workoutMocks.setLogs = [{ ...setLog, id: 'warmup-1', kind: 'warmup', weightKg: 30 }]
+    render(<WorkoutPage />)
+    fireEvent.click(screen.getByText('Calentamiento'))
+    expect(screen.getByRole('button', { name: 'Editar calentamiento 1' })).toBeInTheDocument()
   })
 
   it('explains when Health Connect completes a read without published records', async () => {
@@ -206,6 +408,10 @@ describe('WorkoutPage', () => {
 
     fireEvent.click(screen.getAllByRole('button', { name: /Finalizar sesion/i })[0]!)
 
+    expect(completeSessionForDay).not.toHaveBeenCalled()
+    expect(screen.getByRole('dialog', { name: 'Revisar entrenamiento' })).toContainElement(document.activeElement as HTMLElement)
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar finalización' }))
+
     await waitFor(() => {
       expect(completeSessionForDay).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -214,6 +420,13 @@ describe('WorkoutPage', () => {
         }),
       )
     })
+  })
+
+  it('includes previously logged exercises in the review after a substitution', () => {
+    workoutMocks.sessionExercises = [otherExercise]
+    render(<WorkoutPage />)
+    fireEvent.click(screen.getByRole('button', { name: /Finalizar sesion/i }))
+    expect(screen.getByRole('dialog', { name: 'Revisar entrenamiento' })).toHaveTextContent('Press inclinado')
   })
 
   it('shows active weight increase recommendation', () => {
@@ -302,13 +515,20 @@ describe('WorkoutPage', () => {
     expect(screen.getByText('Ultima sesion')).toBeInTheDocument()
     expect(screen.getByText('18 jul')).toBeInTheDocument()
     expect(screen.getByText('Referencia')).toBeInTheDocument()
+    const disclosure = screen.getByText('Ultima sesion').closest('details')
+    expect(disclosure).not.toBeNull()
+    expect(disclosure).not.toHaveAttribute('open')
+    fireEvent.click(screen.getByText('Ultima sesion'))
+    expect(disclosure).toHaveAttribute('open')
     expect(screen.getByText('Serie 1 - 62.5 kg - 9 reps - RIR 2')).toBeInTheDocument()
     expect(screen.getByText('Drop 1 - 45 kg - 8 reps - RIR 3')).toBeInTheDocument()
+    fireEvent.click(screen.getByText('Ultima sesion'))
+    expect(disclosure).not.toHaveAttribute('open')
   })
 
   it('shows an empty last-session reference state for exercises without day-scoped history', () => {
     render(<WorkoutPage />)
-
+    fireEvent.click(screen.getByText('Ultima sesion'))
     expect(screen.getByText('Primera vez con este ejercicio en este dia')).toBeInTheDocument()
   })
 
@@ -346,8 +566,6 @@ describe('WorkoutPage', () => {
   it('shows registered sets inside the selected exercise only', () => {
     render(<WorkoutPage />)
 
-    fireEvent.click(screen.getByRole('button', { name: /Ver series de Press inclinado/i }))
-
     expect(screen.getByText('Serie 1 - 60 kg - 8 reps - RIR 1')).toBeInTheDocument()
     expect(screen.queryByText('Serie 1 - 80 kg - 6 reps - RIR 2')).not.toBeInTheDocument()
 
@@ -357,22 +575,55 @@ describe('WorkoutPage', () => {
     expect(screen.queryByText('Serie 1 - 60 kg - 8 reps - RIR 1')).not.toBeInTheDocument()
   })
 
+  it('shows the current exercise sets next to its primary registration action', () => {
+    render(<WorkoutPage />)
+    const current = screen.getByRole('heading', { level: 2, name: 'Press inclinado' }).closest('section')
+    expect(current).toHaveTextContent('Serie 1 - 60 kg')
+    expect(current).toHaveTextContent('Registrar')
+    expect(current).toHaveTextContent('1 / 4')
+  })
+
+  it('opens a prefilled copy of the last set without saving it automatically', () => {
+    render(<WorkoutPage />)
+    fireEvent.click(screen.getByRole('button', { name: 'Repetir última serie' }))
+    expect(screen.getByRole('dialog', { name: /Registrar Press inclinado/ })).toBeInTheDocument()
+    expect(screen.getByLabelText('KG')).toHaveValue(60)
+  })
+
   it('edits a set from the active exercise context', async () => {
     render(<WorkoutPage />)
-
-    fireEvent.click(screen.getByRole('button', { name: /Ver series de Press inclinado/i }))
+    fireEvent.click(screen.getByText('Acciones de serie 1'))
     fireEvent.click(screen.getByRole('button', { name: /Editar serie 1 de Press inclinado/i }))
     fireEvent.click(screen.getByRole('button', { name: /Guardar cambios/i }))
 
     await waitFor(() => {
-      expect(updateMainSet).toHaveBeenCalledWith('set-1', expect.objectContaining({ reps: 8, rir: 1, weightKg: 60 }))
+      expect(updateSetWithDrops).toHaveBeenCalledWith('set-1', expect.objectContaining({ main: { reps: 8, rir: 1, weightKg: 60 } }))
     })
+  })
+
+  it('opens a selected set as an editable duplicate from its action menu', () => {
+    render(<WorkoutPage />)
+    fireEvent.click(screen.getByText('Acciones de serie 1'))
+    fireEvent.click(screen.getByRole('button', { name: 'Duplicar serie 1 de Press inclinado' }))
+    expect(screen.getByRole('dialog', { name: /Registrar Press inclinado/ })).toBeInTheDocument()
+    expect(screen.getByLabelText('KG')).toHaveValue(60)
+  })
+
+  it('reveals clearly labelled actions inside each set disclosure', () => {
+    render(<WorkoutPage />)
+    const summary = screen.getByText('Acciones de serie 1')
+    const disclosure = summary.closest('details')
+    expect(disclosure).not.toHaveAttribute('open')
+    fireEvent.click(summary)
+    expect(disclosure).toHaveAttribute('open')
+    expect(screen.getByRole('button', { name: 'Editar serie 1 de Press inclinado' })).toHaveTextContent('Editar')
+    expect(screen.getByRole('button', { name: 'Duplicar serie 1 de Press inclinado' })).toHaveTextContent('Duplicar')
+    expect(screen.getByRole('button', { name: 'Eliminar serie 1 de Press inclinado' })).toHaveTextContent('Eliminar')
   })
 
   it('deletes a set from the active exercise context', async () => {
     render(<WorkoutPage />)
-
-    fireEvent.click(screen.getByRole('button', { name: /Ver series de Press inclinado/i }))
+    fireEvent.click(screen.getByText('Acciones de serie 1'))
     fireEvent.click(screen.getByRole('button', { name: /Eliminar serie 1 de Press inclinado/i }))
 
     await waitFor(() => {

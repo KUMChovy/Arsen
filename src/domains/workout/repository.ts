@@ -4,6 +4,15 @@ import type { RoutineExercise } from '../routine/types'
 import type { SessionWithMainSets } from './calculations/trainingRotation'
 import type { LastSessionReference } from './types'
 
+export async function getPendingWorkoutSessions() {
+  const [sessions, logs, routines, days] = await Promise.all([db.workoutSessions.toArray(), db.exerciseLogs.toArray(), db.routines.toArray(), db.routineDays.toArray()])
+  const sessionIdsWithLogs = new Set(logs.map((log) => log.sessionId))
+  const routineIds = new Set(routines.map((routine) => routine.id))
+  const dayById = new Map(days.map((day) => [day.id, day]))
+  return sessions.filter((session) => routineIds.has(session.routineId) && dayById.get(session.dayId)?.routineId === session.routineId && session.status === 'draft' && (session.notes.trim() !== '' || session.sessionExercises !== undefined || sessionIdsWithLogs.has(session.id)))
+    .sort((a, b) => b.date.localeCompare(a.date) || b.updatedAt.localeCompare(a.updatedAt))
+}
+
 export async function getWorkoutProgressForDay(date: string, dayId: string | undefined) {
   if (!dayId) return null
 

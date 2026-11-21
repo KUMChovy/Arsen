@@ -153,6 +153,38 @@ ${Papa.unparse(rows, { delimiter: ';' })}`
   downloadText(progressExportFilename(filters, 'csv'), csv, 'text/csv;charset=utf-8')
 }
 
+export async function buildSessionExport(sessionId: string) {
+  const session = await db.workoutSessions.get(sessionId)
+  if (!session) throw new Error('SesiÃ³n no encontrada')
+  const progress = await buildProgressExport()
+  const timeline = progress.timeline.filter((row) => row.sessionId === sessionId)
+  return {
+    exportedAt: new Date().toISOString(),
+    filters: { scope: 'session' as const, sessionId },
+    schemaVersion: CURRENT_SCHEMA_VERSION,
+    session,
+    summary: {
+      exercises: new Set(timeline.map((row) => row.canonicalName)).size,
+      sessions: 1,
+      sets: timeline.length,
+      volume: timeline.reduce((total, row) => total + row.volume, 0),
+    },
+    timeline,
+  }
+}
+
+export async function exportSessionJson(sessionId: string) {
+  const data = await buildSessionExport(sessionId)
+  downloadJson(`arsen-sesion-${data.session.date}.json`, data)
+}
+
+export async function exportSessionCsv(sessionId: string) {
+  const data = await buildSessionExport(sessionId)
+  const rows = [CSV_EXPORT_HEADERS, ...data.timeline.flatMap(csvRowsForTimelineRow)]
+  const csv = `\ufeffsep=;\n${Papa.unparse(rows, { delimiter: ';' })}`
+  downloadText(`arsen-sesion-${data.session.date}.csv`, csv, 'text/csv;charset=utf-8')
+}
+
 const OPEN_DELOAD_STATUSES = ['suggested', 'scheduled', 'active'] as const
 
 function isOpenDeloadStatus(status: DeloadCycle['status']) {

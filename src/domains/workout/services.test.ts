@@ -2,7 +2,7 @@ import 'fake-indexeddb/auto'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { db } from '../../db/schema'
 import type { RoutineExercise } from '../routine/types'
-import { completeSessionForDay, deleteMainSet, ensureExerciseLog, registerMainSetForExercise } from './services'
+import { addDropSet, completeSessionForDay, deleteMainSet, deleteHistoricalExercise, duplicateSessionAsDraft, ensureExerciseLog, registerMainSetForExercise, updateHistoricalSession, updateHistoricalSet } from './services'
 
 async function resetDb() {
   db.close()
@@ -126,6 +126,57 @@ describe('workout services snapshots', () => {
       lastExerciseAt: '2026-08-11T16:42:00.000Z',
       startedAt: '2026-08-11T16:42:00.000Z',
     })
+  })
+
+  it('updates a historical session atomically and keeps its exercise ownership intact', async () => {
+    const exercise = routineExercise()
+    await db.routineExercises.put(exercise)
+    await db.routines.put({ createdAt: exercise.createdAt, id: exercise.routineId, isActive: true, name: 'Rutina', updatedAt: exercise.updatedAt })
+    await db.routineDays.put({ createdAt: exercise.createdAt, description: '', id: exercise.dayId, name: 'Día', order: 0, routineId: exercise.routineId, updatedAt: exercise.updatedAt, weekday: null })
+    const registered = await registerMainSetForExercise({ date: '2026-08-11', dayId: exercise.dayId, displayUnit: 'kg', exercise, reps: 8, rir: 1, routineId: exercise.routineId, weightKg: 60 })
+
+    await updateHistoricalSession(registered.sessionId, { date: '2026-08-12', dayId: exercise.dayId, notes: 'Buena sesión', routineId: exercise.routineId, status: 'completed' })
+
+    await expect(db.workoutSessions.get(registered.sessionId)).resolves.toMatchObject({ date: '2026-08-12', dayId: exercise.dayId, notes: 'Buena sesión', status: 'completed' })
+    await expect(db.exerciseLogs.where('sessionId').equals(registered.sessionId).count()).resolves.toBe(1)
+  })
+
+  it('updates a main set without detaching its drop sets', async () => {
+    const exercise = routineExercise()
+    await db.routineExercises.put(exercise)
+    const registered = await registerMainSetForExercise({ date: '2026-08-11', dayId: exercise.dayId, displayUnit: 'kg', exercise, reps: 8, rir: 1, routineId: exercise.routineId, weightKg: 60 })
+    await addDropSet({ displayUnit: 'kg', reps: 6, rir: 2, setLogId: registered.setLogId, weightKg: 40 })
+
+    await updateHistoricalSet({ order: 0, reps: 10, rir: 1, setLogId: registered.setLogId, weightKg: 62.5 })
+
+    await expect(db.setLogs.get(registered.setLogId)).resolves.toMatchObject({ reps: 10, weightKg: 62.5 })
+    await expect(db.dropSetLogs.where('setLogId').equals(registered.setLogId).count()).resolves.toBe(1)
+  })
+
+  it('deletes an exercise and all of its related sets, drops and skips', async () => {
+    const exercise = routineExercise()
+    await db.routineExercises.put(exercise)
+    const registered = await registerMainSetForExercise({ date: '2026-08-11', dayId: exercise.dayId, displayUnit: 'kg', exercise, reps: 8, rir: 1, routineId: exercise.routineId, weightKg: 60 })
+    await addDropSet({ displayUnit: 'kg', reps: 6, rir: 2, setLogId: registered.setLogId, weightKg: 40 })
+
+    await deleteHistoricalExercise(registered.exerciseLogId)
+
+    await expect(db.exerciseLogs.get(registered.exerciseLogId)).resolves.toBeUndefined()
+    await expect(db.setLogs.where('exerciseLogId').equals(registered.exerciseLogId).count()).resolves.toBe(0)
+    await expect(db.dropSetLogs.where('setLogId').equals(registered.setLogId).count()).resolves.toBe(0)
+  })
+
+  it('duplicates only the session structure into a new draft with reference values', async () => {
+    const exercise = routineExercise()
+    await db.routineExercises.put(exercise)
+    const registered = await registerMainSetForExercise({ date: '2026-08-11', dayId: exercise.dayId, displayUnit: 'kg', exercise, reps: 8, rir: 1, routineId: exercise.routineId, weightKg: 60 })
+
+    const duplicate = await duplicateSessionAsDraft({ sourceSessionId: registered.sessionId, targetDate: '2026-08-12' })
+
+    await expect(db.workoutSessions.get(duplicate.sessionId)).resolves.toMatchObject({ date: '2026-08-12', dayId: exercise.dayId, routineId: exercise.routineId, status: 'draft' })
+    await expect(db.exerciseLogs.where('sessionId').equals(duplicate.sessionId).count()).resolves.toBe(1)
+    await expect(db.setLogs.where('exerciseLogId').anyOf(await db.exerciseLogs.where('sessionId').equals(duplicate.sessionId).primaryKeys()).count()).resolves.toBe(0)
+    expect(duplicate.references).toEqual([expect.objectContaining({ reps: 8, weightKg: 60 })])
   })
 })
 

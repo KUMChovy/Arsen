@@ -84,13 +84,18 @@ describe('ProgressHistoryDatePage', () => {
   it('renders session weights and volume in the preferred unit', () => {
     progressMocks.sessions = [{ bestSetId: 'set-1', bestSetLabel: '60 kg x 8', date: '2026-08-01', dayName: 'Dia A', exerciseCount: 1, id: 'session-1', routineName: 'Rutina A', setCount: 1, volumeKg: 480 }]
     progressMocks.detail = {
+      createdAt: '2026-08-01T12:00:00.000Z',
       date: '2026-08-01',
       dayId: 'day-1',
       dayName: 'Dia A',
+      displayUnit: 'kg',
       exercises: [{ bundledAssetId: null, exerciseLogId: 'log-1', exerciseName: 'Press', mainMuscle: 'Pecho', routineExerciseId: 'exercise-1', sets: [{ displayUnit: 'kg', dropSets: [{ id: 'drop-1', order: 0, reps: 5, rir: 1, weightKg: 50 }], id: 'set-1', order: 0, reps: 8, rir: 2, weightKg: 60 }] }],
       id: 'session-1',
+      notes: '',
       routineId: 'routine-1',
       routineName: 'Rutina A',
+      status: 'draft',
+      updatedAt: '2026-08-01T12:00:00.000Z',
     }
 
     renderPage()

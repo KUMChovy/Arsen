@@ -1,12 +1,11 @@
-export type ProgressView = 'summary' | 'exercises' | 'history'
+export type ProgressView = 'summary' | 'exercises'
 
 export function ProgressTabs({ onChange, value }: { onChange: (view: ProgressView) => void; value: ProgressView }) {
   return (
-    <div aria-label="Vistas de progreso" className="grid grid-cols-3 gap-1 rounded-[12px] border border-white/10 bg-arsen-bg/60 p-1" role="tablist">
+    <div aria-label="Vistas de progreso" className="grid grid-cols-2 gap-1 rounded-[12px] border border-white/10 bg-arsen-bg/60 p-1" role="tablist">
       {[
         ['summary', 'Resumen'],
         ['exercises', 'Ejercicios'],
-        ['history', 'Historial'],
       ].map(([view, label]) => (
         <button
           aria-selected={value === view}

@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { db } from '../../db/schema'
 import { registerMainSetForExercise } from '../workout/services'
 import type { Routine, RoutineDay, RoutineExercise } from '../routine/types'
-import { getProgressExerciseDetail, getProgressExerciseOptions, getProgressHistory, getProgressSummary } from './repository'
+import { getHistory, getPersonalRecords, getProgressExerciseDetail, getProgressExerciseOptions, getProgressHistory, getProgressSummary, getSessionDetail } from './repository'
 
 describe('progress repository queries', () => {
   beforeEach(async () => resetDb())
@@ -86,6 +86,78 @@ describe('progress repository queries', () => {
         expect.objectContaining({ date: '2026-08-01', volumeKg: 480 }),
         expect.objectContaining({ date: '2026-08-08', volumeKg: 420 }),
       ],
+    })
+  })
+
+  it('returns the complete searchable history with independent same-day sessions and drafts', async () => {
+    const routineA = makeRoutine('routine-history-a', 'Rutina A')
+    const routineB = makeRoutine('routine-history-b', 'Rutina B')
+    const dayA = makeDay('day-history-a', routineA.id, 'Día A')
+    const dayB = makeDay('day-history-b', routineB.id, 'Día B')
+    const exerciseA = makeExercise('exercise-history-a', routineA.id, dayA.id, 'Press Bíceps', 'press-biceps')
+    const exerciseB = makeExercise('exercise-history-b', routineB.id, dayB.id, 'Sentadilla', 'sentadilla')
+    await db.routines.bulkPut([routineA, routineB])
+    await db.routineDays.bulkPut([dayA, dayB])
+    await db.routineExercises.bulkPut([exerciseA, exerciseB])
+
+    const first = await registerMainSetForExercise({ date: '2026-08-15', dayId: dayA.id, displayUnit: 'kg', exercise: exerciseA, reps: 8, rir: 2, routineId: routineA.id, weightKg: 60 })
+    const second = await registerMainSetForExercise({ date: '2026-08-15', dayId: dayB.id, displayUnit: 'kg', exercise: exerciseB, reps: 5, rir: 1, routineId: routineB.id, weightKg: 90 })
+    await db.workoutSessions.update(first.sessionId, { completedAt: '2026-08-15T12:00:00.000Z', status: 'completed' })
+    await db.workoutSessions.update(second.sessionId, { completedAt: '2026-08-15T12:00:00.000Z', status: 'completed' })
+    await db.workoutSessions.put({
+      createdAt: '2026-08-16T12:00:00.000Z',
+      date: '2026-08-16',
+      dayId: dayA.id,
+      displayUnit: 'kg',
+      id: 'draft-history',
+      lastExerciseAt: null,
+      notes: 'Pendiente',
+      routineId: routineA.id,
+      startedAt: null,
+      status: 'draft',
+      updatedAt: '2026-08-16T12:00:00.000Z',
+    })
+
+    const history = await getHistory()
+    expect(history.summary).toMatchObject({ sessions: 3, distinctTrainingDays: 1 })
+    expect(history.sessions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ sessionId: 'draft-history', status: 'draft', mainSetCount: 0 }),
+      expect.objectContaining({ sessionId: second.sessionId, date: '2026-08-15' }),
+      expect.objectContaining({ sessionId: first.sessionId, date: '2026-08-15' }),
+    ]))
+    await expect(getHistory({ search: 'BICEPS' })).resolves.toMatchObject({
+      sessions: [expect.objectContaining({ sessionId: first.sessionId })],
+    })
+  })
+
+  it('returns verified personal records from completed sessions only', async () => {
+    const routine = makeRoutine('routine-records', 'Rutina records')
+    const day = makeDay('day-records', routine.id, 'Día A')
+    const exercise = makeExercise('exercise-records', routine.id, day.id, 'Press record', 'press-record')
+    await db.routines.put(routine)
+    await db.routineDays.put(day)
+    await db.routineExercises.put(exercise)
+    const completed = await registerMainSetForExercise({ date: '2026-08-10', dayId: day.id, displayUnit: 'kg', exercise, reps: 5, rir: 1, routineId: routine.id, weightKg: 80 })
+    await db.workoutSessions.update(completed.sessionId, { status: 'completed' })
+    await expect(getPersonalRecords()).resolves.toEqual([expect.objectContaining({ canonicalName: 'press-record', date: '2026-08-10', weightKg: 80 })])
+  })
+
+  it('keeps session detail readable after routine and day rows are deleted', async () => {
+    const routine = makeRoutine('routine-detail-deleted', 'Rutina histórica')
+    const day = makeDay('day-detail-deleted', routine.id, 'Día histórico')
+    const exercise = makeExercise('exercise-detail-deleted', routine.id, day.id, 'Press antiguo', 'press-antiguo')
+    await db.routines.put(routine)
+    await db.routineDays.put(day)
+    await db.routineExercises.put(exercise)
+    const registered = await registerMainSetForExercise({ date: '2026-08-17', dayId: day.id, displayUnit: 'kg', exercise, reps: 10, rir: 2, routineId: routine.id, weightKg: 50 })
+    await db.routines.delete(routine.id)
+    await db.routineDays.delete(day.id)
+
+    await expect(getSessionDetail(registered.sessionId)).resolves.toMatchObject({
+      id: registered.sessionId,
+      routineName: 'Rutina eliminada',
+      dayName: 'Dia eliminado',
+      exercises: [expect.objectContaining({ exerciseName: 'Press antiguo' })],
     })
   })
 })

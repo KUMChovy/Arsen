@@ -51,6 +51,7 @@ describe('AppShell', () => {
     expect(screen.getByRole('link', { name: 'Entreno' })).toHaveAttribute('href', '/')
     expect(screen.getByRole('link', { name: 'Rutina' })).toHaveAttribute('href', '/rutina')
     expect(screen.getByRole('link', { name: 'Progreso' })).toHaveAttribute('href', '/progreso')
+    expect(screen.getByRole('link', { name: 'Historial' })).toHaveAttribute('href', '/historial')
     expect(screen.getByRole('link', { name: 'Ajustes' })).toHaveAttribute('href', '/settings')
     expect(screen.getByTestId('app-shell')).toHaveAttribute('data-deload-active', 'true')
   })

@@ -6,8 +6,14 @@ import { AppShell } from './AppShell'
 const ProgressPage = lazy(() =>
   import('../domains/progress/pages/ProgressPage').then((module) => ({ default: module.ProgressPage })),
 )
+const HistoryPage = lazy(() =>
+  import('../domains/progress/pages/HistoryPage').then((module) => ({ default: module.HistoryPage })),
+)
 const ProgressHistoryDatePage = lazy(() =>
   import('../domains/progress/pages/ProgressHistoryDatePage').then((module) => ({ default: module.ProgressHistoryDatePage })),
+)
+const ProgressHistorySessionPage = lazy(() =>
+  import('../domains/progress/pages/ProgressHistorySessionPage').then((module) => ({ default: module.ProgressHistorySessionPage })),
 )
 const ProgressExercisePage = lazy(() =>
   import('../domains/progress/pages/ProgressExercisePage').then((module) => ({ default: module.ProgressExercisePage })),
@@ -47,7 +53,10 @@ export const router = createBrowserRouter([
       { path: '/rutina', element: lazyPage(<RoutinePage />) },
       { path: '/rutina/dia/:dayId', element: lazyPage(<RoutineDayDetailPage />) },
       { path: '/progreso', element: lazyPage(<ProgressPage />) },
+      { path: '/historial', element: lazyPage(<HistoryPage />) },
+      { path: '/historial/sesion/:sessionId', element: lazyPage(<ProgressHistorySessionPage />) },
       { path: '/progreso/ejercicio/:canonicalName', element: lazyPage(<ProgressExercisePage />) },
+      { path: '/progreso/historial/sesion/:sessionId', element: lazyPage(<ProgressHistorySessionPage />) },
       { path: '/progreso/historial/:date', element: lazyPage(<ProgressHistoryDatePage />) },
       { path: '/settings', element: lazyPage(<SettingsPage />) },
     ],

@@ -1,9 +1,11 @@
 import { db } from '../../db/schema'
 import type { Routine, RoutineDay, RoutineExercise } from '../routine/types'
 import { bestSet, performanceScore, totalVolume } from '../../shared/calculations/workout'
+import { canonicalName } from '../../shared/utils/normalize'
 import {
   aggregateExerciseSession,
   buildWeeklyVolume,
+  estimatedOneRm,
   getPeriodBounds,
   type ExerciseSessionAggregate,
   type ProgressDateRange,
@@ -74,6 +76,7 @@ export type ProgressBestMark = {
 
 export type SessionExerciseDetail = {
   bundledAssetId: string | null
+  canonicalName?: string
   exerciseLogId: string
   exerciseName: string
   mainMuscle: string
@@ -96,14 +99,22 @@ export type SessionExerciseDetail = {
 }
 
 export type SessionDetail = {
+  completedAt?: string | null
+  createdAt: string
   date: string
   dayId: string
   dayName: string
+  displayUnit: 'kg' | 'lb'
   exercises: SessionExerciseDetail[]
   id: string
   health?: HealthSummary
+  lastExerciseAt?: string | null
+  notes: string
   routineId: string
   routineName: string
+  startedAt?: string | null
+  status: 'draft' | 'completed'
+  updatedAt: string
 }
 
 export type ProgressEditOptions = {
@@ -154,6 +165,56 @@ export type ProgressSummary = {
 }
 
 export type ProgressHistoryFilters = ProgressOverviewFilters
+
+export type HistoryFilters = {
+  canonicalName?: string | null
+  dayId?: string | null
+  endDate?: string | null
+  period?: ProgressPeriodKey
+  routineId?: string | null
+  search?: string | null
+  startDate?: string | null
+  status?: WorkoutSession['status'] | null
+}
+
+export type HistorySessionSummary = {
+  bestSetId: string | null
+  bestSetLabel: string
+  date: string
+  dayId: string
+  dayName: string
+  dropSetCount: number
+  exerciseCount: number
+  mainSetCount: number
+  notes: string
+  routineId: string
+  routineName: string
+  sessionId: string
+  status: WorkoutSession['status']
+  volumeKg: number
+}
+
+export type HistorySummary = {
+  distinctTrainingDays: number
+  exercises: number
+  mainSets: number
+  sessions: number
+  volumeKg: number
+}
+
+export type HistoryResult = {
+  sessions: HistorySessionSummary[]
+  summary: HistorySummary
+}
+
+export type PersonalRecord = {
+  canonicalName: string
+  date: string
+  estimatedOneRmKg: number | null
+  exerciseName: string
+  sessionId: string
+  weightKg: number
+}
 
 export type ProgressExerciseSession = ExerciseSessionAggregate & {
   bestSetId: string | null
@@ -429,11 +490,15 @@ export async function getSessionDetail(sessionId: string, filters: ProgressOverv
   }
 
   return {
+    completedAt: session.completedAt,
+    createdAt: session.createdAt,
     date: session.date,
     dayId: session.dayId,
     dayName: day?.name ?? 'Dia eliminado',
+    displayUnit: session.displayUnit,
     exercises: visibleExerciseLogs.map((log) => ({
       bundledAssetId: log.snapshot.bundledAssetId ?? null,
+      canonicalName: log.snapshot.canonicalName,
       exerciseLogId: log.id,
       exerciseName: log.snapshot.name,
       mainMuscle: log.snapshot.mainMuscle,
@@ -461,8 +526,13 @@ export async function getSessionDetail(sessionId: string, filters: ProgressOverv
     })),
     id: session.id,
     health: session.health,
+    lastExerciseAt: session.lastExerciseAt,
+    notes: session.notes,
     routineId: session.routineId,
     routineName: routine?.name ?? 'Rutina eliminada',
+    startedAt: session.startedAt,
+    status: session.status,
+    updatedAt: session.updatedAt,
   }
 }
 
@@ -551,6 +621,101 @@ export async function getProgressHistory(filters: ProgressHistoryFilters = {}): 
       volumeKg: record.volumeKg,
     }))
     .sort((a, b) => b.date.localeCompare(a.date) || a.id.localeCompare(b.id))
+}
+
+export async function getHistory(filters: HistoryFilters = {}): Promise<HistoryResult> {
+  const dataset = await getProgressDataset()
+  const routineById = new Map(dataset.routines.map((routine) => [routine.id, routine.name]))
+  const dayById = new Map(dataset.days.map((day) => [day.id, day.name]))
+  const logsBySession = groupBy(dataset.exerciseLogs, (log) => log.sessionId)
+  const setsByLog = groupBy(dataset.setLogs, (set) => set.exerciseLogId)
+  const dropsBySet = groupBy(dataset.dropSetLogs, (dropSet) => dropSet.setLogId)
+  const search = filters.search ? canonicalName(filters.search) : ''
+  const records = dataset.sessions
+    .map((session): HistorySessionSummary | null => {
+      if (filters.routineId && session.routineId !== filters.routineId) return null
+      if (filters.dayId && session.dayId !== filters.dayId) return null
+      if (filters.status && session.status !== filters.status) return null
+      if (filters.startDate && session.date < filters.startDate) return null
+      if (filters.endDate && session.date > filters.endDate) return null
+
+      const routineName = routineById.get(session.routineId) ?? 'Rutina eliminada'
+      const dayName = dayById.get(session.dayId) ?? 'Dia eliminado'
+      const logs = logsBySession.get(session.id) ?? []
+      const visibleLogs = filters.canonicalName
+        ? logs.filter((log) => log.snapshot.canonicalName === filters.canonicalName)
+        : logs
+      const searchableText = [routineName, dayName, ...logs.flatMap((log) => [log.snapshot.name, log.snapshot.canonicalName])]
+        .map((value) => canonicalName(value))
+        .join(' ')
+      if (search && !searchableText.includes(search)) return null
+      if (filters.canonicalName && visibleLogs.length === 0) return null
+
+      const mainSets = visibleLogs.flatMap((log) => setsByLog.get(log.id) ?? []).filter((set) => set.kind === 'main')
+      const dropSets = mainSets.flatMap((set) => dropsBySet.get(set.id) ?? [])
+      const aggregate = aggregateExerciseSession({ date: session.date, dropSets, sessionId: session.id, sets: mainSets })
+      const best = bestSet(mainSets)
+
+      return {
+        bestSetId: best?.id ?? null,
+        bestSetLabel: best ? `${best.weightKg} kg x ${best.reps}` : 'Sin series',
+        date: session.date,
+        dayId: session.dayId,
+        dayName,
+        dropSetCount: dropSets.length,
+        exerciseCount: visibleLogs.length,
+        mainSetCount: aggregate.mainSetCount,
+        notes: session.notes,
+        routineId: session.routineId,
+        routineName,
+        sessionId: session.id,
+        status: session.status,
+        volumeKg: aggregate.volumeKg,
+      }
+    })
+    .filter((record): record is HistorySessionSummary => record !== null)
+
+  const scopedRecords = filters.period && filters.period !== 'all'
+    ? (() => {
+        const bounds = getPeriodBounds(records.map((record) => record.date), filters.period)
+        return records.filter((record) => inRange(record.date, bounds.current))
+      })()
+    : records
+  const sessions = scopedRecords.sort((a, b) => b.date.localeCompare(a.date) || b.sessionId.localeCompare(a.sessionId))
+  const performanceSessions = sessions.filter((session) => session.status === 'completed')
+
+  return {
+    sessions,
+    summary: {
+      distinctTrainingDays: new Set(performanceSessions.map((session) => session.date)).size,
+      exercises: performanceSessions.reduce((total, session) => total + session.exerciseCount, 0),
+      mainSets: performanceSessions.reduce((total, session) => total + session.mainSetCount, 0),
+      sessions: sessions.length,
+      volumeKg: performanceSessions.reduce((total, session) => total + session.volumeKg, 0),
+    },
+  }
+}
+
+export async function getPersonalRecords(filters: Pick<HistoryFilters, 'canonicalName' | 'dayId' | 'routineId'> = {}): Promise<PersonalRecord[]> {
+  const dataset = await getProgressDataset()
+  const sessions = new Map(dataset.sessions.filter((session) => session.status === 'completed' && (!filters.dayId || session.dayId === filters.dayId) && (!filters.routineId || session.routineId === filters.routineId)).map((session) => [session.id, session]))
+  const logsBySession = groupBy(dataset.exerciseLogs, (log) => log.sessionId)
+  const setsByLog = groupBy(dataset.setLogs, (set) => set.exerciseLogId)
+  const records = new Map<string, PersonalRecord>()
+  for (const [sessionId, logs] of logsBySession) {
+    const session = sessions.get(sessionId)
+    if (!session) continue
+    for (const log of logs) {
+      if (filters.canonicalName && log.snapshot.canonicalName !== filters.canonicalName) continue
+      const sets = (setsByLog.get(log.id) ?? []).filter((set) => set.kind === 'main')
+      const best = bestSet(sets)
+      if (!best) continue
+      const candidate: PersonalRecord = { canonicalName: log.snapshot.canonicalName, date: session.date, estimatedOneRmKg: estimatedOneRm(best)?.valueKg ?? null, exerciseName: log.snapshot.name, sessionId, weightKg: best.weightKg }
+      const current = records.get(candidate.canonicalName)
+      if (!current || candidate.weightKg > current.weightKg || (candidate.weightKg === current.weightKg && (candidate.estimatedOneRmKg ?? 0) > (current.estimatedOneRmKg ?? 0))) records.set(candidate.canonicalName, candidate)
+    }
+  }
+  return [...records.values()].sort((a, b) => a.exerciseName.localeCompare(b.exerciseName))
 }
 
 export async function getProgressExerciseDetail(canonicalName: string, filters: ProgressOverviewFilters = {}): Promise<ProgressExerciseDetail | null> {
@@ -693,4 +858,15 @@ function formatShortDate(date: string) {
 
 function dropSetsForSets<TSet extends { id: string }>(sets: TSet[], dropSetBySetId: Map<string, DropSetLog[]>) {
   return sets.flatMap((set) => dropSetBySetId.get(set.id) ?? [])
+}
+
+function groupBy<T>(values: T[], keyOf: (value: T) => string) {
+  const groups = new Map<string, T[]>()
+  for (const value of values) {
+    const key = keyOf(value)
+    const group = groups.get(key)
+    if (group) group.push(value)
+    else groups.set(key, [value])
+  }
+  return groups
 }

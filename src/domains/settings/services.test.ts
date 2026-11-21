@@ -5,8 +5,10 @@ import { DEFAULT_AVAILABLE_PLATES_KG } from '../../shared/calculations/equipment
 import { downloadText } from '../../shared/utils/download'
 import {
   buildProgressExport,
+  buildSessionExport,
   completeActiveDeload,
   exportProgressCsv,
+  exportSessionCsv,
   getDeloadOverview,
   resolveAvailablePlateWeightsKg,
   scheduleDeload,
@@ -108,6 +110,19 @@ describe('settings export services', () => {
     expect(normalizedCsv).toContain('"Press ""inclinado"" pausado"')
     expect(normalizedCsv).toContain(';principal;;60,00;10;2;600,00;80,00;estimada')
     expect(normalizedCsv).toContain(';Drop 1;drop;1;40,00;10;2;400,00;;')
+  })
+
+  it('builds and exports one session without leaking other sessions', async () => {
+    await seedProgressData({ dayName: 'Dia A', exerciseName: 'Press inclinado', routineName: 'Rutina A', withDropSet: true })
+    await db.workoutSessions.put(workoutSession({ date: '2026-01-03', id: 'session-2' }))
+
+    const data = await buildSessionExport('session-1')
+    expect(data.session.id).toBe('session-1')
+    expect(data.timeline).toHaveLength(1)
+    expect(data.timeline[0]?.dropSets).toHaveLength(1)
+
+    await exportSessionCsv('session-1')
+    expect(vi.mocked(downloadText).mock.calls[0]?.[0]).toBe('arsen-sesion-2026-01-02.csv')
   })
 })
 

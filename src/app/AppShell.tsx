@@ -32,7 +32,7 @@ export function AppShell() {
           ) : null}
           <Outlet />
         </main>
-        <nav className="fixed inset-x-0 bottom-0 z-40 mx-auto grid h-[84px] max-w-[430px] grid-cols-4 border-t border-white/10 bg-arsen-bg2/95 px-3 pb-[max(10px,env(safe-area-inset-bottom))] pt-2 backdrop-blur">
+        <nav className="fixed inset-x-0 bottom-0 z-40 mx-auto grid h-[84px] max-w-[430px] grid-cols-5 border-t border-white/10 bg-arsen-bg2/95 px-3 pb-[max(10px,env(safe-area-inset-bottom))] pt-2 backdrop-blur">
           {navItems.map((item) => (
             <NavLink
               className={({ isActive }) =>

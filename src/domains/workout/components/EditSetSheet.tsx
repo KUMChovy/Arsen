@@ -14,9 +14,12 @@ type EditableDropSet = {
   weightValue: string
 }
 
+export type EditSetValue = Pick<SetLog, 'id' | 'order' | 'weightKg' | 'reps' | 'rir'>
+export type EditDropSetValue = Pick<DropSetLog, 'id' | 'order' | 'weightKg' | 'reps' | 'rir'>
+
 type EditSetSheetProps = {
   disabled: boolean
-  dropSets: DropSetLog[]
+  dropSets: EditDropSetValue[]
   onClose: () => void
   onDelete: () => Promise<boolean | void>
   onSave: (input: {
@@ -24,7 +27,7 @@ type EditSetSheetProps = {
     drops: Array<{ id: string | null; reps: number; rir: number; weightKg: number }>
     main: { reps: number; rir: number; weightKg: number }
   }) => Promise<void>
-  set: SetLog
+  set: EditSetValue
   unit: WeightUnit
 }
 

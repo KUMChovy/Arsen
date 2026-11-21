@@ -6,14 +6,12 @@ import { ActionButton } from '../../../shared/components/ActionButton'
 import { Card } from '../../../shared/components/Card'
 import { PageHeader } from '../../../shared/components/PageHeader'
 import { getAppSettings, exportProgressCsv, exportProgressJson } from '../../settings/services'
-import { TrainingCalendarSheet } from '../components/TrainingCalendarSheet'
 import { ExerciseExplorer } from '../components/ExerciseExplorer'
-import { HistoryView } from '../components/HistoryView'
 import { ProgressSummary } from '../components/ProgressSummary'
 import { ProgressTabs, type ProgressView } from '../components/ProgressTabs'
 import { analyzeProgress } from '../analysis'
 import { useHealthProgressOverview } from '../../health/hooks'
-import { useProgressDayOptions, useProgressExerciseOptions, useProgressHistory, useProgressSummary, useTrainingDates } from '../hooks'
+import { useProgressDayOptions, useProgressExerciseOptions, useProgressSummary } from '../hooks'
 import type { ProgressEditOptions, ProgressHistoryFilters } from '../repository'
 
 export type EditSetState = {
@@ -34,7 +32,6 @@ export function ProgressPage() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const [message, setMessage] = useState<string | null>(null)
-  const [historyOpen, setHistoryOpen] = useState(searchParams.get('vista') === 'history')
   const [period, setPeriod] = useState<ProgressPeriod>((searchParams.get('period') as ProgressPeriod) || '4w')
   const view = parseView(searchParams.get('vista'))
   const [selectedDayId, setSelectedDayId] = useState<string | null>(null)
@@ -51,8 +48,6 @@ export function ProgressPage() {
     routineId: selectedRoutineId,
   }), [period, selectedDayId, selectedExercise, selectedRoutineId])
   const summary = useProgressSummary(filters)
-  const history = useProgressHistory(filters) ?? []
-  const trainingDates = useTrainingDates(filters) ?? []
   const healthEnabled = settings?.healthIntegrationEnabled === true
   const healthOverview = useHealthProgressOverview(selectedDayId, healthEnabled)
   const insights = summary ? analyzeProgress({
@@ -66,10 +61,6 @@ export function ProgressPage() {
     } : null,
     subject: selectedExercise ? exerciseOptions.find((option) => option.canonicalName === selectedExercise)?.name ?? 'este ejercicio' : 'tu entrenamiento',
   }) : []
-
-  useEffect(() => {
-    setHistoryOpen(view === 'history')
-  }, [view])
 
   function changeView(nextView: ProgressView) {
     const next = new URLSearchParams(searchParams)
@@ -151,27 +142,13 @@ export function ProgressPage() {
 
       {view === 'exercises' ? <ExerciseExplorer options={exerciseOptions} onOpen={(canonicalName) => navigate(`/progreso/ejercicio/${encodeURIComponent(canonicalName)}`)} /> : null}
 
-      {view === 'history' ? (
-        <>
-          <HistoryView
-            filtersActive={Boolean(selectedDayId || selectedRoutineId || selectedExercise || period !== '4w')}
-            onClearFilters={() => { setSelectedDayId(null); setSelectedRoutineId(null); setSelectedExercise(null); updatePeriod('4w') }}
-            onOpenSession={(sessionId) => { const session = history.find((item) => item.id === sessionId); if (session) navigate(`/progreso/historial/${session.date}`) }}
-            sessions={history}
-            unit={unit}
-          />
-          <button className="min-h-11 w-full rounded-[10px] border border-white/10 px-3 text-xs font-bold text-arsen-purple2" onClick={() => setHistoryOpen(true)} type="button">Abrir calendario</button>
-          {historyOpen ? <TrainingCalendarSheet dates={trainingDates} onClose={() => setHistoryOpen(false)} onSelect={(date, hasTraining) => { const params = new URLSearchParams(); if (selectedDayId) params.set('dayId', selectedDayId); if (selectedExercise) params.set('exercise', selectedExercise); if (!hasTraining) params.set('create', '1'); setHistoryOpen(false); navigate(`/progreso/historial/${date}${params.size ? `?${params.toString()}` : ''}`) }} /> : null}
-        </>
-      ) : null}
-
       {healthEnabled && healthOverview?.points.length && view === 'summary' ? <div className="text-xs text-arsen-muted">Health Connect: {healthOverview.points.length} días con resumen guardado.</div> : null}
     </div>
   )
 }
 
 function LoadingCard() { return <Card className="p-4 text-sm text-arsen-muted">Cargando progreso local...</Card> }
-function parseView(value: string | null): ProgressView { return value === 'exercises' || value === 'history' ? value : 'summary' }
+function parseView(value: string | null): ProgressView { return value === 'exercises' ? value : 'summary' }
 function periodLabel(period: ProgressPeriod) { return period === 'all' ? 'Todo el historial' : `Últimas ${period.replace('w', '')} semanas` }
 
 function formatRange(start: string, end: string) { return `${formatDate(start)} – ${formatDate(end)}` }

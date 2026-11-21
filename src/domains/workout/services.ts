@@ -3,6 +3,7 @@ import type { DropSetLog, ExerciseLog, SetLog, WeightUnit, WorkoutSession } from
 import { db } from '../../db/schema'
 import { createId } from '../../shared/utils/id'
 import { exerciseStateFromSets } from '../../shared/calculations/workout'
+import { localDateKey } from '../../shared/utils/date'
 
 export async function getOrCreateSessionForDay(input: {
   date: string
@@ -179,6 +180,11 @@ export async function addDropSet(input: {
   setLogId: string
   weightKg: number
 }) {
+  if (!Number.isFinite(input.weightKg) || input.weightKg < 0 || !Number.isInteger(input.reps) || input.reps <= 0 || !Number.isFinite(input.rir)) {
+    throw new Error('Los datos del drop set no son vÃ¡lidos')
+  }
+  const parentSet = await db.setLogs.get(input.setLogId)
+  if (!parentSet || parentSet.kind !== 'main') throw new Error('Serie principal no encontrada')
   const now = new Date().toISOString()
   const order = await db.dropSetLogs.where('setLogId').equals(input.setLogId).count()
   const dropSet: DropSetLog = {
@@ -338,11 +344,49 @@ export async function updateMainSet(
     weightKg: number
   },
 ) {
-  const set = await db.setLogs.get(setLogId)
+  await updateHistoricalSet({ ...input, setLogId })
+}
+
+export async function updateHistoricalSession(
+  sessionId: string,
+  input: { date: string; dayId: string; notes?: string; routineId: string; status?: WorkoutSession['status'] },
+) {
+  const session = await db.workoutSessions.get(sessionId)
+  if (!session) throw new Error('Sesión no encontrada')
+  if (!input.date || input.date > localDateKey(new Date())) throw new Error('La fecha debe ser hoy o anterior')
+
+  const [routine, day, conflicting] = await Promise.all([
+    db.routines.get(input.routineId),
+    db.routineDays.get(input.dayId),
+    db.workoutSessions.where('[date+dayId]').equals([input.date, input.dayId]).first(),
+  ])
+  if (!routine || !day || day.routineId !== routine.id) throw new Error('La rutina y el día no son compatibles')
+  if (conflicting && conflicting.id !== sessionId) throw new Error('Ya existe una sesión para esa fecha y día')
+
+  const now = new Date().toISOString()
+  await db.workoutSessions.update(sessionId, {
+    ...(input.notes === undefined ? {} : { notes: input.notes }),
+    ...(input.status === undefined ? {} : {
+      completedAt: input.status === 'completed' ? session.completedAt ?? now : null,
+      status: input.status,
+    }),
+    date: input.date,
+    dayId: input.dayId,
+    routineId: input.routineId,
+    updatedAt: now,
+  })
+}
+
+export async function updateHistoricalSet(input: { order?: number; reps: number; rir: number; setLogId: string; weightKg: number }) {
+  if (!Number.isFinite(input.weightKg) || input.weightKg < 0 || !Number.isInteger(input.reps) || input.reps <= 0 || !Number.isFinite(input.rir)) {
+    throw new Error('Los datos de la serie no son válidos')
+  }
+  const set = await db.setLogs.get(input.setLogId)
   if (!set) throw new Error('Serie no encontrada')
 
   await db.transaction('rw', [db.setLogs, db.exerciseLogs], async () => {
-    await db.setLogs.update(setLogId, {
+    await db.setLogs.update(input.setLogId, {
+      ...(input.order === undefined ? {} : { order: input.order }),
       reps: input.reps,
       rir: input.rir,
       updatedAt: new Date().toISOString(),
@@ -353,6 +397,55 @@ export async function updateMainSet(
   await syncSessionStatusFromExerciseLog(set.exerciseLogId)
 }
 
+export async function deleteHistoricalExercise(exerciseLogId: string) {
+  const log = await db.exerciseLogs.get(exerciseLogId)
+  if (!log) throw new Error('Ejercicio no encontrado')
+  const sets = await db.setLogs.where('exerciseLogId').equals(exerciseLogId).toArray()
+
+  await db.transaction('rw', [db.exerciseLogs, db.setLogs, db.dropSetLogs, db.skipLogs], async () => {
+    await db.dropSetLogs.where('setLogId').anyOf(sets.map((set) => set.id)).delete()
+    await db.setLogs.bulkDelete(sets.map((set) => set.id))
+    await db.skipLogs.where('sessionId').equals(log.sessionId).filter((skip) => skip.routineExerciseId === log.routineExerciseId).delete()
+    await db.exerciseLogs.delete(exerciseLogId)
+  })
+  await refreshSessionActivityTimestamps(log.sessionId)
+  await syncSessionStatusFromExercises(log.sessionId)
+}
+
+export async function duplicateSessionAsDraft(input: { sourceSessionId: string; targetDate: string }) {
+  const source = await db.workoutSessions.get(input.sourceSessionId)
+  if (!source) throw new Error('Sesión de origen no encontrada')
+  if (!input.targetDate || input.targetDate > localDateKey(new Date())) throw new Error('La fecha debe ser hoy o anterior')
+  const existing = await db.workoutSessions.where('[date+dayId]').equals([input.targetDate, source.dayId]).first()
+  if (existing) throw new Error('Ya existe una sesión para esa fecha y día')
+
+  const logs = await db.exerciseLogs.where('sessionId').equals(source.id).toArray()
+  const sets = logs.length > 0 ? await db.setLogs.where('exerciseLogId').anyOf(logs.map((log) => log.id)).toArray() : []
+  const references = sets
+    .filter((set) => set.kind === 'main')
+    .map((set) => ({ exerciseLogId: set.exerciseLogId, reps: set.reps, rir: set.rir, weightKg: set.weightKg }))
+  const now = new Date().toISOString()
+  const session: WorkoutSession = {
+    ...source,
+    completedAt: null,
+    createdAt: now,
+    date: input.targetDate,
+    id: createId('session'),
+    lastExerciseAt: null,
+    startedAt: null,
+    status: 'draft',
+    updatedAt: now,
+  }
+  const copiedLogs = logs.map((log): ExerciseLog => ({ ...log, createdAt: now, id: createId('exercise-log'), sessionId: session.id, state: 'pending', updatedAt: now }))
+
+  await db.transaction('rw', [db.workoutSessions, db.exerciseLogs], async () => {
+    await db.workoutSessions.add(session)
+    await db.exerciseLogs.bulkAdd(copiedLogs)
+  })
+
+  return { references, sessionId: session.id }
+}
+
 export async function updateWorkoutSession(
   sessionId: string,
   input: {
@@ -361,12 +454,7 @@ export async function updateWorkoutSession(
     routineId: string
   },
 ) {
-  await db.workoutSessions.update(sessionId, {
-    date: input.date,
-    dayId: input.dayId,
-    routineId: input.routineId,
-    updatedAt: new Date().toISOString(),
-  })
+  await updateHistoricalSession(sessionId, input)
 }
 
 export async function moveMainSetToExercise(setLogId: string, routineExerciseId: string) {

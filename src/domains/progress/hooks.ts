@@ -1,6 +1,8 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import {
   getExistingSessionForDateAndDay,
+  getHistory,
+  getPersonalRecords,
   getProgressDayOptions,
   getProgressEditOptions,
   getProgressExerciseOptions,
@@ -11,6 +13,7 @@ import {
   getSessionDetail,
   getSessionsForDate,
   getTrainingDates,
+  type HistoryFilters,
   type ProgressOverviewFilters,
 } from './repository'
 
@@ -32,6 +35,18 @@ export function useProgressHistory(filters: ProgressOverviewFilters = {}) {
     [filters.canonicalName, filters.dayId, filters.period, filters.routineId],
     undefined,
   )
+}
+
+export function useHistory(filters: HistoryFilters = {}) {
+  return useLiveQuery(
+    () => getHistory(filters),
+    [filters.canonicalName, filters.dayId, filters.endDate, filters.period, filters.routineId, filters.search, filters.startDate, filters.status],
+    undefined,
+  )
+}
+
+export function usePersonalRecords(filters: Pick<HistoryFilters, 'canonicalName' | 'dayId' | 'routineId'> = {}) {
+  return useLiveQuery(() => getPersonalRecords(filters), [filters.canonicalName, filters.dayId, filters.routineId], undefined)
 }
 
 export function useProgressExerciseOptions(filters: Pick<ProgressOverviewFilters, 'dayId' | 'routineId'> = {}) {
@@ -67,6 +82,10 @@ export function useSessionDetail(sessionId: string | null, filters: ProgressOver
     [sessionId, filters.canonicalName, filters.dayId],
     undefined,
   )
+}
+
+export function useSessionDetailById(sessionId: string | null) {
+  return useLiveQuery(() => (sessionId ? getSessionDetail(sessionId) : Promise.resolve(null)), [sessionId], undefined)
 }
 
 export function useSessionsForDate(date: string | undefined, filters: ProgressOverviewFilters = {}) {

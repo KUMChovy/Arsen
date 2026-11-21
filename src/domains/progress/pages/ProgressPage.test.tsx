@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ProgressPage } from './ProgressPage'
 
 const progressMocks = vi.hoisted(() => ({
+  history: [] as Array<{ bestSetId: string | null; bestSetLabel: string; date: string; dayName: string; exerciseCount: number; id: string; routineName: string; setCount: number; volumeKg: number }>,
   navigate: vi.fn(),
 }))
 
@@ -18,22 +19,14 @@ vi.mock('react-router-dom', async () => {
   }
 })
 
-vi.mock('../components/TrainingCalendarSheet', () => ({
-  TrainingCalendarSheet: ({ onSelect }: { onSelect: (date: string, hasTraining: boolean) => void }) => (
-    <div>
-      <button onClick={() => onSelect('2026-08-09', false)} type="button">
-        Crear fecha pasada
-      </button>
-      <button onClick={() => onSelect('2026-08-10', true)} type="button">
-        Ver fecha entrenada
-      </button>
-    </div>
-  ),
-}))
-
 vi.mock('../hooks', () => ({
   useProgressDayOptions: () => [],
   useProgressExerciseOptions: () => [],
+  useHistory: () => ({
+    sessions: progressMocks.history.map((session) => ({ ...session, dayId: 'day-1', dropSetCount: 0, mainSetCount: session.setCount, notes: '', routineId: 'routine-1', sessionId: session.id, status: 'completed' as const })),
+    summary: { distinctTrainingDays: new Set(progressMocks.history.map((session) => session.date)).size, exercises: progressMocks.history.reduce((total, session) => total + session.exerciseCount, 0), mainSets: progressMocks.history.reduce((total, session) => total + session.setCount, 0), sessions: progressMocks.history.length, volumeKg: progressMocks.history.reduce((total, session) => total + session.volumeKg, 0) },
+  }),
+  usePersonalRecords: () => [],
   useProgressSummary: () => ({
     averageVolumeKg: 0,
     currentPeriod: { end: '', start: '' },
@@ -49,7 +42,7 @@ vi.mock('../hooks', () => ({
     volumeKg: 0,
     weeklyVolume: [],
   }),
-  useProgressHistory: () => [],
+  useProgressHistory: () => progressMocks.history,
   useTrainingDates: () => ['2026-08-10'],
 }))
 
@@ -66,38 +59,22 @@ vi.mock('../../health/hooks', () => ({
 describe('ProgressPage', () => {
   afterEach(() => {
     cleanup()
+    progressMocks.history = []
     progressMocks.navigate.mockReset()
   })
 
-  it('opens manual creation when the calendar selects an untrained past date', () => {
-    renderPage()
-
-    fireEvent.click(screen.getByRole('tab', { name: /Historial/i }))
-    fireEvent.click(screen.getByRole('button', { name: /Crear fecha pasada/i }))
-
-    expect(progressMocks.navigate).toHaveBeenCalledWith('/progreso/historial/2026-08-09?create=1')
-  })
-
-  it('opens history normally when the calendar selects a trained date', () => {
-    renderPage()
-
-    fireEvent.click(screen.getByRole('tab', { name: /Historial/i }))
-    fireEvent.click(screen.getByRole('button', { name: /Ver fecha entrenada/i }))
-
-    expect(progressMocks.navigate).toHaveBeenCalledWith('/progreso/historial/2026-08-10')
-  })
-
-  it('opens in Resumen and exposes the three progress views', () => {
+  it('opens in Resumen and exposes the progress views without Historial', () => {
     renderPage()
 
     expect(screen.getByRole('tab', { name: 'Resumen' })).toHaveAttribute('aria-selected', 'true')
     expect(screen.getByRole('tab', { name: 'Ejercicios' })).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: 'Historial' })).toBeInTheDocument()
+    expect(screen.queryByRole('tab', { name: 'Historial' })).not.toBeInTheDocument()
     expect(screen.queryByText(/Score|\/100/i)).not.toBeInTheDocument()
   })
 })
 
-function renderPage() {
+function renderPage(options: { history?: Array<{ bestSetId: string | null; bestSetLabel: string; date: string; dayName: string; exerciseCount: number; id: string; routineName: string; setCount: number; volumeKg: number }> } = {}) {
+  progressMocks.history = options.history ?? []
   render(
     <MemoryRouter>
       <ProgressPage />

@@ -38,7 +38,7 @@ export function analyzeProgress(input: ProgressAnalysisInput): ProgressInsight[]
   if (previous.length >= MIN_COMPARISON_SESSIONS) {
     const currentAverage = average(current.map((session) => session.estimatedOneRmKg))
     const previousAverage = average(previous.map((session) => session.estimatedOneRmKg))
-    return [buildInsight(input.subject, input.previous?.label ?? input.current.label, current, previous, currentAverage, previousAverage)]
+    return [buildInsight(input.subject, input.current.label, current, previous, currentAverage, previousAverage)]
   }
 
   const first = current[0]!

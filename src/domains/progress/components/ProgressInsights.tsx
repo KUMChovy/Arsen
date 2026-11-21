@@ -17,11 +17,23 @@ export function ProgressInsights({ insights }: { insights: ProgressInsight[] }) 
             <div className="min-w-0">
               <strong className="block text-sm">{insight.title}</strong>
               <p className="mt-1 text-xs leading-5 text-arsen-muted">{insight.message}</p>
-              <span className="mt-2 block text-[11px] font-bold text-arsen-dim">{insight.periodLabel} · {insight.evidenceDates.join(' · ') || 'Sin fechas'}</span>
+              <span className="mt-2 block text-[11px] font-bold text-arsen-dim">{insight.periodLabel} · {formatEvidenceRange(insight.evidenceDates)}</span>
             </div>
           </Card>
         )
       })}
     </section>
   )
+}
+
+function formatEvidenceRange(values: string[]) {
+  const dates = values.slice().sort()
+  if (dates.length === 0) return 'Sin fechas'
+  const first = formatDate(dates[0]!)
+  const last = formatDate(dates.at(-1)!)
+  return first === last ? first : `${first} – ${last}`
+}
+
+function formatDate(value: string) {
+  return new Intl.DateTimeFormat('es-MX', { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(`${value}T12:00:00`)).replace('.', '')
 }

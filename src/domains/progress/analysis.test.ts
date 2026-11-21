@@ -44,7 +44,7 @@ describe('progress analysis', () => {
       },
     })
 
-    expect(insights).toEqual(expect.arrayContaining([expect.objectContaining({ kind: 'decline', periodLabel: 'Periodo anterior' })]))
+    expect(insights).toEqual(expect.arrayContaining([expect.objectContaining({ kind: 'decline', periodLabel: 'Últimas 4 semanas' })]))
   })
 })
 

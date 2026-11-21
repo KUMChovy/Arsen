@@ -873,8 +873,11 @@ describe('IndexedDB integration', () => {
       {
         bundledAssetId: null,
         canonicalName: 'remo-barra',
+        dayNames: ['Dia A'],
+        lastTrainedDate: '2026-08-02',
         mainMuscle: 'Pecho',
         name: 'Remo barra',
+        routineNames: ['Rutina A'],
         sessions: 1,
       },
     ])
@@ -884,6 +887,7 @@ describe('IndexedDB integration', () => {
     expect(await getProgressDayOptions()).toContainEqual({
       dayId: dayB.id,
       name: 'Dia eliminado',
+      routineId: routineB.id,
       routineName: 'Rutina B',
       sessions: 1,
     })

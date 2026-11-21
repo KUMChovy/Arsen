@@ -34,7 +34,22 @@ vi.mock('../components/TrainingCalendarSheet', () => ({
 vi.mock('../hooks', () => ({
   useProgressDayOptions: () => [],
   useProgressExerciseOptions: () => [],
-  useProgressOverview: () => ({ bestMarks: [], chartData: [], sessionCount: 0, totalSets: 0, volumeKg: 0 }),
+  useProgressSummary: () => ({
+    averageVolumeKg: 0,
+    currentPeriod: { end: '', start: '' },
+    previousAverageVolumeKg: null,
+    previousPeriod: null,
+    previousSessionCount: 0,
+    previousSessions: [],
+    previousTotalSets: 0,
+    previousVolumeKg: 0,
+    sessionCount: 0,
+    sessions: [],
+    totalSets: 0,
+    volumeKg: 0,
+    weeklyVolume: [],
+  }),
+  useProgressHistory: () => [],
   useTrainingDates: () => ['2026-08-10'],
 }))
 
@@ -57,7 +72,7 @@ describe('ProgressPage', () => {
   it('opens manual creation when the calendar selects an untrained past date', () => {
     renderPage()
 
-    fireEvent.click(screen.getByRole('button', { name: /Historial/i }))
+    fireEvent.click(screen.getByRole('tab', { name: /Historial/i }))
     fireEvent.click(screen.getByRole('button', { name: /Crear fecha pasada/i }))
 
     expect(progressMocks.navigate).toHaveBeenCalledWith('/progreso/historial/2026-08-09?create=1')
@@ -66,10 +81,19 @@ describe('ProgressPage', () => {
   it('opens history normally when the calendar selects a trained date', () => {
     renderPage()
 
-    fireEvent.click(screen.getByRole('button', { name: /Historial/i }))
+    fireEvent.click(screen.getByRole('tab', { name: /Historial/i }))
     fireEvent.click(screen.getByRole('button', { name: /Ver fecha entrenada/i }))
 
     expect(progressMocks.navigate).toHaveBeenCalledWith('/progreso/historial/2026-08-10')
+  })
+
+  it('opens in Resumen and exposes the three progress views', () => {
+    renderPage()
+
+    expect(screen.getByRole('tab', { name: 'Resumen' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('tab', { name: 'Ejercicios' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Historial' })).toBeInTheDocument()
+    expect(screen.queryByText(/Score|\/100/i)).not.toBeInTheDocument()
   })
 })
 

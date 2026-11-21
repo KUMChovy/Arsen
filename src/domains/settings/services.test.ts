@@ -56,7 +56,9 @@ describe('settings export services', () => {
     expect(data.timeline).toHaveLength(1)
     expect(data.timeline[0]).toMatchObject({
       date: '2026-01-02',
+      estimatedOneRmKg: 80,
       exerciseName: 'Press inclinado',
+      oneRmKind: 'estimated',
       routineName: 'Rutina A',
       volume: 600,
     })
@@ -99,13 +101,13 @@ describe('settings export services', () => {
     const physicalLines = normalizedCsv.slice(1).split('\n')
     expect(physicalLines[0]).toBe('sep=;')
     expect(physicalLines[1]).toBe(
-      'Fecha;Rutina;Dia;Ejercicio;Musculo;Equipo;Serie;Tipo de serie;Serie principal;Peso (kg);Repeticiones;RIR;Volumen;Puntaje',
+      'Fecha;Rutina;Dia;Ejercicio;Musculo;Equipo;Serie;Tipo de serie;Serie principal;Peso (kg);Repeticiones;RIR;Volumen;1RM estimada (kg);Tipo de 1RM',
     )
     expect(normalizedCsv).toContain('"Rutina; ""A"""')
     expect(physicalLines).toHaveLength(4)
     expect(normalizedCsv).toContain('"Press ""inclinado"" pausado"')
-    expect(normalizedCsv).toContain(';principal;;60,00;10;2;600,00;80,00')
-    expect(normalizedCsv).toContain(';Drop 1;drop;1;40,00;10;2;400,00;53,33')
+    expect(normalizedCsv).toContain(';principal;;60,00;10;2;600,00;80,00;estimada')
+    expect(normalizedCsv).toContain(';Drop 1;drop;1;40,00;10;2;400,00;;')
   })
 })
 

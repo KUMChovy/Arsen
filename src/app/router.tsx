@@ -9,6 +9,9 @@ const ProgressPage = lazy(() =>
 const ProgressHistoryDatePage = lazy(() =>
   import('../domains/progress/pages/ProgressHistoryDatePage').then((module) => ({ default: module.ProgressHistoryDatePage })),
 )
+const ProgressExercisePage = lazy(() =>
+  import('../domains/progress/pages/ProgressExercisePage').then((module) => ({ default: module.ProgressExercisePage })),
+)
 const RoutinePage = lazy(() =>
   import('../domains/routine/pages/RoutinePage').then((module) => ({ default: module.RoutinePage })),
 )
@@ -44,6 +47,7 @@ export const router = createBrowserRouter([
       { path: '/rutina', element: lazyPage(<RoutinePage />) },
       { path: '/rutina/dia/:dayId', element: lazyPage(<RoutineDayDetailPage />) },
       { path: '/progreso', element: lazyPage(<ProgressPage />) },
+      { path: '/progreso/ejercicio/:canonicalName', element: lazyPage(<ProgressExercisePage />) },
       { path: '/progreso/historial/:date', element: lazyPage(<ProgressHistoryDatePage />) },
       { path: '/settings', element: lazyPage(<SettingsPage />) },
     ],

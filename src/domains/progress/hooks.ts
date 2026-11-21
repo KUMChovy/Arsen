@@ -4,7 +4,10 @@ import {
   getProgressDayOptions,
   getProgressEditOptions,
   getProgressExerciseOptions,
+  getProgressExerciseDetail,
+  getProgressHistory,
   getProgressOverview,
+  getProgressSummary,
   getSessionDetail,
   getSessionsForDate,
   getTrainingDates,
@@ -15,8 +18,32 @@ export function useProgressOverview(filters: ProgressOverviewFilters) {
   return useLiveQuery(() => getProgressOverview(filters), [filters.canonicalName, filters.dayId], undefined)
 }
 
-export function useProgressExerciseOptions(filters: Pick<ProgressOverviewFilters, 'dayId'> = {}) {
+export function useProgressSummary(filters: ProgressOverviewFilters = {}) {
+  return useLiveQuery(
+    () => getProgressSummary(filters),
+    [filters.canonicalName, filters.dayId, filters.period, filters.routineId],
+    undefined,
+  )
+}
+
+export function useProgressHistory(filters: ProgressOverviewFilters = {}) {
+  return useLiveQuery(
+    () => getProgressHistory(filters),
+    [filters.canonicalName, filters.dayId, filters.period, filters.routineId],
+    undefined,
+  )
+}
+
+export function useProgressExerciseOptions(filters: Pick<ProgressOverviewFilters, 'dayId' | 'routineId'> = {}) {
   return useLiveQuery(() => getProgressExerciseOptions(filters), [filters.dayId], undefined)
+}
+
+export function useProgressExerciseDetail(canonicalName: string | null, filters: ProgressOverviewFilters = {}) {
+  return useLiveQuery(
+    () => (canonicalName ? getProgressExerciseDetail(canonicalName, filters) : Promise.resolve(null)),
+    [canonicalName, filters.canonicalName, filters.dayId, filters.period, filters.routineId],
+    undefined,
+  )
 }
 
 export function useProgressDayOptions() {

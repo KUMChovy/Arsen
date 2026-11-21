@@ -1,19 +1,20 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest'
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { RecentSessionSummary } from '../repository'
+import type { RecentSessionSummary, SessionDetail } from '../repository'
 import { ProgressHistoryDatePage } from './ProgressHistoryDatePage'
 
 const progressMocks = vi.hoisted(() => ({
+  detail: null as SessionDetail | null,
   sessions: [] as RecentSessionSummary[],
 }))
 
 vi.mock('../hooks', () => ({
   useExistingSessionForDateAndDay: () => null,
   useProgressEditOptions: () => ({ routines: [], days: [], exercises: [] }),
-  useSessionDetail: () => null,
+  useSessionDetail: () => progressMocks.detail,
   useSessionsForDate: () => progressMocks.sessions,
 }))
 
@@ -26,7 +27,7 @@ vi.mock('dexie-react-hooks', () => ({
 }))
 
 vi.mock('../../settings/services', () => ({
-  getAppSettings: () => Promise.resolve({ preferredUnit: 'kg' }),
+  getAppSettings: () => ({ preferredUnit: 'lb', healthIntegrationEnabled: false }),
 }))
 
 vi.mock('../../workout/services', () => ({
@@ -42,6 +43,7 @@ describe('ProgressHistoryDatePage', () => {
   afterEach(() => cleanup())
 
   beforeEach(() => {
+    progressMocks.detail = null
     progressMocks.sessions = []
   })
 
@@ -77,6 +79,26 @@ describe('ProgressHistoryDatePage', () => {
     renderPage('/progreso/historial/2026-08-01?create=1')
 
     expect(screen.getByText(/Registra series olvidadas desde progreso/i)).toBeInTheDocument()
+  })
+
+  it('renders session weights and volume in the preferred unit', () => {
+    progressMocks.sessions = [{ bestSetId: 'set-1', bestSetLabel: '60 kg x 8', date: '2026-08-01', dayName: 'Dia A', exerciseCount: 1, id: 'session-1', routineName: 'Rutina A', setCount: 1, volumeKg: 480 }]
+    progressMocks.detail = {
+      date: '2026-08-01',
+      dayId: 'day-1',
+      dayName: 'Dia A',
+      exercises: [{ bundledAssetId: null, exerciseLogId: 'log-1', exerciseName: 'Press', mainMuscle: 'Pecho', routineExerciseId: 'exercise-1', sets: [{ displayUnit: 'kg', dropSets: [{ id: 'drop-1', order: 0, reps: 5, rir: 1, weightKg: 50 }], id: 'set-1', order: 0, reps: 8, rir: 2, weightKg: 60 }] }],
+      id: 'session-1',
+      routineId: 'routine-1',
+      routineName: 'Rutina A',
+    }
+
+    renderPage()
+    fireEvent.click(screen.getByRole('button', { name: /Expandir sesion/i }))
+
+    expect(screen.getByText(/Mejor 132.3 lb x 8 - 1058.2 lb volumen/)).toBeInTheDocument()
+    expect(screen.getByText((_, element) => element?.tagName === 'STRONG' && element.textContent?.includes('132.3 lb') === true)).toBeInTheDocument()
+    expect(screen.getByText((_, element) => element?.tagName === 'DIV' && element.childElementCount === 0 && element.textContent?.includes('Drop 1:') === true && element.textContent.includes('110.2 lb') === true)).toBeInTheDocument()
   })
 })
 

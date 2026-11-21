@@ -11,7 +11,8 @@ import type {
 import type { AppSettings, DeloadCycle, DeloadOverview, DeloadPhase } from './types'
 import type { DropSetLog, ExerciseLog, SetLog, SkipLog, WeightUnit, WorkoutSession } from '../workout/types'
 import { loadSettingsForEquipment, normalizeAvailablePlateWeightsKg } from '../../shared/calculations/equipmentLoad'
-import { performanceScore, volumeForSet, weeksSince } from '../../shared/calculations/workout'
+import { volumeForSet, weeksSince } from '../../shared/calculations/workout'
+import { estimatedOneRm } from '../progress/calculations'
 import { normalizeWarmupProtocol } from '../../shared/calculations/warmups'
 import {
   DELOAD_SKIP_COOLDOWN_DAYS,
@@ -522,7 +523,8 @@ export async function buildProgressExport(filters: ProgressExportFilters = {}) {
           sessionId: session.id,
           setOrder: set.order + 1,
           setLogId: set.id,
-          score: Math.round(performanceScore(set) * 100) / 100,
+          estimatedOneRmKg: estimatedOneRm(set)?.valueKg ?? null,
+          oneRmKind: estimatedOneRm(set)?.kind ?? null,
           sourceExerciseId: exercise?.id ?? log.routineExerciseId,
           volume: volumeForSet(set) + dropSets.reduce((total, dropSet) => total + volumeForSet(dropSet), 0),
           weightKg: set.weightKg,
@@ -561,7 +563,7 @@ export async function buildProgressExport(filters: ProgressExportFilters = {}) {
   }
 }
 
-function buildGraphPoints(timeline: Array<{ canonicalName: string; date: string; exerciseName: string; routineId: string; routineName: string; score: number; sessionId: string; volume: number }>) {
+function buildGraphPoints(timeline: Array<{ canonicalName: string; date: string; exerciseName: string; routineId: string; routineName: string; estimatedOneRmKg: number | null; sessionId: string; volume: number }>) {
   const points = new Map<
     string,
     {
@@ -570,7 +572,7 @@ function buildGraphPoints(timeline: Array<{ canonicalName: string; date: string;
       exerciseName: string
       routineId: string
       routineName: string
-      score: number
+      estimatedOneRmKg: number | null
       sessionId: string
       volume: number
     }
@@ -586,7 +588,11 @@ function buildGraphPoints(timeline: Array<{ canonicalName: string; date: string;
       exerciseName: row.exerciseName,
       routineId: row.routineId,
       routineName: row.routineName,
-      score: Math.max(current?.score ?? 0, row.score),
+      estimatedOneRmKg: current?.estimatedOneRmKg === null || current?.estimatedOneRmKg === undefined
+        ? row.estimatedOneRmKg
+        : row.estimatedOneRmKg === null
+          ? current.estimatedOneRmKg
+          : Math.max(current.estimatedOneRmKg, row.estimatedOneRmKg),
       sessionId: row.sessionId,
       volume: (current?.volume ?? 0) + row.volume,
     })
@@ -614,7 +620,8 @@ const CSV_EXPORT_HEADERS = [
   'Repeticiones',
   'RIR',
   'Volumen',
-  'Puntaje',
+  '1RM estimada (kg)',
+  'Tipo de 1RM',
 ]
 
 type ProgressTimelineRow = Awaited<ReturnType<typeof buildProgressExport>>['timeline'][number]
@@ -629,7 +636,8 @@ function csvRowsForTimelineRow(row: ProgressTimelineRow) {
     reps: row.reps,
     rir: row.rir,
     routineName: row.routineName,
-    score: row.score,
+    estimatedOneRmKg: row.estimatedOneRmKg,
+    oneRmKind: row.oneRmKind,
     setOrder: row.setOrder,
     setType: 'principal',
     trainedAt: row.date,
@@ -648,7 +656,8 @@ function csvRowsForTimelineRow(row: ProgressTimelineRow) {
         reps: dropSet.reps,
         rir: dropSet.rir,
         routineName: row.routineName,
-        score: performanceScore(dropSet),
+        estimatedOneRmKg: null,
+        oneRmKind: null,
         setOrder: `Drop ${dropSet.order + 1}`,
         setType: 'drop',
         trainedAt: row.date,
@@ -669,7 +678,8 @@ function csvRow(input: {
   reps: number
   rir: number
   routineName: string
-  score: number
+  estimatedOneRmKg: number | null
+  oneRmKind: 'direct' | 'estimated' | null
   setOrder: number | string
   setType: 'principal' | 'drop'
   trainedAt: string
@@ -690,7 +700,8 @@ function csvRow(input: {
     String(input.reps),
     String(input.rir),
     formatCsvDecimal(input.volume),
-    formatCsvDecimal(input.score),
+    input.estimatedOneRmKg === null ? '' : formatCsvDecimal(input.estimatedOneRmKg),
+    input.oneRmKind === 'estimated' ? 'estimada' : input.oneRmKind === 'direct' ? 'directa' : '',
   ]
 }
 

@@ -122,4 +122,44 @@ describe('getHealthProgressOverview', () => {
       }),
     ])
   })
+
+  it('keeps one persisted daily health point when several sessions share a date', async () => {
+    await db.workoutSessions.bulkPut([
+      healthSession('session-early', '2026-07-21', 800, '2026-07-21T18:00:00.000Z'),
+      healthSession('session-late', '2026-07-21', 900, '2026-07-21T20:00:00.000Z'),
+    ])
+
+    await expect(getHealthProgressOverview()).resolves.toMatchObject({
+      points: [{ dayCaloriesKcal: 900, daySteps: 8000, id: 'session-late' }],
+    })
+  })
 })
+
+function healthSession(id: string, date: string, calories: number, updatedAt: string) {
+  return {
+    createdAt: updatedAt,
+    date,
+    dayId: `day-${id}`,
+    displayUnit: 'kg' as const,
+    health: {
+      day: {
+        metrics: {
+          activeCaloriesKcal: calories,
+          heartRateAvgBpm: 100,
+          heartRateMaxBpm: 120,
+          heartRateMinBpm: 80,
+          oxygenSaturationAvgPercent: 97,
+          steps: calories === 900 ? 8000 : 7000,
+        },
+        rangeEnd: `${date}T23:00:00.000Z`,
+        rangeStart: `${date}T00:00:00.000Z`,
+      },
+      syncedAt: updatedAt,
+    },
+    id,
+    notes: '',
+    routineId: `routine-${id}`,
+    status: 'completed' as const,
+    updatedAt,
+  }
+}

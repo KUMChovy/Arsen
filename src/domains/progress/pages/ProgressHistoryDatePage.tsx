@@ -9,6 +9,7 @@ import { PageHeader } from '../../../shared/components/PageHeader'
 import { HealthSummaryCard } from '../../health/components/HealthSummaryCard'
 import { confirmDanger } from '../../../shared/utils/alerts'
 import { localDateKey } from '../../../shared/utils/date'
+import { formatWeight } from '../../../shared/utils/weight'
 import { deleteMainSet, deleteWorkoutSession, moveMainSetToExercise, registerMainSetForExercise, updateMainSet, updateWorkoutSession } from '../../workout/services'
 import { getAppSettings } from '../../settings/services'
 import { useRoutineDayDetail } from '../../routine/hooks'
@@ -108,6 +109,7 @@ export function ProgressHistoryDatePage() {
               <HistorySessionCard
                 disabled={isPending}
                 expanded={expandedSessionId === session.id}
+                unit={appSettings?.preferredUnit ?? 'kg'}
                 onDelete={async () => {
                   if (!(await confirmDanger('Eliminar sesion', 'Se borrara esta sesion con sus series y drop sets.'))) return
                   runHistoryAction(async () => {
@@ -123,6 +125,7 @@ export function ProgressHistoryDatePage() {
                   detail={expandedDetail}
                   disabled={isPending}
                   healthEnabled={appSettings?.healthIntegrationEnabled === true}
+                  unit={appSettings?.preferredUnit ?? 'kg'}
                   onDeleteSet={async (setLogId) => {
                     if (!(await confirmDanger('Eliminar serie', 'Se borrara esta serie desde la sesion.'))) return
                     runHistoryAction(() => deleteMainSet(setLogId), 'Serie eliminada')
@@ -187,12 +190,14 @@ function HistorySessionCard({
   onDelete,
   onToggle,
   session,
+  unit,
 }: {
   disabled: boolean
   expanded: boolean
   onDelete: () => void
   onToggle: () => void
   session: RecentSessionSummary
+  unit: 'kg' | 'lb'
 }) {
 
   return (
@@ -204,7 +209,7 @@ function HistorySessionCard({
         </div>
         <p className="mt-1 text-xs text-arsen-muted">{session.dayName}</p>
         <p className="mt-1 text-xs text-arsen-muted">
-          Mejor {session.bestSetLabel} - {Math.round(session.volumeKg)} kg volumen - {session.exerciseCount} ejercicios
+          Mejor {formatBestSetLabel(session.bestSetLabel, unit)} - {formatWeight(session.volumeKg, unit)} volumen - {session.exerciseCount} ejercicios
         </p>
       </button>
       <div className="flex items-center gap-1">
@@ -237,12 +242,14 @@ function SessionDetailInline({
   healthEnabled,
   onDeleteSet,
   onEditSet,
+  unit,
 }: {
   detail: SessionDetail | null | undefined
   disabled: boolean
   healthEnabled: boolean
   onDeleteSet: (setLogId: string) => void
   onEditSet: (set: EditSetState) => void
+  unit: 'kg' | 'lb'
 }) {
   if (!detail) return <Card className="p-4 text-sm text-arsen-muted">Cargando sesion...</Card>
 
@@ -264,7 +271,7 @@ function SessionDetailInline({
                 <div className="grid grid-cols-[1fr_auto] items-center gap-2">
                   <div>
                     <strong className="text-sm">
-                      Serie {set.order + 1}: {set.weightKg} kg x {set.reps}
+                      Serie {set.order + 1}: {formatWeight(set.weightKg, unit)} x {set.reps}
                     </strong>
                     <span className="ml-2 text-xs text-arsen-muted">RIR {set.rir}</span>
                   </div>
@@ -305,7 +312,7 @@ function SessionDetailInline({
                   <div className="mt-2 space-y-1 text-xs text-arsen-muted">
                     {set.dropSets.map((dropSet) => (
                       <div key={dropSet.id}>
-                        Drop {dropSet.order + 1}: {dropSet.weightKg} kg x {dropSet.reps} - RIR {dropSet.rir}
+                        Drop {dropSet.order + 1}: {formatWeight(dropSet.weightKg, unit)} x {dropSet.reps} - RIR {dropSet.rir}
                       </div>
                     ))}
                   </div>
@@ -318,4 +325,9 @@ function SessionDetailInline({
       {detail.exercises.length === 0 ? <Card className="p-4 text-sm text-arsen-muted">Sesion sin series.</Card> : null}
     </div>
   )
+}
+
+function formatBestSetLabel(label: string, unit: 'kg' | 'lb') {
+  const match = /^(\d+(?:\.\d+)?) kg x (\d+)$/.exec(label)
+  return match ? `${formatWeight(Number(match[1]), unit)} x ${match[2]}` : label
 }

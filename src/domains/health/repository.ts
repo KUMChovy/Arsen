@@ -29,9 +29,16 @@ export type HealthExerciseProgressPoint = {
 
 // Proyecta los resúmenes persistidos a una forma ligera para la pantalla Progreso.
 export async function getHealthProgressOverview(dayId?: string | null): Promise<HealthProgressOverview> {
-  const sessions = await db.workoutSessions.orderBy('date').toArray()
-  const points = sessions
-    .filter((session) => (!dayId || session.dayId === dayId) && session.health)
+  const sessions = (await db.workoutSessions.orderBy('date').toArray())
+    .filter((session) => !dayId || session.dayId === dayId)
+  const latestDailySessionByDate = new Map<string, (typeof sessions)[number]>()
+  for (const session of sessions) {
+    if (!session.health) continue
+    const current = latestDailySessionByDate.get(session.date)
+    if (!current || session.updatedAt.localeCompare(current.updatedAt) > 0) latestDailySessionByDate.set(session.date, session)
+  }
+  const points = [...latestDailySessionByDate.values()]
+    .sort((a, b) => a.date.localeCompare(b.date))
     .map((session): HealthProgressPoint => ({
       date: session.date,
       dayCaloriesKcal: session.health?.day.metrics.activeCaloriesKcal ?? null,

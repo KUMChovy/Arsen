@@ -45,7 +45,9 @@ describe('HealthSetupWizard', () => {
 
     expect(screen.queryByRole('menu', { name: 'Disponibilidad de datos' })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Información sobre disponibilidad' }))
-    expect(screen.getByRole('menu', { name: 'Disponibilidad de datos' })).toHaveTextContent(/30 minutos/i)
+    const menu = screen.getByRole('menu', { name: 'Disponibilidad de datos' })
+    expect(menu).toHaveTextContent(/Health Connect/i)
+    expect(menu).not.toHaveTextContent(/30 minutos/i)
 
     fireEvent.click(screen.getByRole('button', { name: 'Contraer integración de salud' }))
     expect(screen.getByRole('button', { name: 'Expandir integración de salud' })).toBeInTheDocument()

@@ -8,9 +8,16 @@ data class TimedHealthValue(
     val time: Instant,
 )
 
+/** Aggregate heart-rate values returned when raw samples are unavailable. */
+data class HeartRateAggregate(
+    val averageBpm: Double?,
+    val maxBpm: Double?,
+    val minBpm: Double?,
+)
+
 /** Raw values collected from one Health Connect time window. */
 data class HealthSamples(
-    val heartRate: List<TimedHealthValue> = emptyList(),
+    val heartRate: HeartRateAggregate? = null,
     val oxygenSaturation: List<TimedHealthValue> = emptyList(),
     val activeCaloriesKcal: Double? = null,
     val steps: Long? = null,
@@ -35,9 +42,9 @@ object HealthSummaryCalculator {
      */
     fun summarize(samples: HealthSamples): CalculatedHealthMetrics {
         return CalculatedHealthMetrics(
-            heartRateAvgBpm = samples.heartRate.averageOrNull(),
-            heartRateMaxBpm = samples.heartRate.maxValueOrNull(),
-            heartRateMinBpm = samples.heartRate.minValueOrNull(),
+            heartRateAvgBpm = samples.heartRate?.averageBpm,
+            heartRateMaxBpm = samples.heartRate?.maxBpm,
+            heartRateMinBpm = samples.heartRate?.minBpm,
             activeCaloriesKcal = samples.activeCaloriesKcal,
             steps = samples.steps,
             oxygenSaturationAvgPercent = samples.oxygenSaturation.averageOrNull(),

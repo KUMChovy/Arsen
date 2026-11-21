@@ -45,6 +45,22 @@ data class HealthReadExercise(
     val window: HealthReadWindow,
 )
 
+internal data class HealthQueryRange(
+    val start: Instant,
+    val end: Instant?,
+)
+
+internal fun healthQueryRange(
+    rangeStart: Instant,
+    rangeEnd: Instant,
+    includeCurrentInterval: Boolean,
+): HealthQueryRange {
+    return HealthQueryRange(
+        start = rangeStart,
+        end = if (includeCurrentInterval) null else rangeEnd,
+    )
+}
+
 /**
  * Owns the Android-specific Health Connect access for the Capacitor plugin.
  *
@@ -92,7 +108,13 @@ class HealthConnectManager(private val context: Context) {
         val granted = client.permissionController.getGrantedPermissions()
         Log.i(TAG, "Health Connect read started; granted=${granted.size}")
         // Cada ventana se calcula por separado para no repartir métricas diarias entre ejercicios.
-        val day = readWindow(client, granted, dayStart, dayEnd)
+        val day = readWindow(
+            client = client,
+            granted = granted,
+            rangeStart = dayStart,
+            rangeEnd = dayEnd,
+            includeCurrentInterval = true,
+        )
         val session = sessionRange?.let { readWindow(client, granted, it.rangeStart, it.rangeEnd) }
         val exercises = exerciseRanges.map { range ->
             HealthReadExercise(range.id, readWindow(client, granted, range.rangeStart, range.rangeEnd))
@@ -109,8 +131,9 @@ class HealthConnectManager(private val context: Context) {
         granted: Set<String>,
         rangeStart: Instant,
         rangeEnd: Instant,
+        includeCurrentInterval: Boolean = false,
     ): HealthReadWindow {
-        val range = TimeRangeFilter.between(rangeStart, rangeEnd)
+        val range = healthQueryRange(rangeStart, rangeEnd, includeCurrentInterval).toTimeRangeFilter()
         val heartRatePermission = HealthPermission.getReadPermission(HeartRateRecord::class)
         val caloriesPermission = HealthPermission.getReadPermission(ActiveCaloriesBurnedRecord::class)
         val stepsPermission = HealthPermission.getReadPermission(StepsRecord::class)
@@ -125,16 +148,6 @@ class HealthConnectManager(private val context: Context) {
 
         // Read only the metrics that were granted. This keeps a revoked optional
         // permission from preventing the other available metrics from syncing.
-        val heartRate = if (heartRatePermission in granted) {
-            try {
-                readHeartRate(client, range)
-            } catch (error: Exception) {
-                Log.w(TAG, "Heart rate read failed", error)
-                emptyList()
-            }
-        } else {
-            emptyList()
-        }
         val oxygen = if (oxygenPermission in granted) {
             try {
                 readOxygenSaturation(client, range)
@@ -145,14 +158,20 @@ class HealthConnectManager(private val context: Context) {
         } else {
             emptyList()
         }
-        val aggregate = aggregate(client, range, caloriesPermission in granted, stepsPermission in granted)
+        val aggregate = aggregate(
+            client = client,
+            range = range,
+            includeHeartRate = heartRatePermission in granted,
+            includeCalories = caloriesPermission in granted,
+            includeSteps = stepsPermission in granted,
+        )
 
         return HealthReadWindow(
             rangeStart = rangeStart,
             rangeEnd = rangeEnd,
             metrics = HealthSummaryCalculator.summarize(
                 HealthSamples(
-                    heartRate = heartRate,
+                    heartRate = aggregate.heartRate,
                     oxygenSaturation = oxygen,
                     activeCaloriesKcal = aggregate.activeCaloriesKcal,
                     steps = aggregate.steps,
@@ -160,19 +179,6 @@ class HealthConnectManager(private val context: Context) {
             ),
             missingPermissions = missing,
         )
-    }
-
-    private suspend fun readHeartRate(
-        client: HealthConnectClient,
-        range: TimeRangeFilter,
-    ): List<TimedHealthValue> {
-        // Pulso se lee como muestras porque cada registro puede contener varios timestamps.
-        return readAllRecords(client, HeartRateRecord::class, range)
-            .flatMap { record ->
-                record.samples.map { sample ->
-                    TimedHealthValue(sample.beatsPerMinute.toDouble(), sample.time)
-                }
-            }
     }
 
     private suspend fun readOxygenSaturation(
@@ -187,9 +193,35 @@ class HealthConnectManager(private val context: Context) {
     private suspend fun aggregate(
         client: HealthConnectClient,
         range: TimeRangeFilter,
+        includeHeartRate: Boolean,
         includeCalories: Boolean,
         includeSteps: Boolean,
     ): AggregateValues {
+        val heartRate = if (includeHeartRate) {
+            try {
+                val result = client.aggregate(
+                    AggregateRequest(
+                        setOf(
+                            HeartRateRecord.BPM_AVG,
+                            HeartRateRecord.BPM_MAX,
+                            HeartRateRecord.BPM_MIN,
+                        ),
+                        range,
+                    ),
+                )
+                HeartRateAggregate(
+                    averageBpm = result[HeartRateRecord.BPM_AVG]?.toDouble(),
+                    maxBpm = result[HeartRateRecord.BPM_MAX]?.toDouble(),
+                    minBpm = result[HeartRateRecord.BPM_MIN]?.toDouble(),
+                )
+            } catch (error: Exception) {
+                Log.w(TAG, "Heart rate aggregate failed", error)
+                null
+            }
+        } else {
+            null
+        }
+
         // Calorías y pasos son acumulativos; aggregate evita sumar registros duplicados manualmente.
         val activeCaloriesKcal = if (includeCalories) {
             try {
@@ -216,6 +248,7 @@ class HealthConnectManager(private val context: Context) {
             null
         }
         return AggregateValues(
+            heartRate = heartRate,
             activeCaloriesKcal = activeCaloriesKcal,
             steps = steps,
         )
@@ -245,7 +278,12 @@ class HealthConnectManager(private val context: Context) {
     }
 
     private data class AggregateValues(
+        val heartRate: HeartRateAggregate? = null,
         val activeCaloriesKcal: Double? = null,
         val steps: Long? = null,
     )
+
+    private fun HealthQueryRange.toTimeRangeFilter(): TimeRangeFilter {
+        return end?.let { TimeRangeFilter.between(start, it) } ?: TimeRangeFilter.after(start)
+    }
 }

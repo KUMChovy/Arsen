@@ -1,8 +1,8 @@
 apply plugin: 'com.android.application'
 apply plugin: 'org.jetbrains.kotlin.android'
 
-def arsenPackageSuffix = (project.findProperty('arsenPackageSuffix') ?: 'v3').toString()
-def arsenVersionCode = (project.findProperty('arsenVersionCode') ?: (arsenPackageSuffix.replaceAll('[^0-9]', '') ?: '3')).toInteger()
+def arsenPackageSuffix = (project.findProperty('arsenPackageSuffix') ?: 'v4').toString()
+def arsenVersionCode = (project.findProperty('arsenVersionCode') ?: (arsenPackageSuffix.replaceAll('[^0-9]', '') ?: '4')).toInteger()
 def webBuildIndex = file("$rootDir/../dist/index.html")
 def packagedWebIndex = file("$projectDir/src/main/assets/public/index.html")
 

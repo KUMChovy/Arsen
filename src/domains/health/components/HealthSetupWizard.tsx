@@ -51,7 +51,7 @@ export function HealthSetupWizard({
               {availabilityOpen ? (
                 <div aria-label="Disponibilidad de datos" className="absolute right-0 top-10 z-10 w-64 rounded-[10px] border border-arsen-purple/35 bg-arsen-bg2 p-3 text-xs leading-relaxed text-arsen-muted shadow-xl" role="menu">
                   <p role="menuitem">La actualización no siempre es en tiempo real: algunas apps necesitan abrirse para guardar o publicar datos.</p>
-                  <p className="mt-2" role="menuitem">Health Connect puede entregar intervalos de aproximadamente 30 minutos y Arsen consulta también datos anteriores a la conexión.</p>
+                  <p className="mt-2" role="menuitem">Arsen consulta el estado actual de Health Connect mientras la app está visible. La app del reloj debe publicar primero sus datos.</p>
                 </div>
               ) : null}
             </div>

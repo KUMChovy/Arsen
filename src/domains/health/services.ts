@@ -176,17 +176,32 @@ export async function syncWorkoutHealth(sessionId: string, syncTime = new Date()
   return summary
 }
 
+// Actualiza únicamente las sesiones del día actual para mantener visible el estado más reciente de Health Connect.
+export async function syncCurrentWorkoutHealth(syncTime = new Date()): Promise<{ syncedSessions: number }> {
+  const settings = await getAppSettings()
+  if (!settings?.healthIntegrationEnabled || !isHealthConnectNative()) return { syncedSessions: 0 }
+
+  const currentDate = localDateKey(syncTime)
+  const sessions = await db.workoutSessions.where('date').equals(currentDate).toArray()
+  for (const session of sessions) await syncWorkoutHealth(session.id, syncTime)
+  return { syncedSessions: sessions.length }
+}
+
 // Actualiza sesiones históricas hasta hoy para recuperar datos que ya estén publicados.
 export async function syncAllWorkoutHealth(syncTime = new Date()): Promise<{ syncedSessions: number }> {
   const settings = await getAppSettings()
   if (!settings?.healthIntegrationEnabled || !isHealthConnectNative()) return { syncedSessions: 0 }
 
-  const sessions = await db.workoutSessions.orderBy('date').toArray()
   const currentDate = localDateKey(syncTime)
+  const sessions = (await db.workoutSessions.orderBy('date').toArray())
+    .filter((session) => session.date <= currentDate)
+    .sort((left, right) => {
+      const currentPriority = Number(right.date === currentDate) - Number(left.date === currentDate)
+      return currentPriority || left.date.localeCompare(right.date)
+    })
   let syncedSessions = 0
 
   for (const session of sessions) {
-    if (session.date > currentDate) continue
     await syncWorkoutHealth(session.id, syncTime)
     syncedSessions += 1
   }

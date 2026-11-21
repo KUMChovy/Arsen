@@ -7,14 +7,31 @@ import org.junit.Test
 
 class HealthSummaryCalculatorTest {
     @Test
+    fun usesHealthConnectHeartRateAggregateInsteadOfAveragingRawSamples() {
+        val result = HealthSummaryCalculator.summarize(
+            HealthSamples(
+                heartRate = HeartRateAggregate(
+                    averageBpm = 121.0,
+                    maxBpm = 168.0,
+                    minBpm = 82.0,
+                ),
+            ),
+        )
+
+        assertEquals(121.0, result.heartRateAvgBpm ?: error("health connect average missing"), 0.0)
+        assertEquals(168.0, result.heartRateMaxBpm ?: error("health connect maximum missing"), 0.0)
+        assertEquals(82.0, result.heartRateMinBpm ?: error("health connect minimum missing"), 0.0)
+    }
+
+    @Test
     fun summarizesHeartRateAndOxygenSamplesWithoutInventingEmptyValues() {
         val result = HealthSummaryCalculator.summarize(
             HealthSamples(
                 activeCaloriesKcal = 420.5,
-                heartRate = listOf(
-                    TimedHealthValue(92.0, Instant.parse("2026-07-20T16:42:00Z")),
-                    TimedHealthValue(132.0, Instant.parse("2026-07-20T17:30:00Z")),
-                    TimedHealthValue(168.0, Instant.parse("2026-07-20T18:30:00Z")),
+                heartRate = HeartRateAggregate(
+                    averageBpm = 121.0,
+                    maxBpm = 168.0,
+                    minBpm = 82.0,
                 ),
                 oxygenSaturation = listOf(
                     TimedHealthValue(96.0, Instant.parse("2026-07-20T17:00:00Z")),
@@ -24,9 +41,9 @@ class HealthSummaryCalculatorTest {
             ),
         )
 
-        assertEquals(130.67, result.heartRateAvgBpm ?: error("heart rate average missing"), 0.01)
+        assertEquals(121.0, result.heartRateAvgBpm ?: error("heart rate average missing"), 0.0)
         assertEquals(168.0, result.heartRateMaxBpm ?: error("heart rate maximum missing"), 0.0)
-        assertEquals(92.0, result.heartRateMinBpm ?: error("heart rate minimum missing"), 0.0)
+        assertEquals(82.0, result.heartRateMinBpm ?: error("heart rate minimum missing"), 0.0)
         assertEquals(97.0, result.oxygenSaturationAvgPercent ?: error("oxygen average missing"), 0.0)
         assertEquals(420.5, result.activeCaloriesKcal ?: error("calories missing"), 0.0)
         assertEquals(1850L, result.steps)

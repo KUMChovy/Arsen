@@ -16,6 +16,7 @@ describe('HealthSummaryCard', () => {
     expect(screen.getAllByText('Pulso promedio')).toHaveLength(1)
     expect(screen.getByText('800 kcal')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Sincronizar salud' })).toBeInTheDocument()
+    expect(screen.getByText(/Última consulta/)).toBeInTheDocument()
   })
 
   it('labels unavailable values without replacing them with zero', () => {
@@ -39,7 +40,10 @@ describe('HealthSummaryCard', () => {
     expect(screen.getByRole('button', { name: 'Siguiente vista de salud' })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: 'Ver Sesión de entrenamiento' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Información sobre disponibilidad' }))
-    expect(screen.getByRole('menu', { name: 'Disponibilidad de datos' })).toHaveTextContent(/Mi Fitness, Samsung Health/i)
+    const menu = screen.getByRole('menu', { name: 'Disponibilidad de datos' })
+    expect(menu).toHaveTextContent(/consulta.*Health Connect/i)
+    expect(menu).not.toHaveTextContent(/30 minutos/i)
+    expect(menu).toHaveTextContent(/Mi Fitness, Samsung Health/i)
     expect(screen.queryByText(/Ox.*geno/)).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Siguiente vista de salud' }))

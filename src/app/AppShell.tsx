@@ -2,12 +2,15 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { NavLink, Outlet } from 'react-router-dom'
 import { navItems } from './navigation'
 import { useAppProviders } from './providers'
-import { getDeloadOverview } from '../domains/settings/services'
+import { useHealthAutoSync } from '../domains/health/hooks'
+import { getAppSettings, getDeloadOverview } from '../domains/settings/services'
 
 export function AppShell() {
   const { databaseError, databaseStatus } = useAppProviders()
   const deload = useLiveQuery(() => getDeloadOverview(), [], undefined)
+  const appSettings = useLiveQuery(() => getAppSettings(), [], undefined)
   const deloadActive = deload?.phase === 'active'
+  useHealthAutoSync(appSettings?.healthIntegrationEnabled === true)
 
   return (
     <div className="min-h-dvh bg-arsen-bg text-arsen-ink">

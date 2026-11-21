@@ -89,7 +89,7 @@ export function HealthSummaryCard({
             {availabilityOpen ? (
               <div aria-label="Disponibilidad de datos" className="absolute right-0 top-11 z-10 w-64 rounded-[10px] border border-arsen-purple/35 bg-arsen-bg2 p-3 text-xs leading-relaxed text-arsen-muted shadow-xl" role="menu">
                 <p role="menuitem">La disponibilidad y frecuencia dependen de la app y el modelo de tu reloj. Mi Fitness, Samsung Health, Fitbit o Garmin Connect pueden necesitar abrirse para publicar los datos.</p>
-                <p className="mt-2" role="menuitem">Health Connect puede entregar intervalos de aproximadamente 30 minutos. Arsen consulta también datos anteriores a la conexión.</p>
+                <p className="mt-2" role="menuitem">Arsen consulta el estado actual de Health Connect mientras la app está visible. La app del reloj debe publicar primero sus datos.</p>
               </div>
             ) : null}
           </div>
@@ -178,7 +178,7 @@ export function HealthSummaryCard({
               Sin datos publicados todavía. Sincroniza primero la app que administra tu reloj con Health Connect y vuelve a intentarlo.
             </p>
           ) : null}
-          <p className="text-xs text-arsen-dim">Última lectura: {formatSyncTime(summary.syncedAt)}</p>
+          <p className="text-xs text-arsen-dim">Última consulta: {formatSyncTime(summary.syncedAt)}</p>
         </div>
       ) : !collapsed ? (
         <div className="rounded-[10px] border border-white/10 bg-arsen-bg/45 p-3 text-sm text-arsen-muted">

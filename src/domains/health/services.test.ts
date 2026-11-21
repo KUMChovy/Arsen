@@ -2,7 +2,7 @@ import 'fake-indexeddb/auto'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { db } from '../../db/schema'
 import type { AppSettings } from '../settings/types'
-import { enableHealthIntegration, openHealthConnectAccess, openHealthConnectInstall, syncAllWorkoutHealth, syncWorkoutHealth } from './services'
+import { enableHealthIntegration, openHealthConnectAccess, openHealthConnectInstall, syncAllWorkoutHealth, syncCurrentWorkoutHealth, syncWorkoutHealth } from './services'
 
 const native = vi.hoisted(() => ({
   HEALTH_CONNECT_PLAY_STORE_URL: 'https://play.google.com/store/apps/details?id=com.google.android.apps.healthdata',
@@ -259,6 +259,55 @@ describe('health services', () => {
     expect(native.healthConnect.readDayHealth).toHaveBeenCalledTimes(2)
     await expect(db.workoutSessions.get('session-1')).resolves.toMatchObject({ health: expect.anything() })
     await expect(db.workoutSessions.get('session-2')).resolves.toMatchObject({ health: expect.anything() })
+  })
+
+  it('syncs only sessions from the current local date', async () => {
+    await db.settings.update('app', { healthIntegrationEnabled: true })
+    await db.workoutSessions.bulkPut([
+      workoutSession('session-old', '2026-07-19'),
+      workoutSession('session-today', '2026-07-20'),
+    ])
+    native.healthConnect.readDayHealth.mockResolvedValue({
+      day: {
+        metrics: metrics({ steps: 4200 }),
+        missingPermissions: [],
+        rangeEnd: '2026-07-20T20:04:00.000Z',
+        rangeStart: '2026-07-20T00:00:00.000Z',
+      },
+    })
+
+    await expect(syncCurrentWorkoutHealth(new Date('2026-07-20T20:04:00.000Z'))).resolves.toEqual({ syncedSessions: 1 })
+
+    expect(native.healthConnect.readDayHealth).toHaveBeenCalledOnce()
+    expect(native.healthConnect.readDayHealth).toHaveBeenCalledWith(expect.objectContaining({
+      dayStart: new Date(2026, 6, 20).toISOString(),
+    }))
+    await expect(db.workoutSessions.get('session-old')).resolves.not.toHaveProperty('health')
+    await expect(db.workoutSessions.get('session-today')).resolves.toHaveProperty('health')
+  })
+
+  it('prioritizes current-day sessions before historical sessions', async () => {
+    await db.settings.update('app', { healthIntegrationEnabled: true })
+    await db.workoutSessions.bulkPut([
+      workoutSession('session-old', '2026-07-18'),
+      workoutSession('session-today', '2026-07-20'),
+      workoutSession('session-future', '2026-07-21'),
+    ])
+    native.healthConnect.readDayHealth.mockResolvedValue({
+      day: {
+        metrics: metrics(),
+        missingPermissions: [],
+        rangeEnd: '2026-07-20T20:04:00.000Z',
+        rangeStart: '2026-07-20T00:00:00.000Z',
+      },
+    })
+
+    await syncAllWorkoutHealth(new Date('2026-07-20T20:04:00.000Z'))
+
+    expect(native.healthConnect.readDayHealth.mock.calls.map(([input]) => input.dayStart)).toEqual([
+      new Date(2026, 6, 20).toISOString(),
+      new Date(2026, 6, 18).toISOString(),
+    ])
   })
 
   it('does nothing when the optional module is disabled', async () => {

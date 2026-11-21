@@ -11,6 +11,7 @@ vi.mock('dexie-react-hooks', () => ({
 }))
 
 vi.mock('../domains/settings/services', () => ({
+  getAppSettings: () => ({ healthIntegrationEnabled: false }),
   getDeloadOverview: () => ({
     anchorDate: '2026-02-01',
     cooldownUntil: null,

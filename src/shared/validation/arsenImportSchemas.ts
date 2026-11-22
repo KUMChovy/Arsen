@@ -221,6 +221,8 @@ export const workoutSessionSchema = z
     lastExerciseAt: z.string().nullable().optional(),
     manuallyCompleted: z.boolean().optional(),
     sessionExercises: z.array(routineExerciseSchema).optional(),
+    routineName: z.string().optional(),
+    dayName: z.string().optional(),
     notes: z.string(),
     routineId: z.string().min(1),
     status: z.enum(['draft', 'completed']),

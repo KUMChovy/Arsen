@@ -1,27 +1,35 @@
 import { ArrowLeft, ChevronDown, Info, TrendingUp } from 'lucide-react'
 import { useMemo, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import type { WeightIncreaseRecommendation } from '../../../shared/calculations/progression'
 import { normalizeEquipment } from '../../../shared/calculations/equipmentLoad'
 import { Card } from '../../../shared/components/Card'
 import { ExerciseArt } from '../../../shared/components/ExerciseArt'
 import { PageHeader } from '../../../shared/components/PageHeader'
+import { ActionButton } from '../../../shared/components/ActionButton'
 import { formatRepRange } from '../../../shared/utils/reps'
 import { formatRestSeconds } from '../../../shared/utils/time'
 import { formatWeight } from '../../../shared/utils/weight'
+import { localDateKey } from '../../../shared/utils/date'
 import { normalizeWarmupProtocol, warmupProtocolLabel } from '../../../shared/calculations/warmups'
 import { useWeightIncreaseRecommendations } from '../../workout/hooks'
+import { getOrCreateSessionForDay } from '../../workout/services'
+import { getAppSettings } from '../../settings/services'
 import { WarmupProtocolInfoSheet } from '../components/WarmupProtocolInfoSheet'
 import { useExerciseAssets, useRoutineDayDetail } from '../hooks'
+import { setActiveRoutine } from '../services'
 import type { RoutineExercise } from '../types'
 import { dominantMuscleForExercises } from '../utils/dominantMuscle'
 
 export function RoutineDayDetailPage() {
+  const navigate = useNavigate()
   const { dayId } = useParams()
   const detail = useRoutineDayDetail(dayId ?? null)
   const exerciseAssets = useExerciseAssets() ?? []
   const imageSrcByAssetId = useMemo(() => new Map(exerciseAssets.map((asset) => [asset.id, asset.dataUrl])), [exerciseAssets])
   const [expandedExerciseId, setExpandedExerciseId] = useState<string | null>(null)
+  const [starting, setStarting] = useState(false)
+  const [startError, setStartError] = useState<string | null>(null)
   const exercises = detail?.exercises ?? []
   const recommendationByExerciseId = new Map(useWeightIncreaseRecommendations(exercises).map((recommendation) => [recommendation.exerciseId, recommendation]))
   const dominantMuscle = dominantMuscleForExercises(exercises)
@@ -48,6 +56,22 @@ export function RoutineDayDetailPage() {
           </div>
         </div>
       </Card>
+
+      {detail?.routine ? <ActionButton className="w-full" disabled={starting || !exercises.length} onClick={async () => {
+        if (starting) return
+        setStarting(true)
+        setStartError(null)
+        try {
+          const settings = await getAppSettings()
+          if (settings?.activeRoutineId && settings.activeRoutineId !== detail.routine!.id) await setActiveRoutine(detail.routine!.id)
+          await getOrCreateSessionForDay({ date: localDateKey(new Date()), dayId: detail.day.id, displayUnit: settings?.preferredUnit ?? 'kg', routineId: detail.routine!.id })
+          navigate(`/?dia=${encodeURIComponent(detail.day.id)}`)
+        } catch (error) {
+          setStartError(error instanceof Error ? error.message : 'No se pudo iniciar el entrenamiento')
+          setStarting(false)
+        }
+      }} type="button">Iniciar entrenamiento</ActionButton> : null}
+      {startError ? <p className="text-sm text-red-300" role="alert">{startError}</p> : null}
 
       <section className="space-y-2">
         <div className="text-xs font-extrabold text-arsen-muted">Ejercicios</div>

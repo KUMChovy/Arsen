@@ -9,6 +9,21 @@ describe('progress repository queries', () => {
   beforeEach(async () => resetDb())
   afterEach(async () => resetDb())
 
+  it('shows the original routine and day names after they are renamed or deleted', async () => {
+    const routine = makeRoutine('routine-history', 'Original')
+    const day = makeDay('day-history', routine.id, 'Día original')
+    const exercise = makeExercise('exercise-history', routine.id, day.id)
+    await db.routines.put(routine)
+    await db.routineDays.put(day)
+    await db.routineExercises.put(exercise)
+    const { sessionId } = await registerMainSetForExercise({ date: '2026-08-01', dayId: day.id, displayUnit: 'kg', exercise, reps: 8, rir: 2, routineId: routine.id, weightKg: 60 })
+    await db.routines.update(routine.id, { name: 'Cambiada' })
+    await db.routineDays.delete(day.id)
+    expect(await getSessionDetail(sessionId)).toMatchObject({ routineName: 'Original', dayName: 'Día original' })
+    expect((await getHistory()).sessions).toEqual(expect.arrayContaining([expect.objectContaining({ routineName: 'Original', dayName: 'Día original' })]))
+    expect(await getProgressHistory()).toEqual(expect.arrayContaining([expect.objectContaining({ routineName: 'Original', dayName: 'Día original' })]))
+  })
+
   it('returns warmups separately from main sets in the session detail', async () => {
     const routine = makeRoutine('routine-warmup', 'Rutina')
     const day = makeDay('day-warmup', routine.id, 'Día')
@@ -174,8 +189,8 @@ describe('progress repository queries', () => {
 
     await expect(getSessionDetail(registered.sessionId)).resolves.toMatchObject({
       id: registered.sessionId,
-      routineName: 'Rutina eliminada',
-      dayName: 'Dia eliminado',
+      routineName: 'Rutina histórica',
+      dayName: 'Día histórico',
       exercises: [expect.objectContaining({ exerciseName: 'Press antiguo' })],
     })
   })

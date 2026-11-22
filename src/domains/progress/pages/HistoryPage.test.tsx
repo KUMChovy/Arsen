@@ -11,7 +11,7 @@ vi.mock('react-router-dom', async () => ({ ...(await vi.importActual<typeof impo
 vi.mock('../hooks', () => ({
   useHistory: () => ({ sessions: [], summary: { distinctTrainingDays: 0, exercises: 0, mainSets: 0, sessions: 0, volumeKg: 0 } }),
   usePersonalRecords: () => [],
-  useProgressDayOptions: () => [],
+  useProgressDayOptions: () => [{ dayId: 'day-1', name: 'Día', routineId: 'routine-1', routineName: 'Rutina' }],
   useProgressExerciseOptions: () => [],
 }))
 
@@ -33,5 +33,10 @@ describe('HistoryPage', () => {
     render(<MemoryRouter initialEntries={['/historial?modo=list']}><HistoryPage /></MemoryRouter>)
 
     expect(screen.getByRole('tab', { name: 'Lista' })).toHaveAttribute('aria-selected', 'true')
+  })
+
+  it('opens with the routine filter passed from planning', () => {
+    render(<MemoryRouter initialEntries={['/historial?rutina=routine-1']}><HistoryPage /></MemoryRouter>)
+    expect(screen.getByRole('combobox', { name: 'Rutina del historial' })).toHaveValue('routine-1')
   })
 })

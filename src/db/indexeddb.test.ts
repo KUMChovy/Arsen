@@ -194,7 +194,7 @@ describe('IndexedDB integration', () => {
     await expect(db.setLogs.where('exerciseLogId').equals(first.exerciseLogId).count()).resolves.toBe(2)
     await expect(db.dropSetLogs.where('setLogId').equals(first.setLogId).count()).resolves.toBe(1)
     await expect(db.exerciseLogs.get(first.exerciseLogId)).resolves.toMatchObject({ state: 'done' })
-    await expect(db.routineExercises.get(exercise.id)).resolves.toMatchObject({ currentWeightKg: 62.5 })
+    await expect(db.routineExercises.get(exercise.id)).resolves.toMatchObject({ currentWeightKg: 50 })
   })
 
   it('loads last-session references for the same routine and day with drop sets', async () => {

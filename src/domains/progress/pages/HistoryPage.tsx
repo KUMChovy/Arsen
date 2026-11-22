@@ -10,7 +10,7 @@ export function HistoryPage() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const [mode, setMode] = useState<'list' | 'calendar'>(searchParams.get('modo') === 'list' ? 'list' : 'calendar')
-  const [filters, setFilters] = useState<HistoryFilterState>({ period: 'all' })
+  const [filters, setFilters] = useState<HistoryFilterState>(() => ({ period: 'all', routineId: searchParams.get('rutina') }))
   const dayOptions = useProgressDayOptions() ?? []
   const exerciseOptions = useProgressExerciseOptions({ dayId: filters.dayId ?? null, routineId: filters.routineId ?? null }) ?? []
   const historyResult = useHistory(filters)

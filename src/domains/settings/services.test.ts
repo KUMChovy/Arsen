@@ -68,16 +68,22 @@ describe('settings export services', () => {
     })
   })
 
+  it('exports historical session names even after planning names change', async () => {
+    await seedProgressData({ dayName: 'Hoy', exerciseName: 'Press', routineName: 'Actual' })
+    await db.workoutSessions.update('session-1', { routineName: 'Antes', dayName: 'Día anterior' })
+    expect((await buildProgressExport()).timeline[0]).toMatchObject({ routineName: 'Antes', dayName: 'Día anterior' })
+  })
+
   it('restores session-local exercise plans and manual completion from a full backup', async () => {
     await seedProgressData({ dayName: 'Día', exerciseName: 'Press', routineName: 'Rutina' })
     const exercise = (await db.routineExercises.get('exercise-1'))!
-    await db.workoutSessions.update('session-1', { manuallyCompleted: true, sessionExercises: [{ ...exercise, id: 'session-extra', name: 'Remo' }] })
+    await db.workoutSessions.update('session-1', { manuallyCompleted: true, routineName: 'Nombre original', dayName: 'Día original', sessionExercises: [{ ...exercise, id: 'session-extra', name: 'Remo' }] })
     await exportFullBackup()
     const data = vi.mocked(downloadJson).mock.calls.at(-1)?.[1]
     expect(data).toBeDefined()
     await db.workoutSessions.clear()
     await importFullBackup({ text: async () => JSON.stringify(data) } as File, 'replace')
-    expect(await db.workoutSessions.get('session-1')).toMatchObject({ manuallyCompleted: true, sessionExercises: [{ id: 'session-extra', name: 'Remo' }] })
+    expect(await db.workoutSessions.get('session-1')).toMatchObject({ manuallyCompleted: true, routineName: 'Nombre original', dayName: 'Día original', sessionExercises: [{ id: 'session-extra', name: 'Remo' }] })
   })
 
 

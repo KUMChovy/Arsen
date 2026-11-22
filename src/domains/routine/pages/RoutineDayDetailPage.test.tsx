@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { WeightIncreaseRecommendation } from '../../../shared/calculations/progression'
 import type { RoutineExercise } from '../types'
 import { RoutineDayDetailPage } from './RoutineDayDetailPage'
+import { getOrCreateSessionForDay } from '../../workout/services'
 
 const routineDayMocks = vi.hoisted(() => ({
   weightIncreaseRecommendations: [] as WeightIncreaseRecommendation[],
@@ -31,6 +32,9 @@ vi.mock('../../workout/hooks', () => ({
   useWeightIncreaseRecommendations: () => routineDayMocks.weightIncreaseRecommendations,
 }))
 
+vi.mock('../../workout/services', () => ({ getOrCreateSessionForDay: vi.fn(() => Promise.resolve('session-1')) }))
+vi.mock('../../settings/services', () => ({ getAppSettings: vi.fn(() => Promise.resolve({ preferredUnit: 'kg' })) }))
+
 describe('RoutineDayDetailPage', () => {
   afterEach(() => {
     cleanup()
@@ -51,6 +55,13 @@ describe('RoutineDayDetailPage', () => {
     )
 
     expect(screen.getByText('Listo para subir peso: +2.5 kg')).toBeInTheDocument()
+  })
+
+  it('starts a session for the selected day and opens training with that day', async () => {
+    render(<MemoryRouter initialEntries={['/rutina/dia/day-1']}><Routes><Route path="/rutina/dia/:dayId" element={<RoutineDayDetailPage />} /><Route path="/" element={<p>Entreno abierto</p>} /></Routes></MemoryRouter>)
+    fireEvent.click(screen.getByRole('button', { name: 'Iniciar entrenamiento' }))
+    expect(await screen.findByText('Entreno abierto')).toBeInTheDocument()
+    expect(getOrCreateSessionForDay).toHaveBeenCalledWith(expect.objectContaining({ dayId: 'day-1', routineId: 'routine-1', displayUnit: 'kg' }))
   })
 
   it('does not show weight increase signal without recommendation', () => {

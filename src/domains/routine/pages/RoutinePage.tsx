@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, useTransition, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useMemo, useRef, useState, useTransition, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   DndContext,
@@ -20,6 +20,7 @@ import { CSS } from '@dnd-kit/utilities'
 import {
   CalendarPlus,
   Check,
+  ChevronDown,
   Copy,
   Download,
   EllipsisVertical,
@@ -42,17 +43,18 @@ import { getBundledExerciseAsset } from '../../../shared/assets/exerciseImages'
 import type { WeightIncreaseRecommendation } from '../../../shared/calculations/progression'
 import { defaultLoadSettingsForEquipment, loadSettingsForEquipment } from '../../../shared/calculations/equipmentLoad'
 import { normalizeWarmupProtocol, warmupProtocolLabel, type WarmupProtocol } from '../../../shared/calculations/warmups'
-import { confirmDanger } from '../../../shared/utils/alerts'
+import { confirmAction, confirmDanger } from '../../../shared/utils/alerts'
 import { formatRepRange } from '../../../shared/utils/reps'
 import { kgToUnit, unitToKg } from '../../../shared/utils/weight'
 import { useWeightIncreaseRecommendations } from '../../workout/hooks'
 import type { WeightUnit } from '../../workout/types'
 import { WarmupProtocolInfoSheet } from '../components/WarmupProtocolInfoSheet'
 import { ExerciseImageSelector, type ExerciseImageSelection } from '../components/ExerciseImageSelector'
+import { ExerciseActions } from '../components/ExerciseActions'
 import { SinfulShellBrowserSheet } from '../components/SinfulShellBrowserSheet'
 import { sinfulShellCatalog, type SinfulShellExercise } from '../data/sinfulShellCatalog'
 import type { Equipment, ExerciseAsset, ExerciseCatalogItem, LoadMode, MuscleGroup, Routine, RoutineDay, RoutineExercise } from '../types'
-import { useActiveRoutineBundle, useExerciseAssets, useExerciseCatalog, useRoutines } from '../hooks'
+import { useActiveRoutineBundle, useExerciseAssets, useExerciseCatalog, useRoutineSummaries } from '../hooks'
 import { exportRoutineJson, importRoutineJson } from '../importExport'
 import {
   addCatalogExerciseToDay,
@@ -67,6 +69,7 @@ import {
   duplicateDay,
   duplicateExercise,
   duplicateRoutine,
+  moveExerciseToDay,
   renameRoutine,
   reorderDays,
   reorderExercises,
@@ -108,7 +111,7 @@ const weekdayOptions = [
 export function RoutinePage() {
   const navigate = useNavigate()
   const bundle = useActiveRoutineBundle()
-  const routines = useRoutines() ?? []
+  const summaries = useRoutineSummaries()
   const catalog = useExerciseCatalog() ?? []
   const exerciseAssets = useExerciseAssets() ?? []
   const imageSrcByAssetId = useMemo(() => new Map(exerciseAssets.map((asset) => [asset.id, asset.dataUrl])), [exerciseAssets])
@@ -120,8 +123,12 @@ export function RoutinePage() {
   const [recipeSheet, setRecipeSheet] = useState<RecipeSheetState>(null)
   const [catalogPickerOpen, setCatalogPickerOpen] = useState(false)
   const [sinfulShellOpen, setSinfulShellOpen] = useState<SinfulShellSheetState>(null)
-  const [isPending, startTransition] = useTransition()
+  const [transitionPending, startTransition] = useTransition()
+  const [actionBusy, setActionBusy] = useState(false)
+  const actionPending = useRef(false)
+  const isPending = transitionPending || actionBusy
   const [actionMessage, setActionMessage] = useState<string | null>(null)
+  const [sheetError, setSheetError] = useState<string | null>(null)
 
   const selectedDay = days.find((day) => day.id === selectedDayId) ?? days[0] ?? null
   const selectedExercises = selectedDay ? bundle?.exercisesByDay.get(selectedDay.id) ?? [] : []
@@ -132,11 +139,15 @@ export function RoutinePage() {
     if (selectedDayId && !days.some((day) => day.id === selectedDayId)) setSelectedDayId(days[0]?.id ?? null)
   }, [days, selectedDayId])
 
-  function runRoutineAction(action: () => Promise<string | void>, message: string) {
+  function runRoutineAction(action: () => Promise<string | void>, message: string, onSuccess?: () => void, onError?: (message: string) => void) {
+    if (actionPending.current) return
+    actionPending.current = true
+    setActionBusy(true)
     startTransition(() => {
       action()
-        .then(() => setActionMessage(message))
-        .catch((error: unknown) => setActionMessage(error instanceof Error ? error.message : 'Accion no completada'))
+        .then(() => { setActionMessage(message); onSuccess?.() })
+        .catch((error: unknown) => { const text = error instanceof Error ? error.message : 'Accion no completada'; if (onError) onError(text); else setActionMessage(text) })
+        .finally(() => { actionPending.current = false; setActionBusy(false) })
     })
   }
 
@@ -148,7 +159,9 @@ export function RoutinePage() {
     }, 'Rutina creada y activada')
   }
 
-  const hasNoRoutines = !bundle && routines.length === 0
+  const hasNoRoutines = summaries?.length === 0
+
+  if (summaries === undefined) return <p className="py-6 text-sm text-arsen-muted" role="status">Cargando rutinas…</p>
 
   return (
     <div className="space-y-4">
@@ -168,7 +181,7 @@ export function RoutinePage() {
       {!hasNoRoutines ? <ModeTabs mode={mode} onModeChange={setMode} /> : null}
 
       {actionMessage ? (
-        <div className="rounded-[10px] border border-arsen-purple/40 bg-arsen-purple/15 px-3 py-2 text-xs text-arsen-purple2">
+        <div className="rounded-[10px] border border-arsen-purple/40 bg-arsen-purple/15 px-3 py-2 text-xs text-arsen-purple2" role="status">
           {actionMessage}
         </div>
       ) : null}
@@ -178,7 +191,10 @@ export function RoutinePage() {
           activeRoutineId={bundle?.routine.id ?? null}
           disabled={isPending}
           onSelect={(routineId) => runRoutineAction(() => setActiveRoutine(routineId), 'Rutina activa cambiada')}
-          routines={routines}
+          onEdit={(routineId) => { if (routineId === bundle?.routine.id) setMode('edit'); else runRoutineAction(() => setActiveRoutine(routineId), 'Rutina activa cambiada', () => setMode('edit')) }}
+          onDuplicate={(routineId) => runRoutineAction(() => duplicateRoutine(routineId), 'Rutina duplicada')}
+          onDelete={async (routineId) => { if (await confirmDanger('Eliminar rutina', 'El historial se conserva.')) runRoutineAction(() => deleteRoutine(routineId), 'Rutina eliminada') }}
+          summaries={summaries ?? []}
         />
       ) : null}
 
@@ -196,6 +212,8 @@ export function RoutinePage() {
           bundle={bundle}
           days={days}
           onSelectDay={(dayId) => navigate(`/rutina/dia/${dayId}`)}
+          onViewHistory={() => { if (bundle) navigate(`/historial?modo=list&rutina=${encodeURIComponent(bundle.routine.id)}`) }}
+          onOrganize={() => setMode('edit')}
         />
       ) : null}
 
@@ -222,6 +240,7 @@ export function RoutinePage() {
           onDuplicateExercise={(exerciseId) => runRoutineAction(() => duplicateExercise(exerciseId), 'Ejercicio duplicado')}
           onDuplicateRoutine={() => runRoutineAction(() => duplicateRoutine(bundle.routine.id), 'Rutina duplicada')}
           onEditExercise={(exercise) => setRecipeSheet({ catalogItem: null, exercise, mode: 'edit' })}
+          onMoveExercise={(exerciseId, dayId) => runRoutineAction(() => moveExerciseToDay(exerciseId, dayId), 'Ejercicio movido')}
           onRenameRoutine={(name) => runRoutineAction(() => renameRoutine(bundle.routine.id, name), 'Rutina renombrada')}
           onReorderDays={(orderedIds) => runRoutineAction(() => reorderDays(bundle.routine.id, orderedIds), 'Dias reordenados')}
           onReorderExercises={(orderedIds) => {
@@ -229,7 +248,7 @@ export function RoutinePage() {
             runRoutineAction(() => reorderExercises(selectedDay.id, orderedIds), 'Ejercicios reordenados')
           }}
           onSelectDay={setSelectedDayId}
-          onUpdateDay={(dayId, input) => runRoutineAction(() => updateDay(dayId, input), 'Dia guardado')}
+          onUpdateDay={(dayId, input) => runRoutineAction(() => updateDay(dayId, input), 'Dia guardado', () => { try { window.sessionStorage.removeItem(`arsen:day-draft:${dayId}`) } catch { /* Storage can be unavailable. */ } })}
           imageSrcByAssetId={imageSrcByAssetId}
           recommendationByExerciseId={recommendationByExerciseId}
           routine={bundle.routine}
@@ -286,13 +305,14 @@ export function RoutinePage() {
           displayUnit={bundle?.settings.preferredUnit ?? 'kg'}
           assets={exerciseAssets}
           item={catalogSheet.item}
-          onClose={() => setCatalogSheet(null)}
+          saveError={sheetError}
+          onClose={() => { setSheetError(null); setCatalogSheet(null) }}
           onSave={(input) => {
             const action = catalogSheet.item
               ? () => updateCatalogExercise(catalogSheet.item!.id, input)
               : () => createCatalogExercise(input)
-            runRoutineAction(action, catalogSheet.item ? 'Ejercicio de catalogo guardado' : 'Ejercicio creado en catalogo')
-            setCatalogSheet(null)
+            setSheetError(null)
+            runRoutineAction(action, catalogSheet.item ? 'Ejercicio de catalogo guardado' : 'Ejercicio creado en catalogo', () => setCatalogSheet(null), setSheetError)
           }}
           sourceSinfulShellExercise={catalogSheet.sourceSinfulShellExercise ?? null}
         />
@@ -328,14 +348,15 @@ export function RoutinePage() {
           displayUnit={bundle.settings.preferredUnit}
           exercise={recipeSheet.exercise}
           imageSrcByAssetId={imageSrcByAssetId}
-          onClose={() => setRecipeSheet(null)}
+          saveError={sheetError}
+          onClose={() => { setSheetError(null); setRecipeSheet(null) }}
           onSave={(input) => {
             const action =
               recipeSheet.mode === 'edit' && recipeSheet.exercise
                 ? () => updateExercise(recipeSheet.exercise!.id, input)
                 : () => addCatalogExerciseToDay(bundle.routine.id, selectedDay.id, recipeSheet.catalogItem!.id, input)
-            runRoutineAction(action, recipeSheet.mode === 'edit' ? 'Receta guardada' : 'Ejercicio agregado al dia')
-            setRecipeSheet(null)
+            setSheetError(null)
+            runRoutineAction(action, recipeSheet.mode === 'edit' ? 'Receta guardada' : 'Ejercicio agregado al dia', () => setRecipeSheet(null), setSheetError)
           }}
         />
       ) : null}
@@ -415,32 +436,39 @@ function RoutineSwitcher({
   activeRoutineId,
   disabled,
   onSelect,
-  routines,
+  onEdit,
+  onDuplicate,
+  onDelete,
+  summaries,
 }: {
   activeRoutineId: string | null
   disabled: boolean
   onSelect: (routineId: string) => void
-  routines: Routine[]
+  onEdit: (routineId: string) => void
+  onDuplicate: (routineId: string) => void
+  onDelete: (routineId: string) => void
+  summaries: NonNullable<ReturnType<typeof useRoutineSummaries>>
 }) {
   return (
     <section>
       <div className="mb-2 text-xs font-extrabold text-arsen-muted">Rutinas guardadas</div>
-      <div className="scrollbar-none flex gap-2 overflow-x-auto pb-1">
-        {routines.map((routine) => (
-          <button
-            className={[
-              'shrink-0 rounded-[10px] border px-3 py-2 text-xs font-extrabold',
-              routine.id === activeRoutineId
-                ? 'border-arsen-purple2 bg-arsen-purple/40 text-white'
-                : 'border-white/10 bg-arsen-surface text-arsen-muted',
-            ].join(' ')}
-            disabled={disabled || routine.id === activeRoutineId}
-            key={routine.id}
-            onClick={() => onSelect(routine.id)}
-            type="button"
-          >
-            {routine.name}
-          </button>
+      <div className="space-y-2">
+        {summaries.map(({ routine, days, exerciseCount }) => (
+          <details className={`rounded-[12px] border bg-arsen-surface ${routine.id === activeRoutineId ? 'border-arsen-purple/60' : 'border-white/10'}`} key={routine.id}>
+            <summary className="flex min-h-16 cursor-pointer list-none items-center justify-between gap-3 p-3">
+              <span className="min-w-0"><strong className="block truncate text-sm">{routine.name}</strong><span className="mt-1 block text-xs text-arsen-muted">{days.length} {days.length === 1 ? 'día' : 'días'} · {exerciseCount} ejercicios</span></span>
+              <span className={`shrink-0 rounded-full px-2 py-1 text-xs font-bold ${routine.id === activeRoutineId ? 'bg-arsen-acid/15 text-arsen-acid' : 'bg-white/5 text-arsen-muted'}`}>{routine.id === activeRoutineId ? 'Activa' : 'Inactiva'}</span>
+            </summary>
+            <div className="space-y-2 border-t border-white/10 p-3">
+              <p className="text-sm text-arsen-muted">{days.length ? days.map((day) => day.name).join(' · ') : 'Aún no tiene días configurados.'}</p>
+              <div className="flex flex-wrap gap-2">
+                {routine.id !== activeRoutineId ? <button aria-label={`Activar ${routine.name}`} className="min-h-11 rounded-[10px] bg-arsen-purple/30 px-3 text-sm font-bold" disabled={disabled} onClick={() => onSelect(routine.id)} type="button">Activar</button> : null}
+                <button aria-label={`Editar ${routine.name}`} className="min-h-11 rounded-[10px] border border-white/10 px-3 text-sm font-bold" disabled={disabled} onClick={() => onEdit(routine.id)} type="button">{routine.id === activeRoutineId ? 'Editar' : 'Activar y editar'}</button>
+                <button aria-label={`Duplicar ${routine.name}`} className="min-h-11 rounded-[10px] border border-white/10 px-3 text-sm font-bold" disabled={disabled} onClick={() => onDuplicate(routine.id)} type="button">Duplicar</button>
+                <button aria-label={`Eliminar ${routine.name}`} className="min-h-11 rounded-[10px] border border-white/10 px-3 text-sm font-bold text-red-300" disabled={disabled} onClick={() => onDelete(routine.id)} type="button">Eliminar</button>
+              </div>
+            </div>
+          </details>
         ))}
       </div>
     </section>
@@ -451,27 +479,22 @@ function RoutineView({
   bundle,
   days,
   onSelectDay,
+  onViewHistory,
+  onOrganize,
 }: {
   bundle: ReturnType<typeof useActiveRoutineBundle>
   days: RoutineDay[]
   onSelectDay: (dayId: string) => void
+  onViewHistory: () => void
+  onOrganize: () => void
 }) {
   return (
     <>
-      <Card className="flex items-center justify-between gap-3 p-3">
-        <div className="flex items-center gap-3">
-          <div className="grid size-11 place-items-center rounded-[10px] bg-arsen-purple/35 text-arsen-purple2">
-            <CalendarPlus aria-hidden="true" className="size-5" />
-          </div>
-          <div>
-            <strong>{bundle?.routine.name ?? 'Cargando rutina'}</strong>
-            <p className="text-sm font-bold text-arsen-purple2">{days.length} dias</p>
-          </div>
-        </div>
-      </Card>
+      <button className="min-h-11 w-full rounded-[10px] border border-white/10 px-3 text-sm font-bold text-arsen-purple2" disabled={!bundle} onClick={onViewHistory} type="button">Ver historial de esta rutina</button>
 
       <section>
         <div className="mb-2 text-xs font-extrabold text-arsen-muted">Dias de entrenamiento</div>
+        {bundle && days.length === 0 ? <div className="rounded-[12px] border border-white/10 bg-arsen-surface p-4"><p className="text-sm font-bold">Esta rutina aún no tiene días.</p><p className="mt-1 text-sm text-arsen-muted">Crea un día para organizar tus ejercicios.</p><button className="mt-3 min-h-11 rounded-[10px] bg-arsen-purple/30 px-3 text-sm font-bold" onClick={onOrganize} type="button">Organizar días</button></div> : null}
         <div className="space-y-3">
           {days.map((day) => {
             const dayExercises = bundle?.exercisesByDay.get(day.id) ?? []
@@ -512,6 +535,7 @@ function RoutineEditor({
   onDuplicateExercise,
   onDuplicateRoutine,
   onEditExercise,
+  onMoveExercise,
   onRenameRoutine,
   onReorderDays,
   onReorderExercises,
@@ -534,6 +558,7 @@ function RoutineEditor({
   onDuplicateExercise: (exerciseId: string) => void
   onDuplicateRoutine: () => void
   onEditExercise: (exercise: RoutineExercise) => void
+  onMoveExercise: (exerciseId: string, dayId: string) => void
   onRenameRoutine: (name: string) => void
   onReorderDays: (orderedIds: string[]) => void
   onReorderExercises: (orderedIds: string[]) => void
@@ -551,6 +576,8 @@ function RoutineEditor({
   return (
     <>
       <Card className="p-3">
+        <details>
+        <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 text-sm font-extrabold"><span>Ajustes de rutina</span><ChevronDown aria-hidden="true" className="size-5 text-arsen-purple2" /></summary>
         <label className="block">
           <span className="mb-1 block text-xs font-bold text-arsen-muted">Nombre de rutina</span>
           <input
@@ -564,6 +591,7 @@ function RoutineEditor({
           <IconButton disabled={disabled} icon={Copy} label="Duplicar" onClick={onDuplicateRoutine} />
           <IconButton danger disabled={disabled} icon={Trash2} label="Borrar" onClick={onDeleteRoutine} />
         </div>
+        </details>
       </Card>
 
       <section>
@@ -573,26 +601,34 @@ function RoutineEditor({
             + Crear dia
           </button>
         </div>
+        <div aria-label="Seleccionar día" className="scrollbar-none flex gap-2 overflow-x-auto pb-1">
+          {days.map((day) => <button aria-pressed={day.id === selectedDay?.id} className={`min-h-11 max-w-40 shrink-0 truncate rounded-[10px] border px-3 text-sm font-bold ${day.id === selectedDay?.id ? 'border-arsen-purple2 bg-arsen-purple/30 text-arsen-ink' : 'border-white/10 bg-arsen-surface text-arsen-muted'}`} disabled={disabled} key={day.id} onClick={() => onSelectDay(day.id)} type="button">{day.name}</button>)}
+        </div>
+        {days.length ? <details className="mt-2 rounded-[10px] border border-white/10 bg-arsen-surface">
+          <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between px-3 text-xs font-bold text-arsen-muted"><span>Reordenar días</span><ChevronDown aria-hidden="true" className="size-4 text-arsen-purple2" /></summary>
         <SortableList ids={days.map((day) => day.id)} onReorder={onReorderDays}>
           <div className="space-y-2">
             {days.map((day) => (
               <SortableRow id={day.id} key={day.id}>
+                <div className="flex items-center gap-1">
+                <DragHandle label={`Reordenar ${day.name}`} />
                 <button
                   className={[
-                    'grid min-h-12 w-full grid-cols-[28px_1fr_auto] items-center gap-2 rounded-[10px] border px-3 text-left text-xs font-extrabold',
+                    'grid min-h-12 w-full grid-cols-[1fr_auto] items-center gap-2 rounded-[10px] border px-3 text-left text-xs font-extrabold',
                     day.id === selectedDay?.id ? 'border-arsen-purple2 bg-arsen-purple/40 text-white' : 'border-white/10 bg-arsen-surface text-arsen-muted',
                   ].join(' ')}
                   onClick={() => onSelectDay(day.id)}
                   type="button"
                 >
-                  <GripVertical aria-hidden="true" className="size-4 text-arsen-dim" />
                   {day.name}
                   <span>{weekdayName(day.weekday)}</span>
                 </button>
+                </div>
               </SortableRow>
             ))}
           </div>
         </SortableList>
+        </details> : null}
       </section>
 
       {selectedDay ? (
@@ -614,7 +650,7 @@ function RoutineEditor({
         </div>
         <SortableList ids={exercises.map((exercise) => exercise.id)} onReorder={onReorderExercises}>
           <div className="space-y-2">
-            {exercises.map((exercise) => (
+            {exercises.map((exercise, index) => (
               <SortableRow id={exercise.id} key={exercise.id}>
                 <ExerciseEditRow
                   disabled={disabled}
@@ -623,6 +659,11 @@ function RoutineEditor({
                   onDelete={() => onDeleteExercise(exercise.id)}
                   onDuplicate={() => onDuplicateExercise(exercise.id)}
                   onEdit={() => onEditExercise(exercise)}
+                  days={days.filter((day) => day.id !== selectedDay?.id)}
+                  canMoveUp={index > 0}
+                  canMoveDown={index < exercises.length - 1}
+                  onMove={(dayId) => onMoveExercise(exercise.id, dayId)}
+                  onReorder={(direction) => onReorderExercises(arrayMove(exercises.map((item) => item.id), index, index + (direction === 'up' ? -1 : 1)))}
                   recommendation={recommendationByExerciseId.get(exercise.id) ?? null}
                 />
               </SortableRow>
@@ -648,26 +689,32 @@ function DayEditorCard({
   onDuplicate: () => void
   onSave: (input: { description: string; name: string; weekday: RoutineDay['weekday'] }) => void
 }) {
-  const [name, setName] = useState(day.name)
-  const [description, setDescription] = useState(day.description)
-  const [weekday, setWeekday] = useState(day.weekday === null ? '' : String(day.weekday))
+  const [draft, setDraft] = useState(() => readDayDraft(day))
+  const [draftError, setDraftError] = useState(false)
 
   useEffect(() => {
-    setName(day.name)
-    setDescription(day.description)
-    setWeekday(day.weekday === null ? '' : String(day.weekday))
+    setDraft(readDayDraft(day))
   }, [day])
+
+  function updateDraft(change: Partial<typeof draft>) {
+    const next = { ...draft, ...change }
+    setDraft(next)
+    try { window.sessionStorage.setItem(`arsen:day-draft:${day.id}`, JSON.stringify(next)); setDraftError(false) } catch { setDraftError(true) }
+  }
 
   return (
     <Card className="p-3">
+      <details>
+      <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 text-sm font-extrabold text-arsen-ink"><span>Ajustes del día</span><ChevronDown aria-hidden="true" className="size-5 text-arsen-purple2" /></summary>
       <div className="grid grid-cols-[1fr_118px] gap-2">
-        <TextField label="Nombre del dia" onChange={setName} value={name} />
+        <TextField disabled={disabled} label="Nombre del dia" onChange={(name) => updateDraft({ name })} value={draft.name} />
         <label className="block">
           <span className="mb-1 block text-xs font-bold text-arsen-muted">Semana</span>
           <select
             className="min-h-11 w-full rounded-[10px] border border-white/10 bg-arsen-bg px-2 text-sm font-extrabold text-arsen-ink"
-            onChange={(event) => setWeekday(event.target.value)}
-            value={weekday}
+            disabled={disabled}
+            onChange={(event) => updateDraft({ weekday: event.target.value })}
+            value={draft.weekday}
           >
             {weekdayOptions.map((option) => (
               <option key={option.value} value={option.value}>
@@ -677,36 +724,61 @@ function DayEditorCard({
           </select>
         </label>
       </div>
-      <TextField label="Descripcion" onChange={setDescription} value={description} />
+      <TextField disabled={disabled} label="Descripcion" onChange={(description) => updateDraft({ description })} value={draft.description} />
+      {draftError ? <p className="text-sm text-red-300" role="alert">No se pudo conservar el borrador; guarda antes de cambiar de día.</p> : null}
       <div className="mt-3 grid grid-cols-3 gap-2">
-        <IconButton disabled={disabled} icon={Check} label="Guardar" onClick={() => onSave({ description, name, weekday: weekday === '' ? null : (Number(weekday) as RoutineDay['weekday']) })} />
+        <IconButton disabled={disabled} icon={Check} label="Guardar" onClick={() => onSave({ description: draft.description, name: draft.name, weekday: draft.weekday === '' ? null : (Number(draft.weekday) as RoutineDay['weekday']) })} />
         <IconButton disabled={disabled} icon={Copy} label="Copiar" onClick={onDuplicate} />
         <IconButton danger disabled={disabled} icon={Trash2} label="Borrar" onClick={onDelete} />
       </div>
+      </details>
     </Card>
   )
 }
 
+function readDayDraft(day: RoutineDay) {
+  const fallback = { name: day.name, description: day.description, weekday: day.weekday === null ? '' : String(day.weekday) }
+  try {
+    const stored = window.sessionStorage.getItem(`arsen:day-draft:${day.id}`)
+    if (!stored) return fallback
+    const value: unknown = JSON.parse(stored)
+    if (typeof value !== 'object' || value === null) return fallback
+    const draft = value as Record<string, unknown>
+    if (typeof draft.name !== 'string' || typeof draft.description !== 'string' || typeof draft.weekday !== 'string' || !weekdayOptions.some((option) => option.value === draft.weekday)) return fallback
+    return { name: draft.name, description: draft.description, weekday: draft.weekday }
+  } catch { return fallback }
+}
+
 function ExerciseEditRow({
+  canMoveDown,
+  canMoveUp,
+  days,
   disabled,
   exercise,
   imageSrcByAssetId,
   onDelete,
   onDuplicate,
   onEdit,
+  onMove,
+  onReorder,
   recommendation,
 }: {
+  canMoveDown: boolean
+  canMoveUp: boolean
+  days: RoutineDay[]
   disabled: boolean
   exercise: RoutineExercise
   imageSrcByAssetId: Map<string, string>
   onDelete: () => void
   onDuplicate: () => void
   onEdit: () => void
+  onMove: (dayId: string) => void
+  onReorder: (direction: 'up' | 'down') => void
   recommendation: WeightIncreaseRecommendation | null
 }) {
   return (
-    <Card className="grid grid-cols-[20px_48px_minmax(0,1fr)_100px] items-center gap-x-2 gap-y-1 p-2">
-      <GripVertical aria-hidden="true" className="size-4 justify-self-center text-arsen-dim" />
+    <Card className="grid grid-cols-[44px_48px_minmax(0,1fr)_44px] items-center gap-x-2 gap-y-1 p-2">
+      <DragHandle label={`Reordenar ${exercise.name}`} />
       <ExerciseArt
         alt={exercise.name}
         bundledAssetId={exercise.bundledAssetId}
@@ -726,11 +798,7 @@ function ExerciseEditRow({
           </span>
         ) : null}
       </div>
-      <div className="grid grid-cols-3 gap-0.5 justify-self-end">
-        <IconOnly disabled={disabled} icon={Pencil} label="Editar receta" onClick={onEdit} />
-        <IconOnly disabled={disabled} icon={Copy} label="Duplicar" onClick={onDuplicate} />
-        <IconOnly danger disabled={disabled} icon={Trash2} label="Quitar" onClick={onDelete} />
-      </div>
+      <ExerciseActions canMoveDown={canMoveDown} canMoveUp={canMoveUp} days={days} disabled={disabled} exerciseName={exercise.name} onDelete={onDelete} onDuplicate={onDuplicate} onEdit={onEdit} onMove={onMove} onReorder={onReorder} />
     </Card>
   )
 }
@@ -929,6 +997,7 @@ function CatalogExerciseEditorSheet({
   item,
   onClose,
   onSave,
+  saveError,
   sourceSinfulShellExercise,
 }: {
   assets: ExerciseAsset[]
@@ -937,9 +1006,12 @@ function CatalogExerciseEditorSheet({
   item: ExerciseCatalogItem | null
   onClose: () => void
   onSave: (input: CatalogExerciseInput) => void
+  saveError: string | null
   sourceSinfulShellExercise: SinfulShellExercise | null
 }) {
   const [form, setForm] = useState(() => catalogItemToForm(item, displayUnit, sourceSinfulShellExercise))
+  const initialForm = useRef(JSON.stringify(form))
+  const requestClose = useUnsavedClose(JSON.stringify(form) !== initialForm.current, disabled, onClose)
   const [imageError, setImageError] = useState<string | null>(null)
   const [imageSheetOpen, setImageSheetOpen] = useState(false)
   const [isImageUploadPending, setIsImageUploadPending] = useState(false)
@@ -991,7 +1063,7 @@ function CatalogExerciseEditorSheet({
   }
 
   return (
-    <SheetFrame onClose={onClose} title={sheetTitle}>
+    <SheetFrame onClose={requestClose} title={sheetTitle}>
       <div className="space-y-3">
         {isSinfulShellLocked ? (
           <>
@@ -1107,6 +1179,7 @@ function CatalogExerciseEditorSheet({
           </>
         )}
       </div>
+      {saveError ? <p className="mt-3 text-sm text-red-300" role="alert">{saveError}</p> : null}
       <ActionButton
         className="mt-4 w-full"
         disabled={disabled || isImageUploadPending}
@@ -1209,6 +1282,7 @@ function RoutineExerciseRecipeSheet({
   imageSrcByAssetId,
   onClose,
   onSave,
+  saveError,
 }: {
   catalogItem: ExerciseCatalogItem | null
   disabled: boolean
@@ -1217,8 +1291,11 @@ function RoutineExerciseRecipeSheet({
   imageSrcByAssetId: Map<string, string>
   onClose: () => void
   onSave: (input: ExerciseInput) => void
+  saveError: string | null
 }) {
   const [form, setForm] = useState(() => exerciseToForm(exercise, catalogItem, displayUnit))
+  const initialForm = useRef(JSON.stringify(form))
+  const requestClose = useUnsavedClose(JSON.stringify(form) !== initialForm.current, disabled, onClose)
   const [message, setMessage] = useState<string | null>(null)
   const [warmupInfoOpen, setWarmupInfoOpen] = useState(false)
   const selectedWarmupProtocol = normalizeWarmupProtocol(form.warmupProtocol)
@@ -1229,7 +1306,7 @@ function RoutineExerciseRecipeSheet({
   }
 
   return (
-    <SheetFrame onClose={onClose} title={exercise ? 'Editar receta' : 'Receta del dia'}>
+    <SheetFrame onClose={requestClose} title={exercise ? 'Editar receta' : 'Receta del dia'}>
       <div className="space-y-3">
         <Card className="grid grid-cols-[52px_minmax(0,1fr)] items-center gap-4 p-2">
           <ExerciseArt
@@ -1246,8 +1323,15 @@ function RoutineExerciseRecipeSheet({
             </span>
           </div>
         </Card>
-        <div className="grid grid-cols-3 gap-2">
-          <TextField label="Series" onChange={(value) => update('targetSets', value)} type="number" value={form.targetSets} />
+        <div>
+          <label className="block text-xs font-bold text-arsen-muted" htmlFor="recipe-sets">Series</label>
+          <div className="mt-1 flex gap-2">
+            <button aria-label="Reducir series" className="min-h-11 min-w-11 rounded-[10px] border border-white/10" disabled={disabled || Number(form.targetSets) <= 1} onClick={() => update('targetSets', String(Math.max(1, (Number(form.targetSets) || 1) - 1)))} type="button">−</button>
+            <input className="min-h-11 min-w-0 flex-1 rounded-[10px] border border-white/10 bg-arsen-surface px-3 text-center font-bold" id="recipe-sets" min="1" onChange={(event) => update('targetSets', event.target.value)} step="1" type="number" value={form.targetSets} />
+            <button aria-label="Aumentar series" className="min-h-11 min-w-11 rounded-[10px] border border-white/10" disabled={disabled} onClick={() => update('targetSets', String(Math.max(1, Math.floor(Number(form.targetSets) || 0) + 1)))} type="button">+</button>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
           <TextField label="Reps min" onChange={(value) => update('repsMin', value)} type="number" value={form.repsMin} />
           <TextField label="Reps max" onChange={(value) => update('repsMax', value)} type="number" value={form.repsMax} />
         </div>
@@ -1255,7 +1339,10 @@ function RoutineExerciseRecipeSheet({
           <TextField label="RIR" onChange={(value) => update('recommendedRir', value)} type="number" value={form.recommendedRir} />
           <TextField label="Descanso s" onChange={(value) => update('restSeconds', value)} type="number" value={form.restSeconds} />
         </div>
-        <div className="space-y-3 rounded-[12px] border border-white/10 bg-arsen-bg/45 p-3">
+        <details className="rounded-[12px] border border-white/10 bg-arsen-bg/45 p-3">
+          <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 text-sm font-extrabold"><span>Opciones avanzadas</span><ChevronDown aria-hidden="true" className="size-5 text-arsen-purple2" /></summary>
+        <div className="space-y-3">
+        <div className="space-y-3">
           <div className="text-xs font-extrabold text-arsen-muted">Equipo y carga</div>
           <EquipmentSelect onChange={(value) => setForm((current) => applyEquipmentDefaults(current, value, displayUnit))} value={form.equipment} />
           <LoadSettingsFields
@@ -1289,7 +1376,10 @@ function RoutineExerciseRecipeSheet({
             value={form.technicalNotes}
           />
         </label>
+        </div>
+        </details>
         {message ? <p className="text-xs font-bold text-red-300">{message}</p> : null}
+        {saveError ? <p className="text-sm text-red-300" role="alert">{saveError}</p> : null}
       </div>
       <ActionButton
         className="mt-4 w-full"
@@ -1297,7 +1387,7 @@ function RoutineExerciseRecipeSheet({
         onClick={() => {
           const input = formToExerciseInput(form, displayUnit)
           if (!input) {
-            setMessage('Revisa reps y RIR')
+            setMessage('Revisa series, repeticiones y RIR.')
             return
           }
           onSave(input)
@@ -1364,7 +1454,8 @@ function formToExerciseInput(form: ExerciseForm, displayUnit: WeightUnit): Exerc
   const repsMin = numberOrDefault(form.repsMin, 8)
   const repsMax = numberOrDefault(form.repsMax, 10)
   const recommendedRir = numberOrDefault(form.recommendedRir, 2)
-  if (repsMin <= 0 || repsMax <= 0 || repsMin > repsMax || recommendedRir < 0) return null
+  const targetSets = Number(form.targetSets)
+  if (!Number.isInteger(targetSets) || targetSets < 1 || !Number.isInteger(repsMin) || !Number.isInteger(repsMax) || repsMin <= 0 || repsMax <= 0 || repsMin > repsMax || recommendedRir < 0) return null
 
   return {
     ...loadInputFromForm(form, displayUnit),
@@ -1375,7 +1466,7 @@ function formToExerciseInput(form: ExerciseForm, displayUnit: WeightUnit): Exerc
     repsMin,
     rest: `${restSeconds} seg`,
     restSeconds,
-    targetSets: numberOrDefault(form.targetSets, 3),
+    targetSets,
     technicalNotes: form.technicalNotes,
     warmupProtocol: normalizeWarmupProtocol(form.warmupProtocol),
     warmupSets: 0,
@@ -1464,8 +1555,15 @@ function SortableList({
   )
 }
 
+const SortableHandleContext = createContext<Pick<ReturnType<typeof useSortable>, 'attributes' | 'listeners' | 'setActivatorNodeRef'> | null>(null)
+
+function DragHandle({ label }: { label: string }) {
+  const handle = useContext(SortableHandleContext)
+  return <button aria-label={label} className="grid min-h-11 min-w-11 touch-none place-items-center text-arsen-muted" ref={handle?.setActivatorNodeRef} type="button" {...handle?.attributes} {...handle?.listeners}><GripVertical aria-hidden="true" className="size-4" /></button>
+}
+
 function SortableRow({ children, id }: { children: ReactNode; id: string }) {
-  const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id })
+  const { attributes, listeners, setActivatorNodeRef, setNodeRef, transform, transition } = useSortable({ id })
 
   return (
     <div
@@ -1474,12 +1572,24 @@ function SortableRow({ children, id }: { children: ReactNode; id: string }) {
         transform: CSS.Transform.toString(transform),
         transition,
       }}
-      {...attributes}
-      {...listeners}
     >
-      {children}
+      <SortableHandleContext.Provider value={{ attributes, listeners, setActivatorNodeRef }}>{children}</SortableHandleContext.Provider>
     </div>
   )
+}
+
+function useUnsavedClose(dirty: boolean, disabled: boolean, onClose: () => void) {
+  useEffect(() => {
+    if (!dirty) return
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = '' }
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [dirty])
+  return () => {
+    if (disabled) return
+    if (!dirty) { onClose(); return }
+    void confirmAction('Descartar cambios', 'Hay cambios sin guardar.', 'Descartar').then((confirmed) => { if (confirmed) onClose() })
+  }
 }
 
 function SheetFrame({ children, onClose, title }: { children: ReactNode; onClose: () => void; title: string }) {

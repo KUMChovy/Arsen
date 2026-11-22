@@ -1,7 +1,7 @@
 import 'fake-indexeddb/auto'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { db } from '../../db/schema'
-import { addCatalogExerciseToDay, createCatalogExercise, createDay, createRoutine, updateCatalogExercise } from './services'
+import { addCatalogExerciseToDay, createCatalogExercise, createDay, createExercise, createRoutine, deleteDay, duplicateExercise, moveExerciseToDay, renameRoutine, reorderDays, reorderExercises, updateCatalogExercise } from './services'
 
 async function resetDb() {
   db.close()
@@ -135,5 +135,70 @@ describe('routine services Sinful Shell catalog', () => {
       bundledAssetId: 'pec-deck--pecho',
       sourceExerciseId: catalogItemId,
     })
+  })
+})
+
+describe('routine exercise organization', () => {
+  beforeEach(resetDb)
+  afterEach(async () => { db.close(); await db.delete() })
+
+  it('rejects an order containing an exercise from another day without moving it', async () => {
+    const routineId = await createRoutine('Rutina')
+    const firstDay = await createDay(routineId, 'Uno')
+    const secondDay = await createDay(routineId, 'Dos')
+    const first = await createExercise(routineId, firstDay, { name: 'Press', mainMuscle: 'Pecho' })
+    const second = await createExercise(routineId, secondDay, { name: 'Remo', mainMuscle: 'Espalda' })
+    await expect(reorderExercises(firstDay, [first, second])).rejects.toThrow()
+    expect((await db.routineExercises.get(second))?.dayId).toBe(secondDay)
+  })
+
+  it('moves an exercise to another day in the same routine without changing its recipe', async () => {
+    const routineId = await createRoutine('Rutina')
+    const firstDay = await createDay(routineId, 'Uno')
+    const secondDay = await createDay(routineId, 'Dos')
+    const first = await createExercise(routineId, firstDay, { name: 'Press', mainMuscle: 'Pecho', targetSets: 4 })
+    await createExercise(routineId, secondDay, { name: 'Remo', mainMuscle: 'Espalda' })
+    await moveExerciseToDay(first, secondDay)
+    expect(await db.routineExercises.get(first)).toMatchObject({ dayId: secondDay, order: 1, targetSets: 4, routineId })
+  })
+
+  it('keeps a unique order when an exercise in the middle is duplicated', async () => {
+    const routineId = await createRoutine('Rutina')
+    const dayId = await createDay(routineId, 'Día')
+    const first = await createExercise(routineId, dayId, { name: 'Press', mainMuscle: 'Pecho' })
+    const second = await createExercise(routineId, dayId, { name: 'Remo', mainMuscle: 'Espalda' })
+    const copy = await duplicateExercise(first)
+    const exercises = await db.routineExercises.where('dayId').equals(dayId).sortBy('order')
+    expect(exercises.map((exercise) => [exercise.id, exercise.order])).toEqual([[first, 0], [copy, 1], [second, 2]])
+  })
+
+  it('appends a new exercise after an existing gap in order', async () => {
+    const routineId = await createRoutine('Rutina')
+    const dayId = await createDay(routineId, 'Día')
+    const first = await createExercise(routineId, dayId, { name: 'Press', mainMuscle: 'Pecho' })
+    const second = await createExercise(routineId, dayId, { name: 'Remo', mainMuscle: 'Espalda' })
+    await db.routineExercises.delete(first)
+    const third = await createExercise(routineId, dayId, { name: 'Sentadilla', mainMuscle: 'Piernas' })
+    expect((await db.routineExercises.get(third))?.order).toBeGreaterThan((await db.routineExercises.get(second))!.order)
+  })
+
+  it('rejects day orders containing a day belonging to another routine', async () => {
+    const routineId = await createRoutine('Una')
+    const otherRoutine = await createRoutine('Otra')
+    const first = await createDay(routineId, 'Uno')
+    const other = await createDay(otherRoutine, 'Otro')
+    await expect(reorderDays(routineId, [first, other])).rejects.toThrow()
+    expect((await db.routineDays.get(other))?.routineId).toBe(otherRoutine)
+  })
+
+  it('preserves recoverable legacy session context before a routine rename and day deletion', async () => {
+    const routineId = await createRoutine('Original')
+    const dayId = await createDay(routineId, 'Día original')
+    await createExercise(routineId, dayId, { name: 'Press', mainMuscle: 'Pecho' })
+    const now = '2026-08-01T00:00:00.000Z'
+    await db.workoutSessions.add({ id: 'legacy', routineId, dayId, date: '2026-08-01', notes: '', displayUnit: 'kg', status: 'completed', createdAt: now, updatedAt: now })
+    await renameRoutine(routineId, 'Nueva')
+    await deleteDay(dayId)
+    expect(await db.workoutSessions.get('legacy')).toMatchObject({ routineName: 'Original', dayName: 'Día original' })
   })
 })

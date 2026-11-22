@@ -15,6 +15,8 @@ export type WorkoutSession = {
   status: 'draft' | 'completed'
   manuallyCompleted?: boolean
   sessionExercises?: RoutineExercise[]
+  routineName?: string
+  dayName?: string
   startedAt?: string | null
   lastExerciseAt?: string | null
   completedAt?: string | null

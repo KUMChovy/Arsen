@@ -1,5 +1,5 @@
 import { useLiveQuery } from 'dexie-react-hooks'
-import { getActiveRoutineBundle, getExerciseAssets, getExerciseCatalog, getRoutineDayDetail, getRoutines, getWorkoutDayById, getWorkoutDayForDate } from './repository'
+import { getActiveRoutineBundle, getExerciseAssets, getExerciseCatalog, getRoutineDayDetail, getRoutines, getRoutineSummaries, getWorkoutDayById, getWorkoutDayForDate } from './repository'
 
 export function useActiveRoutineBundle() {
   return useLiveQuery(() => getActiveRoutineBundle(), [], undefined)
@@ -29,4 +29,8 @@ export function useExerciseAssets() {
 
 export function useRoutines() {
   return useLiveQuery(() => getRoutines(), [], undefined)
+}
+
+export function useRoutineSummaries() {
+  return useLiveQuery(() => getRoutineSummaries(), [], undefined)
 }

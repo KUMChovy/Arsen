@@ -115,6 +115,10 @@ vi.mock('../hooks', () => ({
 
 vi.mock('../services', () => ({
   addDropSet: vi.fn(() => Promise.resolve()),
+  getSessionWeightProposals: vi.fn(() => Promise.resolve([{ exerciseId: 'exercise-1', name: 'Press', previousWeightKg: 60, proposedWeightKg: 70, setId: 'set-1' }])),
+  applySessionWeightsToRoutine: vi.fn(() => Promise.resolve()),
+  getSessionTargetProposals: vi.fn(() => Promise.resolve([{ exerciseId: 'exercise-1', name: 'Press', field: 'sets', previous: '3', proposed: '2' }])),
+  applySessionTargetsToRoutine: vi.fn(() => Promise.resolve()),
   completeSessionForDay: vi.fn(() => Promise.resolve('session-1')),
   deleteDropSet: vi.fn(() => Promise.resolve()),
   deleteMainSet: vi.fn(() => Promise.resolve()),
@@ -208,6 +212,15 @@ describe('WorkoutPage', () => {
     workoutMocks.sessionStatus = 'completed'
     render(<WorkoutPage />)
     expect(screen.getByText(/sesión finalizada/i)).toBeInTheDocument()
+  })
+
+  it('offers a review of routine weight changes after a session is completed', async () => {
+    workoutMocks.sessionStatus = 'completed'
+    render(<WorkoutPage />)
+    fireEvent.click(screen.getByRole('button', { name: 'Actualizar rutina con esta sesión' }))
+    expect(await screen.findByRole('checkbox', { name: /Press.*60/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Confirmar cambios' })).toBeDisabled()
+    expect(screen.getByRole('checkbox', { name: /Press.*Series/ })).toBeInTheDocument()
   })
 
   it('keeps secondary state statistics collapsed until requested', () => {

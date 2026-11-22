@@ -339,10 +339,10 @@ export async function getProgressOverview(filters: ProgressOverviewFilters = {})
         bestSetId: bestSessionSet?.id ?? null,
         bestSetLabel: bestSessionSet ? `${bestSessionSet.weightKg} kg x ${bestSessionSet.reps}` : 'Sin series',
         date: session.date,
-        dayName: dayById.get(session.dayId) ?? 'Dia eliminado',
+        dayName: session.dayName ?? dayById.get(session.dayId) ?? 'Dia eliminado',
         exerciseCount: logs.length,
         id: session.id,
-        routineName: routineById.get(session.routineId) ?? 'Rutina eliminada',
+        routineName: session.routineName ?? routineById.get(session.routineId) ?? 'Rutina eliminada',
         setCount: sessionSets.length,
         volumeKg: totalVolume(sessionSets, dropSetsForSets(sessionSets, dropSetBySetId)),
       }
@@ -415,8 +415,8 @@ export async function getProgressExerciseOptions(
     const session = visibleSessions.find((candidate) => candidate.id === log.sessionId)
     const context = contextsByExercise.get(key) ?? { days: new Set<string>(), routines: new Set<string>() }
     if (session) {
-      context.days.add(dayById.get(session.dayId) ?? 'Día eliminado')
-      context.routines.add(routineById.get(session.routineId) ?? 'Rutina eliminada')
+      context.days.add(session.dayName ?? dayById.get(session.dayId) ?? 'Día eliminado')
+      context.routines.add(session.routineName ?? routineById.get(session.routineId) ?? 'Rutina eliminada')
     }
     contextsByExercise.set(key, context)
     const existing = options.get(key)
@@ -496,7 +496,7 @@ export async function getSessionDetail(sessionId: string, filters: ProgressOverv
     createdAt: session.createdAt,
     date: session.date,
     dayId: session.dayId,
-    dayName: day?.name ?? 'Dia eliminado',
+    dayName: session.dayName ?? day?.name ?? 'Dia eliminado',
     displayUnit: session.displayUnit,
     exercises: visibleExerciseLogs.map((log) => ({
       bundledAssetId: log.snapshot.bundledAssetId ?? null,
@@ -536,7 +536,7 @@ export async function getSessionDetail(sessionId: string, filters: ProgressOverv
     lastExerciseAt: session.lastExerciseAt,
     notes: session.notes,
     routineId: session.routineId,
-    routineName: routine?.name ?? 'Rutina eliminada',
+    routineName: session.routineName ?? routine?.name ?? 'Rutina eliminada',
     startedAt: session.startedAt,
     status: session.status,
     updatedAt: session.updatedAt,
@@ -646,8 +646,8 @@ export async function getHistory(filters: HistoryFilters = {}): Promise<HistoryR
       if (filters.startDate && session.date < filters.startDate) return null
       if (filters.endDate && session.date > filters.endDate) return null
 
-      const routineName = routineById.get(session.routineId) ?? 'Rutina eliminada'
-      const dayName = dayById.get(session.dayId) ?? 'Dia eliminado'
+      const routineName = session.routineName ?? routineById.get(session.routineId) ?? 'Rutina eliminada'
+      const dayName = session.dayName ?? dayById.get(session.dayId) ?? 'Dia eliminado'
       const logs = logsBySession.get(session.id) ?? []
       const visibleLogs = filters.canonicalName
         ? logs.filter((log) => log.snapshot.canonicalName === filters.canonicalName)
@@ -788,10 +788,10 @@ function buildProgressSessionRecords(dataset: ProgressDataset, filters: Progress
         ...aggregate,
         bestSet: bestSet(mainSets),
         dayId: session.dayId,
-        dayName: dayById.get(session.dayId) ?? 'Día eliminado',
+        dayName: session.dayName ?? dayById.get(session.dayId) ?? 'Día eliminado',
         exerciseCount: logs.length,
         routineId: session.routineId,
-        routineName: routineById.get(session.routineId) ?? 'Rutina eliminada',
+        routineName: session.routineName ?? routineById.get(session.routineId) ?? 'Rutina eliminada',
       }
     })
     .filter((record): record is ProgressSessionRecord => record !== null)
@@ -835,8 +835,8 @@ function buildExerciseSessionRecords(dataset: ProgressDataset, canonicalName: st
         ...aggregate,
         bestSetId: best?.id ?? null,
         bestSetLabel: best ? `${best.weightKg} kg x ${best.reps}` : 'Sin series',
-        dayName: dayById.get(session.dayId) ?? 'Día eliminado',
-        routineName: routineById.get(session.routineId) ?? 'Rutina eliminada',
+        dayName: session.dayName ?? dayById.get(session.dayId) ?? 'Día eliminado',
+        routineName: session.routineName ?? routineById.get(session.routineId) ?? 'Rutina eliminada',
       }
     })
     .filter((record): record is ProgressExerciseSession => record !== null)

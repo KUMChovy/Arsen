@@ -85,3 +85,14 @@ export async function getExerciseAssets() {
 export async function getRoutines() {
   return db.routines.orderBy('updatedAt').reverse().toArray()
 }
+
+export async function getRoutineSummaries() {
+  const [routines, days, exercises] = await Promise.all([
+    getRoutines(), db.routineDays.toArray(), db.routineExercises.toArray(),
+  ])
+  return routines.map((routine) => ({
+    routine,
+    days: days.filter((day) => day.routineId === routine.id).sort((a, b) => a.order - b.order),
+    exerciseCount: exercises.filter((exercise) => exercise.routineId === routine.id).length,
+  }))
+}

@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { RoutinePage } from './RoutinePage'
+import type { RoutineDay } from '../types'
 
 const routinePageMocks = vi.hoisted(() => ({
   addCatalogExerciseToDay: vi.fn(() => Promise.resolve('exercise-1')),
@@ -21,11 +22,14 @@ vi.mock('../hooks', () => ({
   useExerciseAssets: () => [],
   useExerciseCatalog: () => routinePageMocks.catalog,
   useRoutines: () => routinePageMocks.routines,
+  useRoutineSummaries: () => routinePageMocks.routines.map((routine) => ({ routine, days: routinePageMocks.bundle?.routine.id === routine.id ? routinePageMocks.bundle.days : [], exerciseCount: routinePageMocks.bundle?.routine.id === routine.id ? [...routinePageMocks.bundle.exercisesByDay.values()].reduce((count, exercises) => count + exercises.length, 0) : 0 })),
 }))
 
 vi.mock('../../workout/hooks', () => ({
   useWeightIncreaseRecommendations: () => [],
 }))
+
+vi.mock('../../../shared/utils/alerts', () => ({ confirmAction: vi.fn(() => Promise.resolve(false)), confirmDanger: vi.fn(() => Promise.resolve(false)) }))
 
 vi.mock('../services', () => ({
   addCatalogExerciseToDay: routinePageMocks.addCatalogExerciseToDay,
@@ -52,6 +56,7 @@ vi.mock('../services', () => ({
 describe('RoutinePage catalog image upload', () => {
   afterEach(() => {
     cleanup()
+    window.sessionStorage.clear()
   })
 
   beforeEach(() => {
@@ -80,6 +85,92 @@ describe('RoutinePage catalog image upload', () => {
     })
   })
 
+  it('prevents repeated routine creation while the first operation is pending', async () => {
+    const pending = deferred<string>()
+    routinePageMocks.createRoutine.mockImplementationOnce(() => pending.promise)
+    render(<MemoryRouter><RoutinePage /></MemoryRouter>)
+    const create = screen.getAllByRole('button', { name: 'Crear rutina' })[1]!
+    fireEvent.click(create)
+    fireEvent.click(create)
+    expect(routinePageMocks.createRoutine).toHaveBeenCalledTimes(1)
+    pending.resolve('routine-created')
+    await waitFor(() => expect(routinePageMocks.setActiveRoutine).toHaveBeenCalledTimes(1))
+  })
+
+  it('provides a separate keyboard-accessible drag handle for a day', () => {
+    render(<MemoryRouter><RoutinePage /></MemoryRouter>)
+    fireEvent.click(screen.getByRole('button', { name: 'Editar' }))
+    fireEvent.click(screen.getByText('Reordenar días'))
+    expect(screen.getByRole('button', { name: 'Reordenar Dia 1' })).toBeInTheDocument()
+  })
+
+  it('shows compact day selection while keeping reordering in a disclosure', () => {
+    render(<MemoryRouter><RoutinePage /></MemoryRouter>)
+    fireEvent.click(screen.getByRole('button', { name: 'Editar' }))
+    expect(screen.getByRole('button', { name: 'Dia 1' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByText('Reordenar días')).toBeInTheDocument()
+  })
+
+  it('identifies the active routine and summarizes its configured days', () => {
+    render(<MemoryRouter><RoutinePage /></MemoryRouter>)
+    expect(screen.getByText('Activa')).toBeInTheDocument()
+    expect(screen.getByText('1 día · 0 ejercicios')).toBeInTheDocument()
+  })
+
+  it('expands an inactive routine and offers activation', () => {
+    routinePageMocks.routines = [routine, { ...routine, id: 'routine-2', name: 'Movilidad', isActive: false }]
+    render(<MemoryRouter><RoutinePage /></MemoryRouter>)
+    fireEvent.click(screen.getByText('Movilidad'))
+    expect(screen.getByRole('button', { name: 'Activar Movilidad' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Editar Movilidad' })).toBeInTheDocument()
+  })
+
+  it('preserves unsaved day edits when switching days', () => {
+    const second = { ...day, id: 'day-2', name: 'Dia 2' }
+    routinePageMocks.bundle = { ...defaultBundle(), days: [day, second] }
+    render(<MemoryRouter><RoutinePage /></MemoryRouter>)
+    fireEvent.click(screen.getByRole('button', { name: 'Editar' }))
+    fireEvent.click(screen.getByText('Ajustes del día'))
+    fireEvent.change(screen.getByLabelText('Nombre del dia'), { target: { value: 'Pendiente' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Dia 2' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Dia 1' }))
+    expect(screen.getByLabelText('Nombre del dia')).toHaveValue('Pendiente')
+  })
+
+  it('keeps a day draft when its settings are collapsed and reopened', () => {
+    render(<MemoryRouter><RoutinePage /></MemoryRouter>)
+    fireEvent.click(screen.getByRole('button', { name: 'Editar' }))
+    const disclosure = screen.getByText('Ajustes del día')
+    fireEvent.click(disclosure)
+    fireEvent.change(screen.getByLabelText('Nombre del dia'), { target: { value: 'Torso nuevo' } })
+    fireEvent.click(disclosure)
+    fireEvent.click(disclosure)
+    expect(screen.getByLabelText('Nombre del dia')).toHaveValue('Torso nuevo')
+  })
+
+  it('keeps the routine name while its settings are collapsed', () => {
+    render(<MemoryRouter><RoutinePage /></MemoryRouter>)
+    fireEvent.click(screen.getByRole('button', { name: 'Editar' }))
+    const disclosure = screen.getByText('Ajustes de rutina')
+    fireEvent.click(disclosure)
+    fireEvent.change(screen.getByLabelText('Nombre de rutina'), { target: { value: 'Mi rutina nueva' } })
+    fireEvent.click(disclosure)
+    fireEvent.click(disclosure)
+    expect(screen.getByLabelText('Nombre de rutina')).toHaveValue('Mi rutina nueva')
+  })
+
+  it('keeps advanced recipe settings after collapsing them', () => {
+    routinePageMocks.catalog = [catalogItem('press', 'Press plano', 'Pecho')]
+    openAddExercisePicker()
+    fireEvent.click(screen.getByRole('button', { name: /Press plano/ }))
+    const disclosure = screen.getByText('Opciones avanzadas')
+    fireEvent.click(disclosure)
+    fireEvent.change(screen.getByLabelText('Notas tecnicas'), { target: { value: 'Controlar bajada' } })
+    fireEvent.click(disclosure)
+    fireEvent.click(disclosure)
+    expect(screen.getByLabelText('Notas tecnicas')).toHaveValue('Controlar bajada')
+  })
+
   it('guides empty routine state to create a new routine', () => {
     routinePageMocks.bundle = null
     routinePageMocks.routines = []
@@ -94,6 +185,14 @@ describe('RoutinePage catalog image upload', () => {
 
     expect(emptyState).not.toBeNull()
     expect(within(emptyState!).getByRole('button', { name: 'Crear rutina' })).toBeInTheDocument()
+  })
+
+  it('offers an action when the active routine has no days', () => {
+    routinePageMocks.bundle = { ...defaultBundle(), days: [], exercisesByDay: new Map() }
+    render(<MemoryRouter><RoutinePage /></MemoryRouter>)
+    expect(screen.getByText('Esta rutina aún no tiene días.')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Organizar días' }))
+    expect(screen.getByRole('button', { name: '+ Crear dia' })).toBeInTheDocument()
   })
 
   it('rejects a non-image file without creating an asset', () => {
@@ -296,6 +395,33 @@ describe('RoutinePage catalog image upload', () => {
     expect(screen.getByRole('heading', { name: 'Receta del dia' })).toBeInTheDocument()
     expect(screen.getByText('Press plano')).toBeInTheDocument()
   })
+
+  it('increments the planned sets with a touch control', () => {
+    routinePageMocks.catalog = [catalogItem('press', 'Press plano', 'Pecho')]
+    openAddExercisePicker()
+    fireEvent.click(screen.getByRole('button', { name: /Press plano/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Aumentar series' }))
+    expect(screen.getByLabelText('Series')).toHaveValue(4)
+  })
+
+  it('keeps the recipe open and reports an error when persistence fails', async () => {
+    routinePageMocks.catalog = [catalogItem('press', 'Press plano', 'Pecho')]
+    routinePageMocks.addCatalogExerciseToDay.mockRejectedValueOnce(new Error('No se pudo guardar'))
+    openAddExercisePicker()
+    fireEvent.click(screen.getByRole('button', { name: /Press plano/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar receta' }))
+    expect(await screen.findByText('No se pudo guardar')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Receta del dia' })).toBeInTheDocument()
+  })
+
+  it('does not discard a changed recipe when closing is cancelled', async () => {
+    routinePageMocks.catalog = [catalogItem('press', 'Press plano', 'Pecho')]
+    openAddExercisePicker()
+    fireEvent.click(screen.getByRole('button', { name: /Press plano/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Aumentar series' }))
+    fireEvent.click(screen.getAllByRole('button', { name: 'Cerrar' }).at(-1)!)
+    await waitFor(() => expect(screen.getByLabelText('Series')).toHaveValue(4))
+  })
 })
 
 
@@ -350,7 +476,7 @@ function catalogItem(id: string, name: string, mainMuscle: string, aliases: stri
   }
 }
 
-const day = {
+const day: RoutineDay = {
   createdAt: '2026-08-02T00:00:00.000Z',
   description: '',
   id: 'day-1',
@@ -359,7 +485,7 @@ const day = {
   routineId: 'routine-1',
   updatedAt: '2026-08-02T00:00:00.000Z',
   weekday: 1,
-} as const
+}
 
 const routine = {
   createdAt: '2026-08-02T00:00:00.000Z',

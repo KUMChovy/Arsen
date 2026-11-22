@@ -2,7 +2,7 @@ import 'fake-indexeddb/auto'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { db } from '../../db/schema'
 import type { RoutineExercise } from '../routine/types'
-import { addDropSet, completeSessionForDay, deleteMainSet, deleteHistoricalExercise, duplicateSessionAsDraft, ensureExerciseLog, registerMainSetForExercise, registerWarmupForExercise, skipRoutineExerciseForDay, updateDropSet, updateExerciseNotesForDay, updateHistoricalSession, updateHistoricalSet, updateSessionExercisePlan, updateSetWithDrops } from './services'
+import { addDropSet, applySessionTargetsToRoutine, applySessionWeightsToRoutine, completeSessionForDay, deleteMainSet, deleteHistoricalExercise, duplicateSessionAsDraft, ensureExerciseLog, getOrCreateSessionForDay, getSessionTargetProposals, getSessionWeightProposals, registerMainSetForExercise, registerWarmupForExercise, skipRoutineExerciseForDay, updateDropSet, updateExerciseNotesForDay, updateHistoricalSession, updateHistoricalSet, updateSessionExercisePlan, updateSetWithDrops } from './services'
 
 async function resetDb() {
   db.close()
@@ -17,6 +17,68 @@ describe('workout services snapshots', () => {
     vi.useRealTimers()
     db.close()
     await db.delete()
+  })
+
+  it('captures the planned exercises and context without changing the planned weight when recording a set', async () => {
+    const exercise = routineExercise()
+    await db.routineExercises.put(exercise)
+    await db.routines.put({ id: exercise.routineId, name: 'Original', isActive: true, createdAt: exercise.createdAt, updatedAt: exercise.updatedAt })
+    await db.routineDays.put({ id: exercise.dayId, routineId: exercise.routineId, name: 'Día original', description: '', weekday: null, order: 0, createdAt: exercise.createdAt, updatedAt: exercise.updatedAt })
+    const result = await registerMainSetForExercise({ date: '2026-08-11', dayId: exercise.dayId, displayUnit: 'kg', exercise, reps: 8, rir: 1, routineId: exercise.routineId, weightKg: 70 })
+    await db.routineExercises.update(exercise.id, { targetSets: 9 })
+    expect(await db.workoutSessions.get(result.sessionId)).toMatchObject({ routineName: 'Original', dayName: 'Día original', sessionExercises: [{ id: exercise.id, targetSets: 3 }] })
+    expect((await db.routineExercises.get(exercise.id))?.currentWeightKg).toBe(60)
+  })
+
+  it('applies only confirmed weight proposals and refuses stale proposals', async () => {
+    const first = routineExercise()
+    const second = routineExercise({ id: 'exercise-2', name: 'Remo', order: 1, currentWeightKg: 30 })
+    await db.routineExercises.bulkPut([first, second])
+    const common = { date: '2026-08-11', dayId: first.dayId, displayUnit: 'kg' as const, routineId: first.routineId }
+    const result = await registerMainSetForExercise({ ...common, exercise: first, reps: 8, rir: 1, weightKg: 70 })
+    await registerMainSetForExercise({ ...common, exercise: second, reps: 8, rir: 1, weightKg: 40 })
+    await completeSessionForDay(common)
+    const proposals = await getSessionWeightProposals(result.sessionId)
+    expect(proposals).toHaveLength(2)
+    const firstProposal = proposals.find((proposal) => proposal.exerciseId === first.id)!
+    await applySessionWeightsToRoutine(result.sessionId, [firstProposal])
+    expect((await db.routineExercises.get(first.id))?.currentWeightKg).toBe(70)
+    expect((await db.routineExercises.get(second.id))?.currentWeightKg).toBe(30)
+    await expect(applySessionWeightsToRoutine(result.sessionId, [firstProposal])).rejects.toThrow()
+  })
+
+  it('offers completed main sets and rep ranges independently and applies only the selected target', async () => {
+    const exercise = routineExercise({ targetSets: 3, repsMin: 8, repsMax: 10 })
+    await db.routineExercises.put(exercise)
+    const common = { date: '2026-08-11', dayId: exercise.dayId, displayUnit: 'kg' as const, routineId: exercise.routineId }
+    const result = await registerMainSetForExercise({ ...common, exercise, reps: 6, rir: 1, weightKg: 60 })
+    await registerMainSetForExercise({ ...common, exercise, reps: 7, rir: 1, weightKg: 60 })
+    await completeSessionForDay(common)
+    const proposals = await getSessionTargetProposals(result.sessionId)
+    expect(proposals).toEqual(expect.arrayContaining([
+      expect.objectContaining({ field: 'sets', previous: '3', proposed: '2' }),
+      expect.objectContaining({ field: 'reps', previous: '8–10', proposed: '6–7' }),
+    ]))
+    const reps = proposals.find((proposal) => proposal.field === 'reps')!
+    await applySessionTargetsToRoutine(result.sessionId, [reps])
+    expect(await db.routineExercises.get(exercise.id)).toMatchObject({ targetSets: 3, repsMin: 6, repsMax: 7 })
+    await expect(applySessionTargetsToRoutine(result.sessionId, [reps])).rejects.toThrow()
+  })
+
+  it('does not propose invalid targets from imported sets with invalid repetitions', async () => {
+    const exercise = routineExercise()
+    await db.routineExercises.put(exercise)
+    const common = { date: '2026-08-11', dayId: exercise.dayId, displayUnit: 'kg' as const, routineId: exercise.routineId }
+    const result = await registerMainSetForExercise({ ...common, exercise, reps: 8, rir: 1, weightKg: 60 })
+    await db.setLogs.update(result.setLogId, { reps: 0 })
+    await completeSessionForDay(common)
+    expect(await getSessionTargetProposals(result.sessionId)).toEqual([])
+  })
+
+  it('rejects a session request for an existing day owned by another routine', async () => {
+    const exercise = routineExercise()
+    await registerMainSetForExercise({ date: '2026-08-11', dayId: exercise.dayId, displayUnit: 'kg', exercise, reps: 8, rir: 1, routineId: exercise.routineId, weightKg: 60 })
+    await expect(getOrCreateSessionForDay({ date: '2026-08-11', dayId: exercise.dayId, displayUnit: 'kg', routineId: 'otra' })).rejects.toThrow()
   })
 
   it('does not persist any part of a set when its drop set is invalid', async () => {

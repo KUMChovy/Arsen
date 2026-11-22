@@ -16,13 +16,25 @@ export async function getOrCreateSessionForDay(input: {
     .equals([input.date, input.dayId])
     .first()
 
-  if (existing) return existing.id
+  if (existing) {
+    if (existing.routineId !== input.routineId) throw new Error('La sesión pertenece a otra rutina')
+    return existing.id
+  }
 
   const now = new Date().toISOString()
+  const [routine, day, exercises] = await Promise.all([
+    db.routines.get(input.routineId),
+    db.routineDays.get(input.dayId),
+    db.routineExercises.where('dayId').equals(input.dayId).sortBy('order'),
+  ])
+  if (day && day.routineId !== input.routineId) throw new Error('El día pertenece a otra rutina')
   const session: WorkoutSession = {
     id: createId('session'),
     routineId: input.routineId,
     dayId: input.dayId,
+    ...(routine ? { routineName: routine.name } : {}),
+    ...(day ? { dayName: day.name } : {}),
+    sessionExercises: exercises,
     date: input.date,
     notes: '',
     displayUnit: input.displayUnit,
@@ -128,7 +140,7 @@ export async function registerWarmupForExercise(input: {
   if (!Number.isFinite(input.weightKg) || input.weightKg < 0 || !Number.isInteger(input.reps) || input.reps <= 0 || !Number.isFinite(input.rir) || input.rir < 0) {
     throw new Error('Los datos del calentamiento no son válidos')
   }
-  return db.transaction('rw', [db.workoutSessions, db.exerciseLogs, db.setLogs], async () => {
+  return db.transaction('rw', [db.workoutSessions, db.exerciseLogs, db.setLogs, db.routines, db.routineDays, db.routineExercises], async () => {
     const sessionId = await getOrCreateSessionForDay(input)
     const exerciseLogId = await ensureExerciseLog(sessionId, input.exercise)
     const order = await db.setLogs.where('exerciseLogId').equals(exerciseLogId).and((set) => set.kind === 'warmup').count()
@@ -157,7 +169,7 @@ export async function registerMainSetForExercise(input: {
   if (!Number.isFinite(input.weightKg) || input.weightKg < 0 || !Number.isInteger(input.reps) || input.reps <= 0 || !Number.isFinite(input.rir) || input.rir < 0) {
     throw new Error('Los datos de la serie no son válidos')
   }
-  return db.transaction('rw', [db.workoutSessions, db.exerciseLogs, db.setLogs, db.dropSetLogs, db.routineExercises, db.skipLogs], async () => {
+  return db.transaction('rw', [db.workoutSessions, db.exerciseLogs, db.setLogs, db.dropSetLogs, db.routineExercises, db.routineDays, db.routines, db.skipLogs], async () => {
     const sessionId = await getOrCreateSessionForDay({
       date: input.date,
       dayId: input.dayId,
@@ -186,17 +198,11 @@ export async function registerMainSetForExercise(input: {
 
     const currentSession = await db.workoutSessions.get(sessionId)
     const now = new Date().toISOString()
-    await Promise.all([
-      db.workoutSessions.update(sessionId, {
+    await db.workoutSessions.update(sessionId, {
         lastExerciseAt: set.createdAt,
         startedAt: currentSession?.startedAt ?? set.createdAt,
         updatedAt: now,
-      }),
-      db.routineExercises.update(input.exercise.id, {
-        currentWeightKg: input.weightKg,
-        updatedAt: now,
-      }),
-    ])
+    })
     await syncSessionStatusFromExercises(sessionId)
 
     return { exerciseLogId, sessionId, setLogId: set.id }
@@ -336,7 +342,7 @@ export async function updateExerciseNotesForDay(input: {
   notes: string
   routineId: string
 }) {
-  return db.transaction('rw', [db.workoutSessions, db.exerciseLogs], async () => {
+  return db.transaction('rw', [db.workoutSessions, db.exerciseLogs, db.routines, db.routineDays, db.routineExercises], async () => {
     const sessionId = await getOrCreateSessionForDay(input)
     const exerciseLogId = await ensureExerciseLog(sessionId, input.exercise)
     await db.exerciseLogs.update(exerciseLogId, { notes: input.notes, updatedAt: new Date().toISOString() })
@@ -354,7 +360,7 @@ export async function updateSessionExercisePlan(input: {
   if (new Set(input.exercises.map((exercise) => exercise.id)).size !== input.exercises.length || input.exercises.some((exercise) => exercise.dayId !== input.dayId || exercise.routineId !== input.routineId)) {
     throw new Error('Los ejercicios de la sesión no son válidos')
   }
-  return db.transaction('rw', db.workoutSessions, async () => {
+  return db.transaction('rw', [db.workoutSessions, db.routines, db.routineDays, db.routineExercises], async () => {
     const sessionId = await getOrCreateSessionForDay(input)
     const session = await db.workoutSessions.get(sessionId)
     if (session?.status === 'completed' && session.manuallyCompleted !== false) throw new Error('La sesión ya está finalizada')
@@ -385,6 +391,87 @@ export async function completeSessionForDay(input: {
   })
 
   return sessionId
+}
+
+export type SessionWeightProposal = {
+  exerciseId: string
+  name: string
+  previousWeightKg: number
+  proposedWeightKg: number
+  setId: string
+}
+
+export async function getSessionWeightProposals(sessionId: string): Promise<SessionWeightProposal[]> {
+  const session = await db.workoutSessions.get(sessionId)
+  if (!session || session.status !== 'completed') return []
+  const logs = await db.exerciseLogs.where('sessionId').equals(sessionId).toArray()
+  const proposals: SessionWeightProposal[] = []
+  for (const log of logs) {
+    const exercise = await db.routineExercises.get(log.routineExerciseId)
+    if (!exercise || exercise.routineId !== session.routineId || exercise.dayId !== session.dayId) continue
+    const sets = await db.setLogs.where('exerciseLogId').equals(log.id).filter((set) => set.kind === 'main').sortBy('order')
+    const last = sets.at(-1)
+    if (last && last.weightKg !== exercise.currentWeightKg) proposals.push({ exerciseId: exercise.id, name: exercise.name, previousWeightKg: exercise.currentWeightKg, proposedWeightKg: last.weightKg, setId: last.id })
+  }
+  return proposals
+}
+
+export async function applySessionWeightsToRoutine(sessionId: string, proposals: SessionWeightProposal[]) {
+  await db.transaction('rw', [db.workoutSessions, db.exerciseLogs, db.setLogs, db.routineExercises], async () => {
+    if (new Set(proposals.map((proposal) => proposal.exerciseId)).size !== proposals.length) throw new Error('Selección duplicada')
+    const current = await getSessionWeightProposals(sessionId)
+    for (const proposal of proposals) {
+      if (!current.some((candidate) => candidate.exerciseId === proposal.exerciseId && candidate.setId === proposal.setId && candidate.previousWeightKg === proposal.previousWeightKg && candidate.proposedWeightKg === proposal.proposedWeightKg)) {
+        throw new Error('Los datos cambiaron. Revisa nuevamente la propuesta.')
+      }
+    }
+    const now = new Date().toISOString()
+    await Promise.all(proposals.map((proposal) => db.routineExercises.update(proposal.exerciseId, { currentWeightKg: proposal.proposedWeightKg, updatedAt: now })))
+  })
+}
+
+export type SessionTargetProposal = {
+  exerciseId: string
+  name: string
+  field: 'sets' | 'reps'
+  previous: string
+  proposed: string
+}
+
+export async function getSessionTargetProposals(sessionId: string): Promise<SessionTargetProposal[]> {
+  const session = await db.workoutSessions.get(sessionId)
+  if (!session || session.status !== 'completed') return []
+  const logs = await db.exerciseLogs.where('sessionId').equals(sessionId).toArray()
+  const proposals: SessionTargetProposal[] = []
+  for (const log of logs) {
+    const exercise = await db.routineExercises.get(log.routineExerciseId)
+    if (!exercise || exercise.routineId !== session.routineId || exercise.dayId !== session.dayId) continue
+    const sets = await db.setLogs.where('exerciseLogId').equals(log.id).filter((set) => set.kind === 'main').toArray()
+    if (!sets.length || sets.some((set) => !Number.isInteger(set.reps) || set.reps <= 0)) continue
+    const previousSets = String(exercise.targetSets)
+    const proposedSets = String(sets.length)
+    const previousReps = `${exercise.repsMin}–${exercise.repsMax}`
+    const proposedReps = `${Math.min(...sets.map((set) => set.reps))}–${Math.max(...sets.map((set) => set.reps))}`
+    if (previousSets !== proposedSets) proposals.push({ exerciseId: exercise.id, name: exercise.name, field: 'sets', previous: previousSets, proposed: proposedSets })
+    if (previousReps !== proposedReps) proposals.push({ exerciseId: exercise.id, name: exercise.name, field: 'reps', previous: previousReps, proposed: proposedReps })
+  }
+  return proposals
+}
+
+export async function applySessionTargetsToRoutine(sessionId: string, proposals: SessionTargetProposal[]) {
+  await db.transaction('rw', [db.workoutSessions, db.exerciseLogs, db.setLogs, db.routineExercises], async () => {
+    if (new Set(proposals.map((item) => `${item.exerciseId}:${item.field}`)).size !== proposals.length) throw new Error('Selección duplicada')
+    const current = await getSessionTargetProposals(sessionId)
+    for (const proposal of proposals) {
+      if (!current.some((item) => item.exerciseId === proposal.exerciseId && item.field === proposal.field && item.previous === proposal.previous && item.proposed === proposal.proposed)) throw new Error('Los datos cambiaron. Revisa nuevamente la propuesta.')
+    }
+    for (const proposal of proposals) {
+      const [first, second] = proposal.proposed.split('–').map(Number)
+      await db.routineExercises.update(proposal.exerciseId, proposal.field === 'sets'
+        ? { targetSets: first, updatedAt: new Date().toISOString() }
+        : { repsMin: first, repsMax: second, updatedAt: new Date().toISOString() })
+    }
+  })
 }
 
 export async function reactivateExercise(sessionId: string, routineExerciseId: string) {
@@ -466,6 +553,8 @@ export async function updateHistoricalSession(
     }),
     date: input.date,
     dayId: input.dayId,
+    ...(input.dayId !== session.dayId ? { dayName: day.name } : {}),
+    ...(input.routineId !== session.routineId ? { routineName: routine.name } : {}),
     routineId: input.routineId,
     updatedAt: now,
   })

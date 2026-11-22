@@ -21,9 +21,11 @@ import { useActiveRoutineBundle, useExerciseAssets, useExerciseCatalog, useRouti
 import type { Routine, RoutineDay, RoutineExercise } from '../../routine/types'
 import { RegisterSetSheet } from '../components/RegisterSetSheet'
 import { EditSetSheet } from '../components/EditSetSheet'
+import { RoutineWeightReview } from '../components/RoutineWeightReview'
+import { RoutineTargetReview } from '../components/RoutineTargetReview'
 import { getDefaultWorkoutDayId } from '../calculations/trainingRotation'
 import { useDeloadOverview, useLastSessionReferencesForDay, usePendingWorkoutSessions, useWeightIncreaseRecommendations, useWorkoutProgress, useWorkoutRotationStatus } from '../hooks'
-import { completeSessionForDay, deleteMainSet, reactivateExercise, registerWarmupForExercise, skipRoutineExerciseForDay, updateExerciseNotesForDay, updateSessionExercisePlan, updateSessionNotesForDay, updateSetWithDrops } from '../services'
+import { applySessionTargetsToRoutine, applySessionWeightsToRoutine, completeSessionForDay, deleteMainSet, getSessionTargetProposals, getSessionWeightProposals, reactivateExercise, registerWarmupForExercise, skipRoutineExerciseForDay, updateExerciseNotesForDay, updateSessionExercisePlan, updateSessionNotesForDay, updateSetWithDrops, type SessionTargetProposal, type SessionWeightProposal } from '../services'
 import { setActiveRoutine } from '../../routine/services'
 import { completeActiveDeload } from '../../settings/services'
 import { getAppSettings } from '../../settings/services'
@@ -54,7 +56,7 @@ export function WorkoutPage() {
   const days = bundle?.days ?? []
   const activeRoutineId = bundle?.routine.id
   const defaultDayId = getDefaultWorkoutDayId(days, selectedDate.getDay())
-  const [selectedDayId, setSelectedDayId] = useState<string | null>(null)
+  const [selectedDayId, setSelectedDayId] = useState<string | null>(() => new URLSearchParams(window.location.search).get('dia'))
   const workoutDay = useWorkoutDayById(selectedDayId)
   const routineExercises = workoutDay?.dayExercises ?? []
   const dailyProgress = useWorkoutProgress(dateKey, workoutDay?.day.id, routineExercises)
@@ -94,6 +96,7 @@ export function WorkoutPage() {
   const [actionBusy, setActionBusy] = useState(false)
   const actionPending = useRef(false)
   const [message, setMessage] = useState<string | null>(null)
+  const [weightReview, setWeightReview] = useState<{ sessionId: string; proposals: SessionWeightProposal[]; targets: SessionTargetProposal[] } | null>(null)
   const healthEnabled = appSettings?.healthIntegrationEnabled === true
   const navigableExercises = dayExercises
   const currentExercise = navigableExercises.find((exercise) => exercise.id === currentExerciseId) ?? navigableExercises[0] ?? null
@@ -152,7 +155,8 @@ export function WorkoutPage() {
     if (resumeTarget) return
     if (selectedDayId && days.some((day) => day.id === selectedDayId)) return
     const storedDayId = readStoredDaySelection(dateKey, activeRoutineId)
-    setSelectedDayId(storedDayId && days.some((day) => day.id === storedDayId) ? storedDayId : defaultDayId)
+    const requestedDayId = new URLSearchParams(window.location.search).get('dia')
+    setSelectedDayId(requestedDayId && days.some((day) => day.id === requestedDayId) ? requestedDayId : storedDayId && days.some((day) => day.id === storedDayId) ? storedDayId : defaultDayId)
   }, [activeRoutineId, dateKey, days, defaultDayId, selectedDayId, resumeTarget])
 
   useEffect(() => {
@@ -692,6 +696,18 @@ export function WorkoutPage() {
           Finalizar sesion
         </ActionButton>
       </Card>
+
+      {dailyProgress.progress?.session?.status === 'completed' ? <section className="space-y-3 rounded-[12px] border border-white/10 bg-arsen-surface p-3">
+        <button className="min-h-12 w-full rounded-[10px] border border-white/10 px-3 text-sm font-bold" disabled={actionBusy} onClick={() => {
+          const sessionId = dailyProgress.progress?.session?.id
+          if (!sessionId) return
+          runSetAction(async () => { const [proposals, targets] = await Promise.all([getSessionWeightProposals(sessionId), getSessionTargetProposals(sessionId)]); setWeightReview({ sessionId, proposals, targets }) }, 'Revisa los cambios antes de confirmar')
+        }} type="button">Actualizar rutina con esta sesión</button>
+        {weightReview?.sessionId === dailyProgress.progress.session.id ? <>
+          <RoutineWeightReview disabled={actionBusy} key={`weight:${weightReview.sessionId}`} onConfirm={(selected) => runSetAction(async () => { await applySessionWeightsToRoutine(weightReview.sessionId, selected); setWeightReview((current) => current?.sessionId === weightReview.sessionId ? { ...current, proposals: current.proposals.filter((item) => !selected.some((chosen) => chosen.exerciseId === item.exerciseId)) } : current) }, 'Pesos actualizados')} proposals={weightReview.proposals} unit={preferredUnit} />
+          <RoutineTargetReview disabled={actionBusy} key={`target:${weightReview.sessionId}`} onConfirm={(selected) => runSetAction(async () => { await applySessionTargetsToRoutine(weightReview.sessionId, selected); setWeightReview((current) => current?.sessionId === weightReview.sessionId ? { ...current, targets: current.targets.filter((item) => !selected.some((chosen) => chosen.exerciseId === item.exerciseId && chosen.field === item.field)) } : current) }, 'Objetivos actualizados')} proposals={weightReview.targets} />
+        </> : null}
+      </section> : null}
 
       {reviewOpen && workoutDay ? <div className="fixed inset-0 z-50 mx-auto flex max-w-[430px] items-end bg-black/55">
         <section aria-labelledby="workout-review-title" aria-modal="true" className="relative max-h-[90dvh] w-full overflow-y-auto rounded-t-[22px] bg-arsen-bg2 p-4 pb-[max(1rem,env(safe-area-inset-bottom))]" ref={reviewRef} role="dialog" tabIndex={-1}>

@@ -95,9 +95,16 @@ export async function setActiveRoutine(routineId: string) {
 }
 
 export async function renameRoutine(routineId: string, name: string) {
-  await db.routines.update(routineId, {
-    name: name.trim() || 'Rutina sin nombre',
-    updatedAt: new Date().toISOString(),
+  await db.transaction('rw', [db.routines, db.workoutSessions], async () => {
+    const routine = await db.routines.get(routineId)
+    if (routine) {
+      const sessions = await db.workoutSessions.where('routineId').equals(routineId).toArray()
+      await Promise.all(sessions.filter((session) => session.routineName === undefined).map((session) => db.workoutSessions.update(session.id, { routineName: routine.name })))
+    }
+    await db.routines.update(routineId, {
+      name: name.trim() || 'Rutina sin nombre',
+      updatedAt: new Date().toISOString(),
+    })
   })
 }
 
@@ -161,7 +168,15 @@ export async function deleteRoutine(routineId: string) {
   const settings = await db.settings.get('app')
   const now = new Date().toISOString()
 
-  await db.transaction('rw', [db.settings, db.routines, db.routineDays, db.routineExercises, db.weeklyVolumeTargets], async () => {
+  await db.transaction('rw', [db.settings, db.routines, db.routineDays, db.routineExercises, db.weeklyVolumeTargets, db.workoutSessions], async () => {
+    const routine = await db.routines.get(routineId)
+    const days = await db.routineDays.where('routineId').equals(routineId).toArray()
+    const dayNames = new Map(days.map((day) => [day.id, day.name]))
+    const sessions = await db.workoutSessions.where('routineId').equals(routineId).toArray()
+    await Promise.all(sessions.map((session) => db.workoutSessions.update(session.id, {
+      ...(session.routineName === undefined && routine ? { routineName: routine.name } : {}),
+      ...(session.dayName === undefined && dayNames.has(session.dayId) ? { dayName: dayNames.get(session.dayId) } : {}),
+    })))
     await Promise.all([
       db.routines.delete(routineId),
       db.routineDays.where('routineId').equals(routineId).delete(),
@@ -184,7 +199,7 @@ export async function deleteRoutine(routineId: string) {
 
 export async function createDay(routineId: string, name: string) {
   const now = new Date().toISOString()
-  const order = await db.routineDays.where('routineId').equals(routineId).count()
+  const order = (await db.routineDays.where('routineId').equals(routineId).toArray()).reduce((max, day) => Math.max(max, day.order), -1) + 1
   const day: RoutineDay = {
     id: createId('day'),
     routineId,
@@ -202,10 +217,20 @@ export async function createDay(routineId: string, name: string) {
 }
 
 export async function renameDay(dayId: string, name: string) {
-  await db.routineDays.update(dayId, {
-    name: name.trim() || 'Día sin nombre',
-    updatedAt: new Date().toISOString(),
+  await db.transaction('rw', [db.routineDays, db.workoutSessions], async () => {
+    await preserveDayName(dayId)
+    await db.routineDays.update(dayId, {
+      name: name.trim() || 'Día sin nombre',
+      updatedAt: new Date().toISOString(),
+    })
   })
+}
+
+async function preserveDayName(dayId: string) {
+  const day = await db.routineDays.get(dayId)
+  if (!day) return
+  const sessions = await db.workoutSessions.where('dayId').equals(dayId).toArray()
+  await Promise.all(sessions.filter((session) => session.dayName === undefined).map((session) => db.workoutSessions.update(session.id, { dayName: day.name })))
 }
 
 export async function updateDay(
@@ -216,11 +241,14 @@ export async function updateDay(
     weekday: RoutineDay['weekday']
   },
 ) {
-  await db.routineDays.update(dayId, {
-    description: input.description.trim(),
-    name: input.name.trim() || 'Dia sin nombre',
-    updatedAt: new Date().toISOString(),
-    weekday: input.weekday,
+  await db.transaction('rw', [db.routineDays, db.workoutSessions], async () => {
+    await preserveDayName(dayId)
+    await db.routineDays.update(dayId, {
+      description: input.description.trim(),
+      name: input.name.trim() || 'Dia sin nombre',
+      updatedAt: new Date().toISOString(),
+      weekday: input.weekday,
+    })
   })
 }
 
@@ -233,6 +261,8 @@ export async function duplicateDay(dayId: string) {
   const nextDayId = createId('day')
 
   await db.transaction('rw', [db.routineDays, db.routineExercises], async () => {
+    const following = await db.routineDays.where('routineId').equals(day.routineId).filter((item) => item.order > day.order).toArray()
+    await Promise.all(following.map((item) => db.routineDays.update(item.id, { order: item.order + 1, updatedAt: now })))
     await db.routineDays.add({
       ...day,
       id: nextDayId,
@@ -257,7 +287,8 @@ export async function duplicateDay(dayId: string) {
 }
 
 export async function deleteDay(dayId: string) {
-  await db.transaction('rw', [db.routineDays, db.routineExercises], async () => {
+  await db.transaction('rw', [db.routineDays, db.routineExercises, db.workoutSessions], async () => {
+    await preserveDayName(dayId)
     await db.routineDays.delete(dayId)
     await db.routineExercises.where('dayId').equals(dayId).delete()
   })
@@ -286,11 +317,13 @@ export async function reorderDays(routineId: string, orderedDayIds: string[]) {
   const now = new Date().toISOString()
 
   await db.transaction('rw', db.routineDays, async () => {
+    const days = await db.routineDays.where('routineId').equals(routineId).toArray()
+    const ids = new Set(orderedDayIds)
+    if (ids.size !== orderedDayIds.length || ids.size !== days.length || days.some((day) => !ids.has(day.id))) throw new Error('El orden de días ya no es válido')
     await Promise.all(
       orderedDayIds.map((dayId, order) =>
         db.routineDays.update(dayId, {
           order,
-          routineId,
           updatedAt: now,
         }),
       ),
@@ -300,7 +333,7 @@ export async function reorderDays(routineId: string, orderedDayIds: string[]) {
 
 export async function createExercise(routineId: string, dayId: string, input: ExerciseInput) {
   const now = new Date().toISOString()
-  const order = await db.routineExercises.where('dayId').equals(dayId).count()
+  const order = (await db.routineExercises.where('dayId').equals(dayId).toArray()).reduce((max, exercise) => Math.max(max, exercise.order), -1) + 1
   const name = input.name.trim() || 'Ejercicio nuevo'
   const reps = normalizeReps(input.repsMin, input.repsMax)
   const recommendedRir = normalizeRir(input.recommendedRir)
@@ -348,7 +381,7 @@ export async function addCatalogExerciseToDay(routineId: string, dayId: string, 
   if (!catalogItem) throw new Error('Ejercicio de catalogo no encontrado')
 
   const now = new Date().toISOString()
-  const order = await db.routineExercises.where('dayId').equals(dayId).count()
+  const order = (await db.routineExercises.where('dayId').equals(dayId).toArray()).reduce((max, exercise) => Math.max(max, exercise.order), -1) + 1
   const reps = normalizeReps(input.repsMin ?? catalogItem.defaultRepsMin, input.repsMax ?? catalogItem.defaultRepsMax)
   const recommendedRir = normalizeRir(input.recommendedRir ?? catalogItem.defaultRecommendedRir)
   const loadSettings = loadSettingsForEquipment({
@@ -426,21 +459,23 @@ export async function updateExercise(exerciseId: string, input: ExerciseInput) {
 }
 
 export async function duplicateExercise(exerciseId: string) {
-  const exercise = await db.routineExercises.get(exerciseId)
-  if (!exercise) throw new Error('Ejercicio no encontrado')
-
-  const now = new Date().toISOString()
-  const nextId = createId('exercise')
-  await db.routineExercises.add({
-    ...exercise,
-    id: nextId,
-    name: `${exercise.name} copia`,
-    order: exercise.order + 1,
-    createdAt: now,
-    updatedAt: now,
+  return db.transaction('rw', db.routineExercises, async () => {
+    const exercise = await db.routineExercises.get(exerciseId)
+    if (!exercise) throw new Error('Ejercicio no encontrado')
+    const now = new Date().toISOString()
+    const nextId = createId('exercise')
+    const following = await db.routineExercises.where('dayId').equals(exercise.dayId).filter((item) => item.order > exercise.order).toArray()
+    await Promise.all(following.map((item) => db.routineExercises.update(item.id, { order: item.order + 1, updatedAt: now })))
+    await db.routineExercises.add({
+      ...exercise,
+      id: nextId,
+      name: `${exercise.name} copia`,
+      order: exercise.order + 1,
+      createdAt: now,
+      updatedAt: now,
+    })
+    return nextId
   })
-
-  return nextId
 }
 
 export async function deleteExercise(exerciseId: string) {
@@ -470,15 +505,31 @@ export async function reorderExercises(dayId: string, orderedExerciseIds: string
   const now = new Date().toISOString()
 
   await db.transaction('rw', db.routineExercises, async () => {
+    const exercises = await db.routineExercises.where('dayId').equals(dayId).toArray()
+    const ids = new Set(orderedExerciseIds)
+    if (ids.size !== orderedExerciseIds.length || ids.size !== exercises.length || exercises.some((exercise) => !ids.has(exercise.id))) {
+      throw new Error('El orden de ejercicios ya no es válido')
+    }
     await Promise.all(
       orderedExerciseIds.map((exerciseId, order) =>
         db.routineExercises.update(exerciseId, {
-          dayId,
           order,
           updatedAt: now,
         }),
       ),
     )
+  })
+}
+
+export async function moveExerciseToDay(exerciseId: string, dayId: string) {
+  await db.transaction('rw', [db.routineDays, db.routineExercises], async () => {
+    const exercise = await db.routineExercises.get(exerciseId)
+    const destination = await db.routineDays.get(dayId)
+    if (!exercise || !destination || destination.routineId !== exercise.routineId) throw new Error('Destino de ejercicio no válido')
+    if (exercise.dayId === dayId) return
+    const destinationExercises = await db.routineExercises.where('dayId').equals(dayId).toArray()
+    const order = destinationExercises.reduce((max, item) => Math.max(max, item.order), -1) + 1
+    await db.routineExercises.update(exerciseId, { dayId, order, updatedAt: new Date().toISOString() })
   })
 }
 

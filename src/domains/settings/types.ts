@@ -32,6 +32,7 @@ export type DeloadOverview = {
 
 export type AppSettings = {
   id: 'app'
+  lastContractBackupSha256?: string | null
   schemaVersion: number
   activeRoutineId: string | null
   preferredUnit: WeightUnit

@@ -5,7 +5,7 @@ import { DEFAULT_DELOAD_SERIES_PERCENT, DEFAULT_DELOAD_WEIGHT_PERCENT } from '..
 import { bundledAssetIdForExercise } from '../shared/assets/exerciseImages'
 import { createId } from '../shared/utils/id'
 import { canonicalName } from '../shared/utils/normalize'
-import { db } from './schema'
+import { CURRENT_SCHEMA_VERSION, db } from './schema'
 import { demoRoutineSource } from './demoRoutineSource'
 
 const weekdayByDemoDay: Record<string, RoutineDay['weekday']> = {
@@ -16,9 +16,6 @@ const weekdayByDemoDay: Record<string, RoutineDay['weekday']> = {
 }
 
 export async function ensureDemoData() {
-  const existingSettings = await db.settings.get('app')
-  if (existingSettings) return
-
   const now = new Date().toISOString()
   const routineId = 'routine-demo-current'
   const days = demoRoutineSource.trainingDays.map((name, order): RoutineDay => ({
@@ -98,7 +95,7 @@ export async function ensureDemoData() {
 
   const appSettings: AppSettings = {
     id: 'app',
-    schemaVersion: 5,
+    schemaVersion: CURRENT_SCHEMA_VERSION,
     activeRoutineId: routineId,
     preferredUnit: 'kg',
     availablePlateWeightsKg: DEFAULT_AVAILABLE_PLATES_KG,
@@ -114,8 +111,13 @@ export async function ensureDemoData() {
 
   await db.transaction(
     'rw',
-    [db.settings, db.routines, db.routineDays, db.routineExercises, db.exerciseCatalog, db.weeklyVolumeTargets],
+    db.tables,
     async () => {
+      if (await db.settings.get('app')) return
+      const counts = await Promise.all(db.tables.map((table) => table.count()))
+      if (counts.some((count) => count > 0)) {
+        throw new Error('La base de datos contiene datos pero no tiene configuración. No se crearon datos de demostración.')
+      }
       await db.routines.add({
         id: routineId,
         name: demoRoutineSource.name,

@@ -31,11 +31,20 @@ export type HealthExerciseProgressPoint = {
 export async function getHealthProgressOverview(dayId?: string | null): Promise<HealthProgressOverview> {
   const sessions = (await db.workoutSessions.orderBy('date').toArray())
     .filter((session) => !dayId || session.dayId === dayId)
-  const latestDailySessionByDate = new Map<string, (typeof sessions)[number]>()
-  for (const session of sessions) {
-    if (!session.health) continue
-    const current = latestDailySessionByDate.get(session.date)
-    if (!current || session.updatedAt.localeCompare(current.updatedAt) > 0) latestDailySessionByDate.set(session.date, session)
+  const summaries = sessions.flatMap((session) => [
+    ...(session.healthHistory ?? []).map((health, index) => ({ health, date: health.sourceDate ?? session.date, id: `${session.id}:health:${index}`, sessionId: session.id })),
+    ...(session.health ? [{ health: session.health, date: session.health.sourceDate ?? session.date, id: session.id, sessionId: session.id }] : []),
+  ])
+  const latestBySessionDate = new Map<string, (typeof summaries)[number]>()
+  for (const summary of summaries) {
+    const key = JSON.stringify([summary.sessionId, summary.date])
+    const current = latestBySessionDate.get(key)
+    if (!current || summary.health.syncedAt.localeCompare(current.health.syncedAt) >= 0) latestBySessionDate.set(key, summary)
+  }
+  const latestDailySessionByDate = new Map<string, (typeof summaries)[number]>()
+  for (const summary of latestBySessionDate.values()) {
+    const current = latestDailySessionByDate.get(summary.date)
+    if (!current || summary.health.syncedAt.localeCompare(current.health.syncedAt) > 0) latestDailySessionByDate.set(summary.date, summary)
   }
   const points = [...latestDailySessionByDate.values()]
     .sort((a, b) => a.date.localeCompare(b.date))
@@ -47,13 +56,13 @@ export async function getHealthProgressOverview(dayId?: string | null): Promise<
       id: session.id,
     }))
   // Las estadísticas por ejercicio se derivan del resumen guardado; no vuelven a consultar el reloj.
-  const exercisePoints = sessions.flatMap((session): HealthExerciseProgressPoint[] =>
-    (session.health?.exercises ?? []).map((exercise) => ({
+  const exercisePoints = [...latestBySessionDate.values()].flatMap((summary): HealthExerciseProgressPoint[] =>
+    (summary.health.exercises ?? []).map((exercise) => ({
       canonicalName: exercise.canonicalName,
-      date: session.date,
+      date: summary.date,
       durationMinutes: Math.max(0, Math.round((new Date(exercise.rangeEnd).getTime() - new Date(exercise.rangeStart).getTime()) / 60000)),
       exerciseName: exercise.exerciseName,
-      id: `${session.id}:${exercise.exerciseLogId}`,
+      id: `${summary.id}:${exercise.exerciseLogId}`,
       metrics: exercise.metrics,
       rangeEnd: exercise.rangeEnd,
       rangeStart: exercise.rangeStart,

@@ -84,6 +84,9 @@ export type ExerciseCatalogItem = {
   origin?: CatalogOrigin
   sinfulShellId?: string | null
   sinfulShellContentLocked?: boolean
+  catalogVersion?: number
+  catalogUpdatedAt?: string | null
+  catalogStatus?: 'active' | 'archived'
   createdAt: string
   updatedAt: string
 }

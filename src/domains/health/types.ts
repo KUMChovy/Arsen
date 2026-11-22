@@ -25,6 +25,7 @@ export type HealthExerciseSummary = HealthWindowSummary & {
 
 export type HealthSummary = {
   syncedAt: string
+  sourceDate?: string
   day: HealthWindowSummary
   session?: HealthWindowSummary
   exercises?: HealthExerciseSummary[]

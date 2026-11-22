@@ -10,6 +10,11 @@ vi.mock('dexie-react-hooks', () => ({
   useLiveQuery: (callback: () => unknown) => callback(),
 }))
 
+vi.mock('../domains/settings/hooks', async () => {
+  const services = await import('../domains/settings/services')
+  return { useDeloadOverview: () => services.getDeloadOverview() }
+})
+
 vi.mock('../domains/settings/services', () => ({
   getAppSettings: () => ({ healthIntegrationEnabled: false }),
   getDeloadOverview: () => ({

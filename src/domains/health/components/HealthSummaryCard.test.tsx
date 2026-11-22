@@ -19,6 +19,11 @@ describe('HealthSummaryCard', () => {
     expect(screen.getByText(/Última consulta/)).toBeInTheDocument()
   })
 
+  it('shows the original date of synchronized health data', () => {
+    render(<HealthSummaryCard onSync={vi.fn()} summary={{ ...summary(), sourceDate: '2026-07-20' }} />)
+    expect(screen.getByText(/Datos del 20 de julio de 2026/i)).toBeInTheDocument()
+  })
+
   it('labels unavailable values without replacing them with zero', () => {
     render(<HealthSummaryCard onSync={vi.fn()} summary={null} />)
 

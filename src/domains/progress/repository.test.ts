@@ -38,6 +38,8 @@ describe('progress repository queries', () => {
     const routine = makeRoutine('routine-note', 'Rutina')
     const day = makeDay('day-note', routine.id, 'Día')
     const exercise = makeExercise('exercise-note', routine.id, day.id)
+    await db.routines.put(routine)
+    await db.routineDays.put(day)
     const logId = await updateExerciseNotesForDay({ date: '2026-08-01', dayId: day.id, displayUnit: 'kg', exercise, notes: 'Buena técnica', routineId: routine.id })
     const log = await db.exerciseLogs.get(logId)
     expect(await getSessionDetail(log!.sessionId)).toMatchObject({ exercises: [{ notes: 'Buena técnica' }] })

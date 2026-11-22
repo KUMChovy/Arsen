@@ -31,6 +31,7 @@ export function HealthSummaryCard({
   const [availabilityOpen, setAvailabilityOpen] = useState(false)
   const [slideIndex, setSlideIndex] = useState(0)
   const touchStartX = useRef<number | null>(null)
+  const sourceDate = summary?.sourceDate ? formatSourceDate(summary.sourceDate) : null
   const exercise = summary?.exercises?.find((item) => item.exerciseLogId === currentExerciseId) ?? summary?.exercises?.[0]
   // Las vistas reutilizan la misma respuesta: día, sesión y ejercicio actual.
   const slides = useMemo<HealthSlide[]>(() => {
@@ -178,6 +179,7 @@ export function HealthSummaryCard({
               Sin datos publicados todavía. Sincroniza primero la app que administra tu reloj con Health Connect y vuelve a intentarlo.
             </p>
           ) : null}
+          {sourceDate ? <p className="text-xs text-arsen-muted">Datos del {sourceDate}</p> : null}
           <p className="text-xs text-arsen-dim">Última consulta: {formatSyncTime(summary.syncedAt)}</p>
         </div>
       ) : !collapsed ? (
@@ -250,6 +252,11 @@ function formatRange(start: string, end: string) {
   const startTime = new Date(start).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })
   const endTime = new Date(end).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })
   return `${startTime}–${endTime}`
+}
+
+function formatSourceDate(value: string) {
+  const date = new Date(`${value}T12:00:00`)
+  return Number.isNaN(date.getTime()) ? null : new Intl.DateTimeFormat('es-MX', { dateStyle: 'long' }).format(date)
 }
 
 function formatSyncTime(value: string) {

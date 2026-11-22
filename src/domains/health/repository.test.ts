@@ -133,6 +133,17 @@ describe('getHealthProgressOverview', () => {
       points: [{ dayCaloriesKcal: 900, daySteps: 8000, id: 'session-late' }],
     })
   })
+
+  it('uses only the latest exercise summary for the same session and source date', async () => {
+    const session = healthSession('session', '2026-07-21', 900, '2026-07-21T20:00:00.000Z')
+    const metrics = session.health.day.metrics
+    const window = { rangeStart: '2026-07-21T18:00:00.000Z', rangeEnd: '2026-07-21T18:10:00.000Z', metrics }
+    const exercise = { ...window, canonicalName: 'press', exerciseLogId: 'log', exerciseName: 'Press', routineExerciseId: 'exercise', setCount: 2 }
+    await db.workoutSessions.put({ ...session, health: { ...session.health, sourceDate: '2026-07-21', exercises: [exercise] }, healthHistory: [{ ...session.health, sourceDate: '2026-07-21', syncedAt: '2026-07-21T19:00:00.000Z', exercises: [exercise] }] })
+    const overview = await getHealthProgressOverview()
+    expect(overview.exercisePoints).toHaveLength(1)
+    expect(overview.exercisePoints[0]?.id).toBe('session:log')
+  })
 })
 
 function healthSession(id: string, date: string, calories: number, updatedAt: string) {

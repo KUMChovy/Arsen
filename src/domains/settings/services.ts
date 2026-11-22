@@ -1,4 +1,5 @@
 import Papa from 'papaparse'
+import type { Table } from 'dexie'
 import { CURRENT_SCHEMA_VERSION, db } from '../../db/schema'
 import type {
   ExerciseCatalogItem,
@@ -27,6 +28,8 @@ import { downloadJson, downloadText } from '../../shared/utils/download'
 import { createId } from '../../shared/utils/id'
 import { localDateKey } from '../../shared/utils/date'
 import { backupSchema } from '../../shared/validation/arsenImportSchemas'
+import { trainingDateSchema } from '../../shared/validation/dataContract'
+import { settingsEntitySchema } from '../../shared/validation/entities'
 import { deleteWorkoutSession } from '../workout/services'
 
 /**
@@ -34,7 +37,7 @@ import { deleteWorkoutSession } from '../workout/services'
  * Routine and catalog rows keep recipe fields, notes, equipment, and load settings.
  */
 export async function exportFullBackup() {
-  const data = {
+  const data = await db.transaction('r', db.tables, async () => ({
     exportedAt: new Date().toISOString(),
     schemaVersion: CURRENT_SCHEMA_VERSION,
     tables: {
@@ -52,7 +55,7 @@ export async function exportFullBackup() {
       weeklyVolumeTargets: await db.weeklyVolumeTargets.toArray(),
       workoutSessions: await db.workoutSessions.toArray(),
     },
-  }
+  }))
 
   downloadJson(`arsen-backup-${localDateKey(new Date())}.json`, data)
 }
@@ -65,6 +68,9 @@ export type BackupImportMode = 'merge' | 'replace'
 export async function importFullBackup(file: File, mode: BackupImportMode = 'replace') {
   const backup = parseBackup(await file.text())
   const tables = backup.tables
+  if (mode === 'replace' && !db.tables.some((table) => (tables[table.name as keyof BackupTables]?.length ?? 0) > 0)) {
+    throw new Error('El respaldo no contiene datos para reemplazar los datos locales')
+  }
 
   await db.transaction(
     'rw',
@@ -112,20 +118,26 @@ async function putBackupTables(tables: BackupTables, mode: BackupImportMode) {
   const shouldImportSettings = mode === 'replace' || !(await db.settings.get('app'))
 
   await Promise.all([
-    db.deloadCycles.bulkPut(tables.deloadCycles ?? []),
-    db.dropSetLogs.bulkPut(tables.dropSetLogs ?? []),
-    db.exerciseAssets.bulkPut(tables.exerciseAssets ?? []),
-    db.exerciseCatalog.bulkPut((tables.exerciseCatalog ?? []).map(stripLegacyCatalogProgression)),
-    db.exerciseLogs.bulkPut(tables.exerciseLogs ?? []),
-    db.routineDays.bulkPut(tables.routineDays ?? []),
-    db.routineExercises.bulkPut((tables.routineExercises ?? []).map(stripLegacyProgression)),
-    db.routines.bulkPut(tables.routines ?? []),
-    db.setLogs.bulkPut(tables.setLogs ?? []),
-    shouldImportSettings ? db.settings.bulkPut(tables.settings ?? []) : Promise.resolve(),
-    db.skipLogs.bulkPut(tables.skipLogs ?? []),
-    db.weeklyVolumeTargets.bulkPut(tables.weeklyVolumeTargets ?? []),
-    db.workoutSessions.bulkPut(tables.workoutSessions ?? []),
+    putRows(db.deloadCycles, tables.deloadCycles ?? [], mode),
+    putRows(db.dropSetLogs, tables.dropSetLogs ?? [], mode),
+    putRows(db.exerciseAssets, tables.exerciseAssets ?? [], mode),
+    putRows(db.exerciseCatalog, (tables.exerciseCatalog ?? []).map(stripLegacyCatalogProgression), mode),
+    putRows(db.exerciseLogs, tables.exerciseLogs ?? [], mode),
+    putRows(db.routineDays, tables.routineDays ?? [], mode),
+    putRows(db.routineExercises, (tables.routineExercises ?? []).map(stripLegacyProgression), mode),
+    putRows(db.routines, tables.routines ?? [], mode),
+    putRows(db.setLogs, tables.setLogs ?? [], mode),
+    shouldImportSettings ? putRows(db.settings, tables.settings ?? [], mode) : Promise.resolve(),
+    putRows(db.skipLogs, tables.skipLogs ?? [], mode),
+    putRows(db.weeklyVolumeTargets, tables.weeklyVolumeTargets ?? [], mode),
+    putRows(db.workoutSessions, tables.workoutSessions ?? [], mode),
   ])
+}
+
+async function putRows<T extends { id: string }>(table: Table<T, string>, rows: T[], mode: BackupImportMode) {
+  if (mode === 'replace') return table.bulkPut(rows)
+  const existing = await table.bulkGet(rows.map((row) => row.id))
+  return table.bulkPut(rows.filter((_, index) => existing[index] === undefined))
 }
 
 export type ProgressExportFilters = {
@@ -191,103 +203,116 @@ function isOpenDeloadStatus(status: DeloadCycle['status']) {
   return OPEN_DELOAD_STATUSES.some((candidate) => candidate === status)
 }
 
-export async function getDeloadOverview(currentDate = localDateKey(new Date())): Promise<DeloadOverview> {
-  await applyDeloadDateTransitions(currentDate)
-
-  const [settings, firstSession, cycles] = await Promise.all([
+export function getDeloadInputs() {
+  return Promise.all([
     db.settings.get('app'),
     db.workoutSessions.orderBy('date').first(),
     db.deloadCycles.toArray(),
   ])
-  const sortedCycles = [...cycles].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-  const currentCycle = sortedCycles.find((cycle) => isOpenDeloadStatus(cycle.status)) ?? null
-  const lastCompleted = cycles
-    .filter((cycle) => cycle.status === 'completed' && cycle.completedAt)
-    .sort((a, b) => b.completedAt!.localeCompare(a.completedAt!))[0] ?? null
-  const lastSkipped = cycles
-    .filter((cycle) => cycle.status === 'skipped' && cycle.skippedAt)
-    .sort((a, b) => b.skippedAt!.localeCompare(a.skippedAt!))[0] ?? null
-  const cooldownUntil = lastSkipped?.skippedAt ? addDays(lastSkipped.skippedAt, DELOAD_SKIP_COOLDOWN_DAYS) : null
-  const cooldownActive = Boolean(cooldownUntil && currentDate < cooldownUntil)
-  const firstLogDate = firstSession?.date ?? null
-  const lastCompletedDate = lastCompleted?.completedAt ?? null
-  const anchorDate = lastCompletedDate ?? firstLogDate
-  const weeksSinceAnchor = anchorDate ? weeksSince(anchorDate, currentDate) : 0
-  const seriesReductionPercent = normalizeDeloadSeriesPercent(settings?.deloadSeriesReductionPercent)
-  const weightReductionPercent = normalizeDeloadWeightPercent(settings?.deloadWeightReductionPercent)
+}
 
-  if (currentCycle) {
-    const phase: DeloadPhase = currentCycle.status === 'active' ? 'active' : currentCycle.status === 'scheduled' ? 'scheduled' : 'suggested'
+export async function getDeloadOverview(currentDate = localDateKey(new Date())): Promise<DeloadOverview> {
+  assertDeloadDate(currentDate)
+  return db.transaction('rw', [db.settings, db.workoutSessions, db.deloadCycles], async () => {
+    await applyDeloadDateTransitions(currentDate)
+
+    const [settings, firstSession, cycles] = await Promise.all([
+      db.settings.get('app'),
+      db.workoutSessions.orderBy('date').first(),
+      db.deloadCycles.toArray(),
+    ])
+    const sortedCycles = [...cycles].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+    const currentCycle = sortedCycles.find((cycle) => isOpenDeloadStatus(cycle.status)) ?? null
+    const lastCompleted = cycles
+      .filter((cycle) => cycle.status === 'completed' && cycle.completedAt)
+      .sort((a, b) => b.completedAt!.localeCompare(a.completedAt!))[0] ?? null
+    const lastSkipped = cycles
+      .filter((cycle) => cycle.status === 'skipped' && cycle.skippedAt)
+      .sort((a, b) => b.skippedAt!.localeCompare(a.skippedAt!))[0] ?? null
+    const cooldownUntil = lastSkipped?.skippedAt ? addDays(lastSkipped.skippedAt, DELOAD_SKIP_COOLDOWN_DAYS) : null
+    const cooldownActive = Boolean(cooldownUntil && currentDate < cooldownUntil)
+    const firstLogDate = firstSession?.date ?? null
+    const lastCompletedDate = lastCompleted?.completedAt ?? null
+    const anchorDate = lastCompletedDate ?? firstLogDate
+    const weeksSinceAnchor = anchorDate ? weeksSince(anchorDate, currentDate) : 0
+    const seriesReductionPercent = normalizeDeloadSeriesPercent(settings?.deloadSeriesReductionPercent)
+    const weightReductionPercent = normalizeDeloadWeightPercent(settings?.deloadWeightReductionPercent)
+
+    if (currentCycle) {
+      const phase: DeloadPhase = currentCycle.status === 'active' ? 'active' : currentCycle.status === 'scheduled' ? 'scheduled' : 'suggested'
+
+      return {
+        anchorDate,
+        cooldownUntil: cooldownActive ? cooldownUntil : null,
+        currentCycle,
+        daysRemaining:
+          currentCycle.status === 'active' && currentCycle.startedAt
+            ? daysRemainingInDeload(currentCycle.startedAt, currentDate)
+            : null,
+        firstLogDate,
+        lastCompletedDate,
+        phase,
+        seriesReductionPercent,
+        shouldNotify: currentCycle.status === 'suggested',
+        weeksSinceAnchor,
+        weightReductionPercent,
+      }
+    }
+
+    const justCompleted = sortedCycles.find((cycle) => cycle.status === 'completed' && cycle.completedAt === currentDate) ?? null
+    if (justCompleted) {
+      return {
+        anchorDate: justCompleted.completedAt,
+        cooldownUntil: null,
+        currentCycle: justCompleted,
+        daysRemaining: null,
+        firstLogDate,
+        lastCompletedDate: justCompleted.completedAt,
+        phase: 'completed',
+        seriesReductionPercent,
+        shouldNotify: false,
+        weeksSinceAnchor: 0,
+        weightReductionPercent,
+      }
+    }
+
+    if (!cooldownActive && isDeloadSuggestionWindow(anchorDate, currentDate)) {
+      const suggested = await createSuggestedDeload(currentDate)
+
+      return {
+        anchorDate,
+        cooldownUntil: null,
+        currentCycle: suggested,
+        daysRemaining: null,
+        firstLogDate,
+        lastCompletedDate,
+        phase: 'suggested',
+        seriesReductionPercent,
+        shouldNotify: true,
+        weeksSinceAnchor,
+        weightReductionPercent,
+      }
+    }
 
     return {
       anchorDate,
       cooldownUntil: cooldownActive ? cooldownUntil : null,
-      currentCycle,
-      daysRemaining:
-        currentCycle.status === 'active' && currentCycle.startedAt
-          ? daysRemainingInDeload(currentCycle.startedAt, currentDate)
-          : null,
-      firstLogDate,
-      lastCompletedDate,
-      phase,
-      seriesReductionPercent,
-      shouldNotify: currentCycle.status === 'suggested',
-      weeksSinceAnchor,
-      weightReductionPercent,
-    }
-  }
-
-  const justCompleted = sortedCycles.find((cycle) => cycle.status === 'completed' && cycle.completedAt === currentDate) ?? null
-  if (justCompleted) {
-    return {
-      anchorDate: justCompleted.completedAt,
-      cooldownUntil: null,
-      currentCycle: justCompleted,
+      currentCycle: null,
       daysRemaining: null,
       firstLogDate,
-      lastCompletedDate: justCompleted.completedAt,
-      phase: 'completed',
+      lastCompletedDate,
+      phase: 'idle',
       seriesReductionPercent,
       shouldNotify: false,
-      weeksSinceAnchor: 0,
-      weightReductionPercent,
-    }
-  }
-
-  if (!cooldownActive && isDeloadSuggestionWindow(anchorDate, currentDate)) {
-    const suggested = await createSuggestedDeload(currentDate)
-
-    return {
-      anchorDate,
-      cooldownUntil: null,
-      currentCycle: suggested,
-      daysRemaining: null,
-      firstLogDate,
-      lastCompletedDate,
-      phase: 'suggested',
-      seriesReductionPercent,
-      shouldNotify: true,
       weeksSinceAnchor,
       weightReductionPercent,
     }
-  }
-
-  return {
-    anchorDate,
-    cooldownUntil: cooldownActive ? cooldownUntil : null,
-    currentCycle: null,
-    daysRemaining: null,
-    firstLogDate,
-    lastCompletedDate,
-    phase: 'idle',
-    seriesReductionPercent,
-    shouldNotify: false,
-    weeksSinceAnchor,
-    weightReductionPercent,
-  }
+  })
 }
 
 export async function scheduleDeload(startDate: string, currentDate = localDateKey(new Date())) {
+  assertDeloadDate(startDate)
+  assertDeloadDate(currentDate)
   if (!startDate || startDate <= currentDate) throw new Error('Programa una fecha futura')
   const now = new Date().toISOString()
 
@@ -308,6 +333,7 @@ export async function scheduleDeload(startDate: string, currentDate = localDateK
 }
 
 export async function startDeloadNow(currentDate = localDateKey(new Date())) {
+  assertDeloadDate(currentDate)
   const now = new Date().toISOString()
 
   await db.transaction('rw', db.deloadCycles, async () => {
@@ -327,34 +353,45 @@ export async function startDeloadNow(currentDate = localDateKey(new Date())) {
 }
 
 export async function skipDeloadSuggestion(currentDate = localDateKey(new Date())) {
-  const open = await getOpenDeloadCycle()
-  if (!open || open.status !== 'suggested') return
-
-  await db.deloadCycles.update(open.id, {
-    skippedAt: currentDate,
-    status: 'skipped',
-    updatedAt: new Date().toISOString(),
+  assertDeloadDate(currentDate)
+  await db.transaction('rw', db.deloadCycles, async () => {
+    const open = await getOpenDeloadCycle()
+    if (!open || open.status !== 'suggested') return
+    if (open.suggestedAt && currentDate < open.suggestedAt) throw new Error('La fecha no puede ser anterior a la sugerencia')
+    await db.deloadCycles.update(open.id, {
+      skippedAt: currentDate,
+      status: 'skipped',
+      updatedAt: new Date().toISOString(),
+    })
   })
 }
 
 export async function completeActiveDeload(currentDate = localDateKey(new Date())) {
-  const open = await getOpenDeloadCycle()
-  if (!open || open.status !== 'active') return
-
-  await db.deloadCycles.update(open.id, {
-    completedAt: currentDate,
-    status: 'completed',
-    updatedAt: new Date().toISOString(),
+  assertDeloadDate(currentDate)
+  await db.transaction('rw', db.deloadCycles, async () => {
+    const open = await getOpenDeloadCycle()
+    if (!open || open.status !== 'active') return
+    if (!open.startedAt || currentDate < open.startedAt) throw new Error('La fecha no puede ser anterior al inicio de la descarga')
+    await db.deloadCycles.update(open.id, {
+      completedAt: currentDate,
+      status: 'completed',
+      updatedAt: new Date().toISOString(),
+    })
   })
+}
+
+function assertDeloadDate(date: string) {
+  if (!trainingDateSchema.safeParse(date).success) throw new Error('La fecha de descarga no es válida')
 }
 
 export async function updateDeloadReductionSettings(input: {
   seriesReductionPercent: number
   weightReductionPercent: number
 }) {
+  if (!settingsEntitySchema.shape.deloadSeriesReductionPercent.unwrap().safeParse(input.seriesReductionPercent).success || !settingsEntitySchema.shape.deloadWeightReductionPercent.unwrap().safeParse(input.weightReductionPercent).success) throw new Error('Los porcentajes de descarga están fuera del rango permitido')
   await db.settings.update('app', {
-    deloadSeriesReductionPercent: normalizeDeloadSeriesPercent(input.seriesReductionPercent),
-    deloadWeightReductionPercent: normalizeDeloadWeightPercent(input.weightReductionPercent),
+    deloadSeriesReductionPercent: input.seriesReductionPercent,
+    deloadWeightReductionPercent: input.weightReductionPercent,
     updatedAt: new Date().toISOString(),
   })
 }
@@ -413,6 +450,7 @@ async function createSuggestedDeload(currentDate: string) {
 
 async function closeOpenDeloadCycles(now: string, currentDate: string) {
   const openCycles = (await db.deloadCycles.toArray()).filter((cycle) => isOpenDeloadStatus(cycle.status))
+  if (openCycles.some((cycle) => (cycle.startedAt && cycle.startedAt > currentDate) || (cycle.suggestedAt && cycle.suggestedAt > currentDate))) throw new Error('La fecha no puede ser anterior al ciclo activo')
 
   await Promise.all(
     openCycles.map((cycle) =>
@@ -468,6 +506,7 @@ export function resolveAvailablePlateWeightsKg(settings?: Pick<AppSettings, 'ava
 }
 
 export async function updateAvailablePlateWeights(availablePlateWeightsKg: number[]) {
+  if (!Array.isArray(availablePlateWeightsKg) || availablePlateWeightsKg.some((weight) => !Number.isFinite(weight) || weight <= 0)) throw new Error('Los pesos de discos deben ser números positivos')
   await db.settings.update('app', {
     availablePlateWeightsKg: normalizeAvailablePlateWeightsKg(availablePlateWeightsKg),
     updatedAt: new Date().toISOString(),
@@ -475,25 +514,28 @@ export async function updateAvailablePlateWeights(availablePlateWeightsKg: numbe
 }
 
 export async function deleteAllWorkoutLogs() {
-  const sessions = await db.workoutSessions.toArray()
-
-  await Promise.all(sessions.map((session) => deleteWorkoutSession(session.id)))
+  await deleteSessionsInTransaction(async () => (await db.workoutSessions.toArray()).map((session) => session.id))
 }
 
 export async function deleteActiveRoutineWorkoutLogs() {
-  const settings = await db.settings.get('app')
-  if (!settings?.activeRoutineId) return
-
-  const sessions = await db.workoutSessions.where('routineId').equals(settings.activeRoutineId).toArray()
-  await Promise.all(sessions.map((session) => deleteWorkoutSession(session.id)))
+  await deleteSessionsInTransaction(async () => {
+    const settings = await db.settings.get('app')
+    if (!settings?.activeRoutineId) return []
+    return (await db.workoutSessions.where('routineId').equals(settings.activeRoutineId).toArray()).map((session) => session.id)
+  })
 }
 
 export async function deleteWorkoutLogsByDateRange(startDate: string, endDate: string) {
-  if (!startDate || !endDate) throw new Error('Selecciona fecha inicial y final')
+  if (!trainingDateSchema.safeParse(startDate).success || !trainingDateSchema.safeParse(endDate).success) throw new Error('Selecciona fechas válidas')
   if (startDate > endDate) throw new Error('La fecha inicial no puede ser mayor a la final')
 
-  const sessions = await db.workoutSessions.where('date').between(startDate, endDate, true, true).toArray()
-  await Promise.all(sessions.map((session) => deleteWorkoutSession(session.id)))
+  await deleteSessionsInTransaction(async () => (await db.workoutSessions.where('date').between(startDate, endDate, true, true).toArray()).map((session) => session.id))
+}
+
+async function deleteSessionsInTransaction(getIds: () => Promise<string[]>) {
+  await db.transaction('rw', [db.settings, db.workoutSessions, db.exerciseLogs, db.setLogs, db.dropSetLogs, db.skipLogs], async () => {
+    for (const id of await getIds()) await deleteWorkoutSession(id)
+  })
 }
 
 export async function buildProgressExport(filters: ProgressExportFilters = {}) {
@@ -770,6 +812,10 @@ type BackupTables = {
 
 function parseBackup(content: string): { tables: BackupTables } {
   const parsed: unknown = JSON.parse(content)
+  const rawTables = typeof parsed === 'object' && parsed !== null && 'tables' in parsed ? parsed.tables : null
+  if (typeof rawTables !== 'object' || rawTables === null || !db.tables.some((table) => Object.hasOwn(rawTables, table.name))) {
+    throw new Error('El archivo no es un respaldo Arsen valido')
+  }
   const result = backupSchema.safeParse(parsed)
   if (!result.success) {
     throw new Error('El archivo no es un respaldo Arsen valido')

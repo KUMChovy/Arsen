@@ -30,6 +30,11 @@ vi.mock('dexie-react-hooks', () => ({
   useLiveQuery: (callback: () => unknown) => callback(),
 }))
 
+vi.mock('../hooks', async () => {
+  const services = await import('../services')
+  return { useDeloadOverview: () => services.getDeloadOverview() }
+})
+
 vi.mock('../services', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../services')>()
 

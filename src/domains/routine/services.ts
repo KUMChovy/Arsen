@@ -4,7 +4,9 @@ import { loadSettingsForEquipment } from '../../shared/calculations/equipmentLoa
 import { normalizeWarmupProtocol } from '../../shared/calculations/warmups'
 import { createId } from '../../shared/utils/id'
 import { canonicalName } from '../../shared/utils/normalize'
-import { getSinfulShellExerciseById } from './data/sinfulShellCatalog'
+import { imageAssetInputSchema } from '../../shared/validation/dataContract'
+import { catalogEntitySchema, routineExerciseEntitySchema } from '../../shared/validation/entities'
+import { getSinfulShellExerciseById, SINFUL_SHELL_SCHEMA_VERSION } from './data/sinfulShellCatalog'
 import { normalizeMuscleGroup } from './utils/muscles'
 
 export type ExerciseInput = {
@@ -52,6 +54,7 @@ export type CatalogExerciseInput = {
 export type ExerciseAssetInput = Pick<ExerciseAsset, 'dataUrl' | 'mimeType' | 'name'>
 
 export async function createExerciseAsset(input: ExerciseAssetInput) {
+  if (!imageAssetInputSchema.safeParse(input).success) throw new Error('La imagen no coincide con su tipo o no es válida')
   const now = new Date().toISOString()
   const asset: ExerciseAsset = {
     createdAt: now,
@@ -87,6 +90,8 @@ export async function setActiveRoutine(routineId: string) {
 
   await db.transaction('rw', [db.routines, db.settings], async () => {
     const routines = await db.routines.toArray()
+    if (!routines.some((routine) => routine.id === routineId)) throw new Error('Rutina no encontrada')
+    if (!(await db.settings.get('app'))) throw new Error('Configuración no encontrada')
     await Promise.all(
       routines.map((routine) => db.routines.update(routine.id, { isActive: routine.id === routineId, updatedAt: now })),
     )
@@ -109,40 +114,44 @@ export async function renameRoutine(routineId: string, name: string) {
 }
 
 export async function duplicateRoutine(routineId: string) {
-  const source = await db.routines.get(routineId)
-  if (!source) throw new Error('Rutina no encontrada')
+  return db.transaction('rw', [db.routines, db.routineDays, db.routineExercises, db.weeklyVolumeTargets], async () => {
+    const source = await db.routines.get(routineId)
+    if (!source) throw new Error('Rutina no encontrada')
 
-  const [days, exercises, volumeTargets] = await Promise.all([
-    db.routineDays.where('routineId').equals(routineId).sortBy('order'),
-    db.routineExercises.where('routineId').equals(routineId).sortBy('order'),
-    db.weeklyVolumeTargets.where('routineId').equals(routineId).toArray(),
-  ])
+    const [days, exercises, volumeTargets] = await Promise.all([
+      db.routineDays.where('routineId').equals(routineId).sortBy('order'),
+      db.routineExercises.where('routineId').equals(routineId).sortBy('order'),
+      db.weeklyVolumeTargets.where('routineId').equals(routineId).toArray(),
+    ])
 
-  const now = new Date().toISOString()
-  const nextRoutineId = createId('routine')
-  const dayIdMap = new Map<string, string>()
-  const nextDays = days.map((day): RoutineDay => {
-    const nextDayId = createId('day')
-    dayIdMap.set(day.id, nextDayId)
+    const now = new Date().toISOString()
+    const nextRoutineId = createId('routine')
+    const dayIdMap = new Map<string, string>()
+    const nextDays = days.map((day): RoutineDay => {
+      const nextDayId = createId('day')
+      dayIdMap.set(day.id, nextDayId)
 
-    return {
-      ...day,
-      id: nextDayId,
-      routineId: nextRoutineId,
-      createdAt: now,
-      updatedAt: now,
-    }
-  })
-  const nextExercises = exercises.map((exercise): RoutineExercise => ({
-    ...exercise,
-    id: createId('exercise'),
-    routineId: nextRoutineId,
-    dayId: dayIdMap.get(exercise.dayId) ?? exercise.dayId,
-    createdAt: now,
-    updatedAt: now,
-  }))
+      return {
+        ...day,
+        id: nextDayId,
+        routineId: nextRoutineId,
+        createdAt: now,
+        updatedAt: now,
+      }
+    })
+    const nextExercises = exercises.map((exercise): RoutineExercise => {
+      const dayId = dayIdMap.get(exercise.dayId)
+      if (!dayId) throw new Error('La rutina contiene un ejercicio con un día inexistente')
+      return {
+        ...exercise,
+        id: createId('exercise'),
+        routineId: nextRoutineId,
+        dayId,
+        createdAt: now,
+        updatedAt: now,
+      }
+    })
 
-  await db.transaction('rw', [db.routines, db.routineDays, db.routineExercises, db.weeklyVolumeTargets], async () => {
     await db.routines.add({
       id: nextRoutineId,
       name: `${source.name} copia`,
@@ -159,16 +168,15 @@ export async function duplicateRoutine(routineId: string) {
         routineId: nextRoutineId,
       })),
     )
+    return nextRoutineId
   })
-
-  return nextRoutineId
 }
 
 export async function deleteRoutine(routineId: string) {
-  const settings = await db.settings.get('app')
   const now = new Date().toISOString()
 
   await db.transaction('rw', [db.settings, db.routines, db.routineDays, db.routineExercises, db.weeklyVolumeTargets, db.workoutSessions], async () => {
+    const settings = await db.settings.get('app')
     const routine = await db.routines.get(routineId)
     const days = await db.routineDays.where('routineId').equals(routineId).toArray()
     const dayNames = new Map(days.map((day) => [day.id, day.name]))
@@ -198,22 +206,25 @@ export async function deleteRoutine(routineId: string) {
 }
 
 export async function createDay(routineId: string, name: string) {
-  const now = new Date().toISOString()
-  const order = (await db.routineDays.where('routineId').equals(routineId).toArray()).reduce((max, day) => Math.max(max, day.order), -1) + 1
-  const day: RoutineDay = {
-    id: createId('day'),
-    routineId,
-    name: name.trim() || `Dia ${order + 1}`,
-    description: '',
-    weekday: null,
-    order,
-    createdAt: now,
-    updatedAt: now,
-  }
+  return db.transaction('rw', [db.routines, db.routineDays], async () => {
+    if (!(await db.routines.get(routineId))) throw new Error('Rutina no encontrada')
+    const now = new Date().toISOString()
+    const order = (await db.routineDays.where('routineId').equals(routineId).toArray()).reduce((max, day) => Math.max(max, day.order), -1) + 1
+    const day: RoutineDay = {
+      id: createId('day'),
+      routineId,
+      name: name.trim() || `Dia ${order + 1}`,
+      description: '',
+      weekday: null,
+      order,
+      createdAt: now,
+      updatedAt: now,
+    }
 
-  await db.routineDays.add(day)
+    await db.routineDays.add(day)
 
-  return day.id
+    return day.id
+  })
 }
 
 export async function renameDay(dayId: string, name: string) {
@@ -332,129 +343,150 @@ export async function reorderDays(routineId: string, orderedDayIds: string[]) {
 }
 
 export async function createExercise(routineId: string, dayId: string, input: ExerciseInput) {
-  const now = new Date().toISOString()
-  const order = (await db.routineExercises.where('dayId').equals(dayId).toArray()).reduce((max, exercise) => Math.max(max, exercise.order), -1) + 1
-  const name = input.name.trim() || 'Ejercicio nuevo'
-  const reps = normalizeReps(input.repsMin, input.repsMax)
-  const recommendedRir = normalizeRir(input.recommendedRir)
-  const loadSettings = loadSettingsForEquipment({
-    barWeightKg: input.barWeightKg,
-    equipment: input.equipment ?? 'Otro',
-    loadMode: input.loadMode,
+  validateBarWeight(input.barWeightKg)
+  return db.transaction('rw', [db.routines, db.routineDays, db.routineExercises, db.exerciseAssets], async () => {
+    const day = await db.routineDays.get(dayId)
+    if (!(await db.routines.get(routineId)) || !day || day.routineId !== routineId) throw new Error('El día no pertenece a la rutina')
+    if (input.customAssetId && !(await db.exerciseAssets.get(input.customAssetId))) throw new Error('Imagen personalizada no encontrada')
+    const now = new Date().toISOString()
+    const order = (await db.routineExercises.where('dayId').equals(dayId).toArray()).reduce((max, exercise) => Math.max(max, exercise.order), -1) + 1
+    const name = input.name.trim() || 'Ejercicio nuevo'
+    const reps = normalizeReps(input.repsMin, input.repsMax)
+    const recommendedRir = normalizeRir(input.recommendedRir)
+    const loadSettings = loadSettingsForEquipment({
+      barWeightKg: input.barWeightKg,
+      equipment: input.equipment ?? 'Otro',
+      loadMode: input.loadMode,
+    })
+    const exercise: RoutineExercise = {
+      assetKind: input.assetKind ?? null,
+      bundledAssetId: input.bundledAssetId ?? null,
+      customAssetId: input.customAssetId ?? null,
+      id: createId('exercise'),
+      routineId,
+      dayId,
+      sourceExerciseId: null,
+      name,
+      canonicalName: canonicalName(name),
+      mainMuscle: normalizeMuscleGroup(input.mainMuscle),
+      equipment: loadSettings.equipment,
+      loadMode: loadSettings.loadMode,
+      barWeightKg: loadSettings.barWeightKg,
+      targetSets: input.targetSets ?? 3,
+      repsMin: reps.min,
+      repsMax: reps.max,
+      recommendedRir,
+      rest: input.rest ?? '60-90 seg',
+      restSeconds: input.restSeconds ?? 90,
+      warmupSets: input.warmupSets ?? 0,
+      warmupProtocol: normalizeWarmupProtocol(input.warmupProtocol),
+      technicalNotes: input.technicalNotes ?? '',
+      currentWeightKg: input.currentWeightKg ?? 0,
+      order,
+      createdAt: now,
+      updatedAt: now,
+    }
+
+    if (!routineExerciseEntitySchema.safeParse(exercise).success) throw new Error('La configuración del ejercicio no es válida')
+    await db.routineExercises.add(exercise)
+
+    return exercise.id
   })
-  const exercise: RoutineExercise = {
-    assetKind: input.assetKind ?? null,
-    bundledAssetId: input.bundledAssetId ?? null,
-    customAssetId: input.customAssetId ?? null,
-    id: createId('exercise'),
-    routineId,
-    dayId,
-    sourceExerciseId: null,
-    name,
-    canonicalName: canonicalName(name),
-    mainMuscle: normalizeMuscleGroup(input.mainMuscle),
-    equipment: loadSettings.equipment,
-    loadMode: loadSettings.loadMode,
-    barWeightKg: loadSettings.barWeightKg,
-    targetSets: input.targetSets ?? 3,
-    repsMin: reps.min,
-    repsMax: reps.max,
-    recommendedRir,
-    rest: input.rest ?? '60-90 seg',
-    restSeconds: input.restSeconds ?? 90,
-    warmupSets: input.warmupSets ?? 0,
-    warmupProtocol: normalizeWarmupProtocol(input.warmupProtocol),
-    technicalNotes: input.technicalNotes ?? '',
-    currentWeightKg: input.currentWeightKg ?? 0,
-    order,
-    createdAt: now,
-    updatedAt: now,
-  }
-
-  await db.routineExercises.add(exercise)
-
-  return exercise.id
 }
 
 export async function addCatalogExerciseToDay(routineId: string, dayId: string, catalogItemId: string, input: Partial<ExerciseInput> = {}) {
-  const catalogItem = await db.exerciseCatalog.get(catalogItemId)
-  if (!catalogItem) throw new Error('Ejercicio de catalogo no encontrado')
+  validateBarWeight(input.barWeightKg)
+  return db.transaction('rw', [db.routines, db.routineDays, db.routineExercises, db.exerciseCatalog, db.exerciseAssets], async () => {
+    const day = await db.routineDays.get(dayId)
+    if (!(await db.routines.get(routineId)) || !day || day.routineId !== routineId) throw new Error('El día no pertenece a la rutina')
+    const catalogItem = await db.exerciseCatalog.get(catalogItemId)
+    if (!catalogItem) throw new Error('Ejercicio de catalogo no encontrado')
+    if (catalogItem.customAssetId && !(await db.exerciseAssets.get(catalogItem.customAssetId))) throw new Error('Imagen personalizada no encontrada')
 
-  const now = new Date().toISOString()
-  const order = (await db.routineExercises.where('dayId').equals(dayId).toArray()).reduce((max, exercise) => Math.max(max, exercise.order), -1) + 1
-  const reps = normalizeReps(input.repsMin ?? catalogItem.defaultRepsMin, input.repsMax ?? catalogItem.defaultRepsMax)
-  const recommendedRir = normalizeRir(input.recommendedRir ?? catalogItem.defaultRecommendedRir)
-  const loadSettings = loadSettingsForEquipment({
-    barWeightKg: input.barWeightKg ?? catalogItem.barWeightKg,
-    equipment: input.equipment ?? catalogItem.equipment,
-    loadMode: input.loadMode ?? catalogItem.loadMode,
+    const now = new Date().toISOString()
+    const order = (await db.routineExercises.where('dayId').equals(dayId).toArray()).reduce((max, exercise) => Math.max(max, exercise.order), -1) + 1
+    const reps = normalizeReps(input.repsMin ?? catalogItem.defaultRepsMin, input.repsMax ?? catalogItem.defaultRepsMax)
+    const recommendedRir = normalizeRir(input.recommendedRir ?? catalogItem.defaultRecommendedRir)
+    const loadSettings = loadSettingsForEquipment({
+      barWeightKg: input.barWeightKg ?? catalogItem.barWeightKg,
+      equipment: input.equipment ?? catalogItem.equipment,
+      loadMode: input.loadMode ?? catalogItem.loadMode,
+    })
+    const exercise: RoutineExercise = {
+      assetKind: catalogItem.assetKind ?? null,
+      bundledAssetId: catalogItem.bundledAssetId ?? null,
+      customAssetId: catalogItem.customAssetId ?? null,
+      id: createId('exercise'),
+      routineId,
+      dayId,
+      sourceExerciseId: catalogItem.id,
+      name: catalogItem.name,
+      canonicalName: catalogItem.canonicalName,
+      mainMuscle: normalizeMuscleGroup(catalogItem.mainMuscle),
+      equipment: loadSettings.equipment,
+      loadMode: loadSettings.loadMode,
+      barWeightKg: loadSettings.barWeightKg,
+      targetSets: input.targetSets ?? catalogItem.defaultTargetSets,
+      repsMin: reps.min,
+      repsMax: reps.max,
+      recommendedRir,
+      rest: input.rest ?? `${input.restSeconds ?? catalogItem.defaultRestSeconds} seg`,
+      restSeconds: input.restSeconds ?? catalogItem.defaultRestSeconds,
+      warmupSets: input.warmupSets ?? 0,
+      warmupProtocol: normalizeWarmupProtocol(input.warmupProtocol ?? catalogItem.warmupProtocol),
+      technicalNotes: input.technicalNotes ?? catalogItem.technicalNotes ?? '',
+      currentWeightKg: input.currentWeightKg ?? 0,
+      order,
+      createdAt: now,
+      updatedAt: now,
+    }
+
+    if (!routineExerciseEntitySchema.safeParse(exercise).success) throw new Error('La configuración del ejercicio no es válida')
+    await db.routineExercises.add(exercise)
+
+    return exercise.id
   })
-  const exercise: RoutineExercise = {
-    assetKind: catalogItem.assetKind ?? null,
-    bundledAssetId: catalogItem.bundledAssetId ?? null,
-    customAssetId: catalogItem.customAssetId ?? null,
-    id: createId('exercise'),
-    routineId,
-    dayId,
-    sourceExerciseId: catalogItem.id,
-    name: catalogItem.name,
-    canonicalName: catalogItem.canonicalName,
-    mainMuscle: normalizeMuscleGroup(catalogItem.mainMuscle),
-    equipment: loadSettings.equipment,
-    loadMode: loadSettings.loadMode,
-    barWeightKg: loadSettings.barWeightKg,
-    targetSets: input.targetSets ?? catalogItem.defaultTargetSets,
-    repsMin: reps.min,
-    repsMax: reps.max,
-    recommendedRir,
-    rest: input.rest ?? `${input.restSeconds ?? catalogItem.defaultRestSeconds} seg`,
-    restSeconds: input.restSeconds ?? catalogItem.defaultRestSeconds,
-    warmupSets: input.warmupSets ?? 0,
-    warmupProtocol: normalizeWarmupProtocol(input.warmupProtocol ?? catalogItem.warmupProtocol),
-    technicalNotes: input.technicalNotes ?? catalogItem.technicalNotes ?? '',
-    currentWeightKg: input.currentWeightKg ?? 0,
-    order,
-    createdAt: now,
-    updatedAt: now,
-  }
-
-  await db.routineExercises.add(exercise)
-
-  return exercise.id
 }
 
 export async function updateExercise(exerciseId: string, input: ExerciseInput) {
-  const existing = await db.routineExercises.get(exerciseId)
-  const name = input.name.trim() || 'Ejercicio sin nombre'
-  const reps = normalizeReps(input.repsMin, input.repsMax)
-  const recommendedRir = normalizeRir(input.recommendedRir)
-  const loadSettings = loadSettingsForEquipment({
-    barWeightKg: input.barWeightKg ?? existing?.barWeightKg,
-    equipment: input.equipment ?? existing?.equipment ?? 'Otro',
-    loadMode: input.loadMode ?? existing?.loadMode,
-  })
+  validateBarWeight(input.barWeightKg)
+  return db.transaction('rw', [db.routineExercises, db.exerciseAssets], async () => {
+    const existing = await db.routineExercises.get(exerciseId)
+    if (!existing) throw new Error('Ejercicio no encontrado')
+    if (input.customAssetId && !(await db.exerciseAssets.get(input.customAssetId))) throw new Error('Imagen personalizada no encontrada')
+    const name = input.name.trim() || 'Ejercicio sin nombre'
+    const reps = normalizeReps(input.repsMin, input.repsMax)
+    const recommendedRir = normalizeRir(input.recommendedRir)
+    const loadSettings = loadSettingsForEquipment({
+      barWeightKg: input.barWeightKg ?? existing?.barWeightKg,
+      equipment: input.equipment ?? existing?.equipment ?? 'Otro',
+      loadMode: input.loadMode ?? existing?.loadMode,
+    })
 
-  await db.routineExercises.update(exerciseId, {
-    assetKind: input.assetKind === undefined ? existing?.assetKind ?? null : input.assetKind,
-    bundledAssetId: input.bundledAssetId === undefined ? existing?.bundledAssetId ?? null : input.bundledAssetId,
-    customAssetId: input.customAssetId === undefined ? existing?.customAssetId ?? null : input.customAssetId,
-    name,
-    canonicalName: canonicalName(name),
-    mainMuscle: normalizeMuscleGroup(input.mainMuscle),
-    equipment: loadSettings.equipment,
-    loadMode: loadSettings.loadMode,
-    barWeightKg: loadSettings.barWeightKg,
-    targetSets: input.targetSets ?? 3,
-    repsMin: reps.min,
-    repsMax: reps.max,
-    recommendedRir,
-    rest: input.rest ?? '60-90 seg',
-    restSeconds: input.restSeconds ?? 90,
-    warmupSets: input.warmupSets ?? 0,
-    warmupProtocol: normalizeWarmupProtocol(input.warmupProtocol),
-    technicalNotes: input.technicalNotes ?? '',
-    currentWeightKg: input.currentWeightKg ?? existing?.currentWeightKg ?? 0,
-    updatedAt: new Date().toISOString(),
+    const changes = {
+      assetKind: input.assetKind === undefined ? existing?.assetKind ?? null : input.assetKind,
+      bundledAssetId: input.bundledAssetId === undefined ? existing?.bundledAssetId ?? null : input.bundledAssetId,
+      customAssetId: input.customAssetId === undefined ? existing?.customAssetId ?? null : input.customAssetId,
+      name,
+      canonicalName: canonicalName(name),
+      mainMuscle: normalizeMuscleGroup(input.mainMuscle),
+      equipment: loadSettings.equipment,
+      loadMode: loadSettings.loadMode,
+      barWeightKg: loadSettings.barWeightKg,
+      targetSets: input.targetSets ?? 3,
+      repsMin: reps.min,
+      repsMax: reps.max,
+      recommendedRir,
+      rest: input.rest ?? '60-90 seg',
+      restSeconds: input.restSeconds ?? 90,
+      warmupSets: input.warmupSets ?? 0,
+      warmupProtocol: normalizeWarmupProtocol(input.warmupProtocol),
+      technicalNotes: input.technicalNotes ?? '',
+      currentWeightKg: input.currentWeightKg ?? existing?.currentWeightKg ?? 0,
+      updatedAt: new Date().toISOString(),
+    }
+    if (!routineExerciseEntitySchema.safeParse({ ...existing, ...changes }).success) throw new Error('La configuración del ejercicio no es válida')
+    await db.routineExercises.update(exerciseId, changes)
   })
 }
 
@@ -534,18 +566,63 @@ export async function moveExerciseToDay(exerciseId: string, dayId: string) {
 }
 
 export async function createCatalogExercise(input: CatalogExerciseInput) {
-  const now = new Date().toISOString()
+  validateBarWeight(input.barWeightKg)
+  return db.transaction('rw', [db.exerciseCatalog, db.exerciseAssets], async () => {
+    const now = new Date().toISOString()
 
-  if (input.mode === 'create-from-sinful-shell') {
-    const sinfulShellId = input.sinfulShellId?.trim()
-    if (!sinfulShellId) throw new Error('Ejercicio de Sinful Shell requerido')
+    if (input.mode === 'create-from-sinful-shell') {
+      const sinfulShellId = input.sinfulShellId?.trim()
+      if (!sinfulShellId) throw new Error('Ejercicio de Sinful Shell requerido')
 
-    const source = getSinfulShellExerciseById(sinfulShellId)
-    if (!source) throw new Error('Ejercicio de Sinful Shell no encontrado')
+      const source = getSinfulShellExerciseById(sinfulShellId)
+      if (!source) throw new Error('Ejercicio de Sinful Shell no encontrado')
 
-    const existing = await findExistingSinfulShellCopy(sinfulShellId)
-    if (existing) return existing.id
+      const existing = await findExistingSinfulShellCopy(sinfulShellId)
+      if (existing) return existing.id
 
+      const reps = normalizeReps(input.defaultRepsMin, input.defaultRepsMax)
+      const loadSettings = loadSettingsForEquipment({
+        barWeightKg: input.barWeightKg,
+        equipment: input.equipment ?? 'Otro',
+        loadMode: input.loadMode,
+      })
+      const catalogItem: ExerciseCatalogItem = {
+        aliases: input.aliases ?? source.aliases,
+        assetKind: null,
+        bundledAssetId: source.bundledAssetId,
+        canonicalName: source.canonicalName,
+        createdAt: now,
+        defaultRecommendedRir: normalizeRir(input.defaultRecommendedRir),
+        defaultRepsMax: reps.max,
+        defaultRepsMin: reps.min,
+        defaultRestSeconds: input.defaultRestSeconds ?? 90,
+        defaultTargetSets: input.defaultTargetSets ?? 3,
+        equipment: loadSettings.equipment,
+        loadMode: loadSettings.loadMode,
+        barWeightKg: loadSettings.barWeightKg,
+        id: createId('catalog'),
+        mainMuscle: source.mainMuscle,
+        name: source.name,
+        customAssetId: null,
+        origin: 'sinful-shell',
+        sinfulShellContentLocked: true,
+        sinfulShellId: source.id,
+        catalogVersion: SINFUL_SHELL_SCHEMA_VERSION,
+        catalogStatus: 'active',
+        technicalNotes: source.technicalNotes,
+        warmupProtocol: normalizeWarmupProtocol(input.warmupProtocol),
+        updatedAt: now,
+      }
+
+      if (!catalogEntitySchema.safeParse(catalogItem).success) throw new Error('La configuración del catálogo no es válida')
+      await db.exerciseCatalog.add(catalogItem)
+
+      return catalogItem.id
+    }
+
+    if (input.customAssetId && !(await db.exerciseAssets.get(input.customAssetId))) throw new Error('Imagen personalizada no encontrada')
+    const name = input.name?.trim() || 'Ejercicio nuevo'
+    const mainMuscle = normalizeMuscleGroup(input.mainMuscle)
     const reps = normalizeReps(input.defaultRepsMin, input.defaultRepsMax)
     const loadSettings = loadSettingsForEquipment({
       barWeightKg: input.barWeightKg,
@@ -553,10 +630,10 @@ export async function createCatalogExercise(input: CatalogExerciseInput) {
       loadMode: input.loadMode,
     })
     const catalogItem: ExerciseCatalogItem = {
-      aliases: input.aliases ?? source.aliases,
-      assetKind: null,
-      bundledAssetId: source.bundledAssetId,
-      canonicalName: source.canonicalName,
+      aliases: input.aliases ?? [],
+      assetKind: input.assetKind ?? null,
+      bundledAssetId: input.bundledAssetId ?? null,
+      canonicalName: canonicalName(name),
       createdAt: now,
       defaultRecommendedRir: normalizeRir(input.defaultRecommendedRir),
       defaultRepsMax: reps.max,
@@ -567,103 +644,72 @@ export async function createCatalogExercise(input: CatalogExerciseInput) {
       loadMode: loadSettings.loadMode,
       barWeightKg: loadSettings.barWeightKg,
       id: createId('catalog'),
-      mainMuscle: source.mainMuscle,
-      name: source.name,
-      customAssetId: null,
-      origin: 'sinful-shell',
-      sinfulShellContentLocked: true,
-      sinfulShellId: source.id,
-      technicalNotes: source.technicalNotes,
+      mainMuscle,
+      name,
+      customAssetId: input.customAssetId ?? null,
+      origin: 'user',
+      sinfulShellContentLocked: false,
+      sinfulShellId: null,
+      technicalNotes: input.technicalNotes?.trim() ?? '',
       warmupProtocol: normalizeWarmupProtocol(input.warmupProtocol),
       updatedAt: now,
     }
 
+    if (!catalogEntitySchema.safeParse(catalogItem).success) throw new Error('La configuración del catálogo no es válida')
     await db.exerciseCatalog.add(catalogItem)
 
     return catalogItem.id
-  }
-
-  const name = input.name?.trim() || 'Ejercicio nuevo'
-  const mainMuscle = normalizeMuscleGroup(input.mainMuscle)
-  const reps = normalizeReps(input.defaultRepsMin, input.defaultRepsMax)
-  const loadSettings = loadSettingsForEquipment({
-    barWeightKg: input.barWeightKg,
-    equipment: input.equipment ?? 'Otro',
-    loadMode: input.loadMode,
   })
-  const catalogItem: ExerciseCatalogItem = {
-    aliases: input.aliases ?? [],
-    assetKind: input.assetKind ?? null,
-    bundledAssetId: input.bundledAssetId ?? null,
-    canonicalName: canonicalName(name),
-    createdAt: now,
-    defaultRecommendedRir: normalizeRir(input.defaultRecommendedRir),
-    defaultRepsMax: reps.max,
-    defaultRepsMin: reps.min,
-    defaultRestSeconds: input.defaultRestSeconds ?? 90,
-    defaultTargetSets: input.defaultTargetSets ?? 3,
-    equipment: loadSettings.equipment,
-    loadMode: loadSettings.loadMode,
-    barWeightKg: loadSettings.barWeightKg,
-    id: createId('catalog'),
-    mainMuscle,
-    name,
-    customAssetId: input.customAssetId ?? null,
-    origin: 'user',
-    sinfulShellContentLocked: false,
-    sinfulShellId: null,
-    technicalNotes: input.technicalNotes?.trim() ?? '',
-    warmupProtocol: normalizeWarmupProtocol(input.warmupProtocol),
-    updatedAt: now,
-  }
-
-  await db.exerciseCatalog.add(catalogItem)
-
-  return catalogItem.id
 }
 
 export async function updateCatalogExercise(catalogItemId: string, input: CatalogExerciseInput) {
-  const existing = await db.exerciseCatalog.get(catalogItemId)
-  if (!existing) throw new Error('Ejercicio de catalogo no encontrado')
+  validateBarWeight(input.barWeightKg)
+  return db.transaction('rw', [db.exerciseCatalog, db.exerciseAssets], async () => {
+    const existing = await db.exerciseCatalog.get(catalogItemId)
+    if (!existing) throw new Error('Ejercicio de catalogo no encontrado')
 
-  const origin = normalizeCatalogOrigin(existing)
-  const lockedSource = origin.sinfulShellContentLocked && origin.sinfulShellId ? getSinfulShellExerciseById(origin.sinfulShellId) : null
-  const isLocked = origin.sinfulShellContentLocked
-  const name = isLocked ? lockedSource?.name ?? existing.name : input.name?.trim() || 'Ejercicio sin nombre'
-  const mainMuscle = isLocked ? lockedSource?.mainMuscle ?? existing.mainMuscle : normalizeMuscleGroup(input.mainMuscle)
-  const reps = normalizeReps(input.defaultRepsMin ?? existing.defaultRepsMin, input.defaultRepsMax ?? existing.defaultRepsMax)
-  const loadSettings = loadSettingsForEquipment({
-    barWeightKg: input.barWeightKg ?? existing.barWeightKg,
-    equipment: input.equipment ?? existing.equipment,
-    loadMode: input.loadMode ?? existing.loadMode,
-  })
+    const origin = normalizeCatalogOrigin(existing)
+    const lockedSource = origin.sinfulShellContentLocked && origin.sinfulShellId ? getSinfulShellExerciseById(origin.sinfulShellId) : null
+    const isLocked = origin.sinfulShellContentLocked
+    if (!isLocked && input.customAssetId && !(await db.exerciseAssets.get(input.customAssetId))) throw new Error('Imagen personalizada no encontrada')
+    const name = isLocked ? lockedSource?.name ?? existing.name : input.name?.trim() || 'Ejercicio sin nombre'
+    const mainMuscle = isLocked ? lockedSource?.mainMuscle ?? existing.mainMuscle : normalizeMuscleGroup(input.mainMuscle)
+    const reps = normalizeReps(input.defaultRepsMin ?? existing.defaultRepsMin, input.defaultRepsMax ?? existing.defaultRepsMax)
+    const loadSettings = loadSettingsForEquipment({
+      barWeightKg: input.barWeightKg ?? existing.barWeightKg,
+      equipment: input.equipment ?? existing.equipment,
+      loadMode: input.loadMode ?? existing.loadMode,
+    })
 
-  await db.exerciseCatalog.update(catalogItemId, {
-    aliases: input.aliases ?? [],
-    assetKind: isLocked ? existing.assetKind ?? null : input.assetKind === undefined ? existing.assetKind ?? null : input.assetKind,
-    bundledAssetId: isLocked
-      ? lockedSource?.bundledAssetId ?? existing.bundledAssetId
-      : input.bundledAssetId === undefined
-        ? existing.bundledAssetId ?? null
-        : input.bundledAssetId,
-    canonicalName: canonicalName(name),
-    defaultRecommendedRir: normalizeRir(input.defaultRecommendedRir ?? existing.defaultRecommendedRir),
-    defaultRepsMax: reps.max,
-    defaultRepsMin: reps.min,
-    defaultRestSeconds: input.defaultRestSeconds ?? existing.defaultRestSeconds,
-    defaultTargetSets: input.defaultTargetSets ?? existing.defaultTargetSets,
-    equipment: loadSettings.equipment,
-    loadMode: loadSettings.loadMode,
-    barWeightKg: loadSettings.barWeightKg,
-    mainMuscle,
-    name,
-    customAssetId: isLocked ? existing.customAssetId ?? null : input.customAssetId === undefined ? existing.customAssetId ?? null : input.customAssetId,
-    origin: origin.origin,
-    sinfulShellContentLocked: origin.sinfulShellContentLocked,
-    sinfulShellId: origin.sinfulShellId,
-    technicalNotes: isLocked ? lockedSource?.technicalNotes ?? existing.technicalNotes : input.technicalNotes?.trim() ?? '',
-    warmupProtocol: normalizeWarmupProtocol(input.warmupProtocol),
-    updatedAt: new Date().toISOString(),
+    const changes = {
+      aliases: input.aliases ?? [],
+      assetKind: isLocked ? existing.assetKind ?? null : input.assetKind === undefined ? existing.assetKind ?? null : input.assetKind,
+      bundledAssetId: isLocked
+        ? lockedSource?.bundledAssetId ?? existing.bundledAssetId
+        : input.bundledAssetId === undefined
+          ? existing.bundledAssetId ?? null
+          : input.bundledAssetId,
+      canonicalName: canonicalName(name),
+      defaultRecommendedRir: normalizeRir(input.defaultRecommendedRir ?? existing.defaultRecommendedRir),
+      defaultRepsMax: reps.max,
+      defaultRepsMin: reps.min,
+      defaultRestSeconds: input.defaultRestSeconds ?? existing.defaultRestSeconds,
+      defaultTargetSets: input.defaultTargetSets ?? existing.defaultTargetSets,
+      equipment: loadSettings.equipment,
+      loadMode: loadSettings.loadMode,
+      barWeightKg: loadSettings.barWeightKg,
+      mainMuscle,
+      name,
+      customAssetId: isLocked ? existing.customAssetId ?? null : input.customAssetId === undefined ? existing.customAssetId ?? null : input.customAssetId,
+      origin: origin.origin,
+      sinfulShellContentLocked: origin.sinfulShellContentLocked,
+      sinfulShellId: origin.sinfulShellId,
+      technicalNotes: isLocked ? lockedSource?.technicalNotes ?? existing.technicalNotes : input.technicalNotes?.trim() ?? '',
+      warmupProtocol: normalizeWarmupProtocol(input.warmupProtocol),
+      updatedAt: new Date().toISOString(),
+    }
+    if (!catalogEntitySchema.safeParse({ ...existing, ...changes }).success) throw new Error('La configuración del catálogo no es válida')
+    await db.exerciseCatalog.update(catalogItemId, changes)
   })
 }
 
@@ -677,6 +723,10 @@ function normalizeReps(repsMin = 8, repsMax = 10) {
   }
 
   return { max: repsMax, min: repsMin }
+}
+
+function validateBarWeight(value: number | undefined) {
+  if (value !== undefined && (!Number.isFinite(value) || value < 0)) throw new Error('El peso de la barra no es válido')
 }
 
 function normalizeCatalogOrigin(input: Pick<ExerciseCatalogItem, 'origin' | 'sinfulShellContentLocked' | 'sinfulShellId'>) {

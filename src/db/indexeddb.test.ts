@@ -58,6 +58,20 @@ describe('IndexedDB integration', () => {
     })
   })
 
+  it('rejects a backup without recognized tables before replacing local data', async () => {
+    const local = routine('local', 'Local')
+    await db.routines.add(local)
+    await expect(importFullBackup({ text: async () => JSON.stringify({ tables: {} }) } as File, 'replace')).rejects.toThrow()
+    expect(await db.routines.toArray()).toEqual([local])
+  })
+
+  it('rejects an all-empty backup before replacing local data', async () => {
+    const local = routine('local', 'Local')
+    await db.routines.add(local)
+    await expect(importFullBackup(backupFile({ routines: [] }), 'replace')).rejects.toThrow()
+    expect(await db.routines.toArray()).toEqual([local])
+  })
+
   it('merges backup tables without replacing existing app settings', async () => {
     await db.settings.put(settings('local-routine', 'lb'))
     await db.routines.put(routine('local-routine', 'Local'))
@@ -78,6 +92,13 @@ describe('IndexedDB integration', () => {
       activeRoutineId: 'local-routine',
       preferredUnit: 'lb',
     })
+  })
+
+  it('keeps existing rows when a merged backup contains the same identifiers', async () => {
+    await db.routines.put(routine('shared', 'Local'))
+    await importFullBackup(backupFile({ routines: [routine('shared', 'Remote'), routine('new', 'New')] }), 'merge')
+    expect(await db.routines.get('shared')).toEqual(routine('shared', 'Local'))
+    expect(await db.routines.get('new')).toEqual(routine('new', 'New'))
   })
 
   it('imports deload cycles in full backups', async () => {
@@ -163,8 +184,18 @@ describe('IndexedDB integration', () => {
 
     await expect(db.workoutSessions.get('legacy-session')).resolves.toMatchObject({ id: 'legacy-session' })
   })
+
+  it('preserves health source dates and historical summaries through the legacy importer', async () => {
+    const now = '2026-07-20T20:00:00.000Z'
+    const health = { sourceDate: '2026-07-20', syncedAt: now, day: { rangeStart: now, rangeEnd: now, metrics: healthMetrics() } }
+    const session: WorkoutSession = { id: 'with-history', routineId: 'routine', dayId: 'day', date: '2026-07-21', notes: '', displayUnit: 'kg', status: 'completed', createdAt: now, updatedAt: now, health, healthHistory: [health] }
+    await importFullBackup(backupFile({ workoutSessions: [session] }), 'replace')
+    expect(await db.workoutSessions.get(session.id)).toMatchObject({ health: { sourceDate: '2026-07-20' }, healthHistory: [{ sourceDate: '2026-07-20' }] })
+  })
   it('registers main sets, drop sets and completes exercise state', async () => {
     const exercise = routineExercise()
+    await db.routines.put(routine(exercise.routineId, 'Rutina'))
+    await db.routineDays.put(routineDay(exercise.dayId, exercise.routineId, 'Día'))
     await db.routineExercises.put(exercise)
 
     const first = await registerMainSetForExercise({
@@ -435,6 +466,8 @@ describe('IndexedDB integration', () => {
 
   it('auto-completes and reopens session status from exercise completion', async () => {
     const exercise = { ...routineExercise(), targetSets: 1 }
+    await db.routines.put(routine(exercise.routineId, 'Rutina'))
+    await db.routineDays.put(routineDay(exercise.dayId, exercise.routineId, 'Día'))
     await db.routineExercises.put(exercise)
 
     const registered = await registerMainSetForExercise({
@@ -457,6 +490,8 @@ describe('IndexedDB integration', () => {
 
   it('deletes workout session with logs, sets, drop sets and skips', async () => {
     const exercise = routineExercise()
+    await db.routines.put(routine(exercise.routineId, 'Rutina'))
+    await db.routineDays.put(routineDay(exercise.dayId, exercise.routineId, 'Día'))
     await db.routineExercises.put(exercise)
     const registered = await registerMainSetForExercise({
       date: '2026-07-20',

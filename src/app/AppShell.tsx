@@ -3,11 +3,12 @@ import { NavLink, Outlet } from 'react-router-dom'
 import { navItems } from './navigation'
 import { useAppProviders } from './providers'
 import { useHealthAutoSync } from '../domains/health/hooks'
-import { getAppSettings, getDeloadOverview } from '../domains/settings/services'
+import { getAppSettings } from '../domains/settings/services'
+import { useDeloadOverview } from '../domains/settings/hooks'
 
 export function AppShell() {
   const { databaseError, databaseStatus } = useAppProviders()
-  const deload = useLiveQuery(() => getDeloadOverview(), [], undefined)
+  const deload = useDeloadOverview()
   const appSettings = useLiveQuery(() => getAppSettings(), [], undefined)
   const deloadActive = deload?.phase === 'active'
   useHealthAutoSync(appSettings?.healthIntegrationEnabled === true)

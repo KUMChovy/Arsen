@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type PropsWithChildren } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
+import { useDeloadOverview } from '../hooks'
 import { useNavigate } from 'react-router-dom'
 import {
   ChartNoAxesCombined,
@@ -30,7 +31,6 @@ import {
   deleteAllWorkoutLogs,
   deleteWorkoutLogsByDateRange,
   getAppSettings,
-  getDeloadOverview,
   getStorageOverview,
   importFullBackup,
   requestPersistentStorage,
@@ -82,7 +82,7 @@ export function SettingsPage() {
   const [platesValue, setPlatesValue] = useState('')
   const [seriesReductionValue, setSeriesReductionValue] = useState('50')
   const [weightReductionValue, setWeightReductionValue] = useState('80')
-  const deload = useLiveQuery(() => getDeloadOverview(), [], undefined)
+  const deload = useDeloadOverview()
   const storage = useLiveQuery(() => getStorageOverview(), [], undefined)
   const storagePercent = storage?.usage && storage.quota ? Math.min(100, Math.round((storage.usage / storage.quota) * 100)) : 0
 

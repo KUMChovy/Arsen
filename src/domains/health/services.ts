@@ -1,5 +1,6 @@
 import { db } from '../../db/schema'
 import { localDateKey } from '../../shared/utils/date'
+import { healthSummarySchema } from '../../shared/validation/healthSchemas'
 import { getAppSettings } from '../settings/services'
 import { resolveHealthDayWindow, resolveHealthWindows } from './calculations'
 import {
@@ -100,18 +101,15 @@ export async function syncWorkoutHealth(sessionId: string, syncTime = new Date()
     throw new HealthConnectAvailabilityError(availability.status)
   }
 
-  const session = await db.workoutSessions.get(sessionId)
+  const source = await db.transaction('r', [db.workoutSessions, db.exerciseLogs, db.setLogs], () => readHealthSource(sessionId))
+  const { session, exerciseLogs, sessionSets } = source
   if (!session) throw new Error('Sesión de entrenamiento no encontrada')
 
   // Health Connect can return records from before Arsen was connected.
   const day = resolveHealthDayWindow(session.date, syncTime)
-  const [exerciseLogs, sessionSets] = await Promise.all([
-    db.exerciseLogs.where('sessionId').equals(sessionId).toArray(),
-    db.setLogs.toArray(),
-  ])
   const setLogsByExerciseLogId = new Map<string, typeof sessionSets>()
   for (const set of sessionSets) {
-    if (set.kind !== 'main' || !exerciseLogs.some((log) => log.id === set.exerciseLogId)) continue
+    if (set.kind !== 'main') continue
     const current = setLogsByExerciseLogId.get(set.exerciseLogId)
     if (current) current.push(set)
     else setLogsByExerciseLogId.set(set.exerciseLogId, [set])
@@ -145,6 +143,7 @@ export async function syncWorkoutHealth(sessionId: string, syncTime = new Date()
   const summary: HealthSummary = {
     day: nativeWindowToSummary(nativeResult.day),
     syncedAt: syncTime.toISOString(),
+    sourceDate: session.date,
     ...(nativeResult.session && windows.session
       ? { session: nativeWindowToSummary(nativeResult.session) }
       : {}),
@@ -168,12 +167,35 @@ export async function syncWorkoutHealth(sessionId: string, syncTime = new Date()
     sessionEndSource: windows.sessionEndSource,
   }
 
+  if (!healthSummarySchema.safeParse(summary).success) throw new Error('Health Connect devolvió un resumen de salud inválido')
+
   // Se persiste solo el resumen; las muestras crudas permanecen en Health Connect.
-  await db.workoutSessions.update(sessionId, {
-    health: summary,
-    updatedAt: summary.syncedAt,
+  await db.transaction('rw', [db.workoutSessions, db.exerciseLogs, db.setLogs], async () => {
+    const current = await readHealthSource(sessionId)
+    if (JSON.stringify(current) !== JSON.stringify(source)) throw new Error('La sesión cambió durante la lectura de salud; vuelve a intentarlo')
+    const previous = current.session?.health
+    const oldSummary = previous && previous.sourceDate && previous.sourceDate !== session.date ? previous : null
+    const history = current.session?.healthHistory ?? []
+    const nextHistory = oldSummary && !history.some((item) => JSON.stringify(item) === JSON.stringify(oldSummary)) ? [...history, oldSummary] : history
+    await db.workoutSessions.update(sessionId, {
+      health: summary,
+      ...(nextHistory.length ? { healthHistory: nextHistory } : {}),
+      updatedAt: summary.syncedAt,
+    })
   })
   return summary
+}
+
+async function readHealthSource(sessionId: string) {
+  const [session, exerciseLogs] = await Promise.all([
+    db.workoutSessions.get(sessionId),
+    db.exerciseLogs.where('sessionId').equals(sessionId).toArray(),
+  ])
+  exerciseLogs.sort((a, b) => a.id.localeCompare(b.id))
+  const logIds = exerciseLogs.map((log) => log.id)
+  const sessionSets = logIds.length ? await db.setLogs.where('exerciseLogId').anyOf(logIds).toArray() : []
+  sessionSets.sort((a, b) => a.id.localeCompare(b.id))
+  return { session, exerciseLogs, sessionSets }
 }
 
 // Actualiza únicamente las sesiones del día actual para mantener visible el estado más reciente de Health Connect.

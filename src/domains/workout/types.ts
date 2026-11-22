@@ -21,6 +21,7 @@ export type WorkoutSession = {
   lastExerciseAt?: string | null
   completedAt?: string | null
   health?: HealthSummary
+  healthHistory?: HealthSummary[]
   createdAt: string
   updatedAt: string
 }

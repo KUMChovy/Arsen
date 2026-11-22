@@ -50,6 +50,7 @@ const healthSummarySchema = z.object({
   session: healthWindowSummarySchema.optional(),
   sessionEndSource: z.enum(['completed', 'last-exercise', 'sync-time']).optional(),
   syncedAt: z.string(),
+  sourceDate: z.string().optional(),
 })
 
 
@@ -217,6 +218,7 @@ export const workoutSessionSchema = z
     dayId: z.string().min(1),
     displayUnit: weightUnitSchema,
     health: healthSummarySchema.optional(),
+    healthHistory: z.array(healthSummarySchema).optional(),
     id: z.string().min(1),
     lastExerciseAt: z.string().nullable().optional(),
     manuallyCompleted: z.boolean().optional(),

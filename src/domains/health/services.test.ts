@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { db } from '../../db/schema'
 import type { AppSettings } from '../settings/types'
 import { enableHealthIntegration, openHealthConnectAccess, openHealthConnectInstall, syncAllWorkoutHealth, syncCurrentWorkoutHealth, syncWorkoutHealth } from './services'
+import { updateHistoricalSession } from '../workout/services'
+import { getHealthProgressOverview } from './repository'
 
 const native = vi.hoisted(() => ({
   HEALTH_CONNECT_PLAY_STORE_URL: 'https://play.google.com/store/apps/details?id=com.google.android.apps.healthdata',
@@ -33,6 +35,81 @@ describe('health services', () => {
     native.healthConnect.getAvailability.mockResolvedValue({ status: 'available' })
     native.healthConnect.getPermissions.mockResolvedValue({ granted: ['heart-rate'] })
     native.healthConnect.requestHealthPermissions.mockResolvedValue({ granted: ['heart-rate'] })
+  })
+
+  it('does not overwrite a stored health summary with an invalid native window', async () => {
+    await db.settings.update('app', { healthIntegrationEnabled: true })
+    const now = '2026-07-20T20:00:00.000Z'
+    const previous = { day: { metrics: metrics({ steps: 50 }), rangeStart: '2026-07-20T00:00:00.000Z', rangeEnd: now }, syncedAt: now }
+    await db.workoutSessions.put({ id: 'session-invalid-health', routineId: 'routine', dayId: 'day', date: '2026-07-20', notes: '', displayUnit: 'kg', status: 'draft', createdAt: now, updatedAt: now, health: previous })
+    native.healthConnect.readDayHealth.mockResolvedValue({ day: { metrics: metrics({ steps: 100 }), rangeStart: now, rangeEnd: '2026-07-20T00:00:00.000Z', missingPermissions: [] } })
+    await expect(syncWorkoutHealth('session-invalid-health', new Date(now))).rejects.toThrow()
+    expect((await db.workoutSessions.get('session-invalid-health'))?.health).toEqual(previous)
+  })
+
+  it('does not save a health summary calculated from a session edited during the native read', async () => {
+    await db.settings.update('app', { healthIntegrationEnabled: true })
+    const now = '2026-07-20T20:00:00.000Z'
+    await db.workoutSessions.put({ id: 'changed-session', routineId: 'routine', dayId: 'day', date: '2026-07-20', notes: '', displayUnit: 'kg', status: 'draft', createdAt: now, updatedAt: now })
+    native.healthConnect.readDayHealth.mockImplementation(async () => {
+      await db.workoutSessions.update('changed-session', { notes: 'editado', updatedAt: '2026-07-20T20:01:00.000Z' })
+      return { day: { metrics: metrics({ steps: 100 }), rangeStart: '2026-07-20T00:00:00.000Z', rangeEnd: now, missingPermissions: [] } }
+    })
+    await expect(syncWorkoutHealth('changed-session', new Date(now))).rejects.toThrow()
+    expect(await db.workoutSessions.get('changed-session')).toMatchObject({ notes: 'editado', updatedAt: '2026-07-20T20:01:00.000Z' })
+    expect((await db.workoutSessions.get('changed-session'))?.health).toBeUndefined()
+  })
+
+  it('rejects a health read if a session exercise changes without changing the session timestamp', async () => {
+    await db.settings.update('app', { healthIntegrationEnabled: true })
+    const now = '2026-07-20T20:00:00.000Z'
+    await db.workoutSessions.put({ id: 'changed-log', routineId: 'routine', dayId: 'day', date: '2026-07-20', notes: '', displayUnit: 'kg', status: 'draft', createdAt: now, updatedAt: now })
+    await db.exerciseLogs.add({ id: 'log', sessionId: 'changed-log', routineExerciseId: 'exercise', state: 'done', notes: '', snapshot: { name: 'Press', canonicalName: 'press', mainMuscle: 'Pecho', equipment: 'Barra', targetSets: 3, repsMin: 8, repsMax: 10, recommendedRir: 1, restSeconds: 90 }, createdAt: now, updatedAt: now })
+    native.healthConnect.readDayHealth.mockImplementation(async () => {
+      await db.exerciseLogs.update('log', { notes: 'modificado' })
+      return { day: { metrics: metrics({ steps: 100 }), rangeStart: '2026-07-20T00:00:00.000Z', rangeEnd: now, missingPermissions: [] } }
+    })
+    await expect(syncWorkoutHealth('changed-log', new Date(now))).rejects.toThrow()
+    expect((await db.workoutSessions.get('changed-log'))?.health).toBeUndefined()
+  })
+
+  it('rejects a health read if the session changed with the same timestamp', async () => {
+    await db.settings.update('app', { healthIntegrationEnabled: true })
+    const now = '2026-07-20T20:00:00.000Z'
+    await db.workoutSessions.put({ id: 'same-time', routineId: 'routine', dayId: 'day', date: '2026-07-20', notes: '', displayUnit: 'kg', status: 'draft', createdAt: now, updatedAt: now })
+    native.healthConnect.readDayHealth.mockImplementation(async () => {
+      await db.workoutSessions.update('same-time', { notes: 'modificado' })
+      return { day: { metrics: metrics({ steps: 100 }), rangeStart: '2026-07-20T00:00:00.000Z', rangeEnd: now, missingPermissions: [] } }
+    })
+    await expect(syncWorkoutHealth('same-time', new Date(now))).rejects.toThrow()
+    expect((await db.workoutSessions.get('same-time'))?.health).toBeUndefined()
+  })
+
+  it('rejects a health read when a set is added while native data is being read', async () => {
+    await db.settings.update('app', { healthIntegrationEnabled: true })
+    const now = '2026-07-20T20:00:00.000Z'
+    await db.workoutSessions.put({ id: 'changed-set', routineId: 'routine', dayId: 'day', date: '2026-07-20', notes: '', displayUnit: 'kg', status: 'draft', createdAt: now, updatedAt: now })
+    await db.exerciseLogs.add({ id: 'log', sessionId: 'changed-set', routineExerciseId: 'exercise', state: 'done', notes: '', snapshot: { name: 'Press', canonicalName: 'press', mainMuscle: 'Pecho', equipment: 'Barra', targetSets: 3, repsMin: 8, repsMax: 10, recommendedRir: 1, restSeconds: 90 }, createdAt: now, updatedAt: now })
+    native.healthConnect.readDayHealth.mockImplementation(async () => {
+      await db.setLogs.add({ id: 'new-set', exerciseLogId: 'log', kind: 'main', order: 0, weightKg: 20, reps: 8, rir: 1, displayUnit: 'kg', createdAt: now, updatedAt: now })
+      return { day: { metrics: metrics({ steps: 100 }), rangeStart: '2026-07-20T00:00:00.000Z', rangeEnd: now, missingPermissions: [] } }
+    })
+    await expect(syncWorkoutHealth('changed-set', new Date(now))).rejects.toThrow()
+    expect((await db.workoutSessions.get('changed-set'))?.health).toBeUndefined()
+  })
+
+  it('keeps health on its original date after editing a session and syncing its new date', async () => {
+    await db.settings.update('app', { healthIntegrationEnabled: true })
+    const now = '2026-07-20T20:00:00.000Z'
+    const previous = { day: { metrics: metrics({ steps: 50 }), rangeStart: '2026-07-20T00:00:00.000Z', rangeEnd: now }, syncedAt: now }
+    await db.workoutSessions.put({ id: 'moved-health', routineId: 'routine', dayId: 'day', date: '2026-07-20', notes: '', displayUnit: 'kg', status: 'completed', createdAt: now, updatedAt: now, health: previous })
+    await updateHistoricalSession('moved-health', { date: '2026-07-21', dayId: 'day', routineId: 'routine' })
+    expect((await db.workoutSessions.get('moved-health'))?.health).toMatchObject({ sourceDate: '2026-07-20', day: { metrics: { steps: 50 } } })
+    expect((await getHealthProgressOverview()).points).toEqual([expect.objectContaining({ date: '2026-07-20', daySteps: 50 })])
+    native.healthConnect.readDayHealth.mockResolvedValue({ day: { metrics: metrics({ steps: 100 }), rangeStart: '2026-07-21T00:00:00.000Z', rangeEnd: '2026-07-21T20:00:00.000Z', missingPermissions: [] } })
+    await syncWorkoutHealth('moved-health', new Date('2026-07-21T20:00:00.000Z'))
+    expect((await db.workoutSessions.get('moved-health'))?.healthHistory).toEqual([expect.objectContaining({ sourceDate: '2026-07-20', day: expect.objectContaining({ metrics: expect.objectContaining({ steps: 50 }) }) })])
+    expect((await getHealthProgressOverview()).points).toEqual(expect.arrayContaining([expect.objectContaining({ date: '2026-07-20', daySteps: 50 }), expect.objectContaining({ date: '2026-07-21', daySteps: 100 })]))
   })
 
   it('activates only after an explicit permission request', async () => {

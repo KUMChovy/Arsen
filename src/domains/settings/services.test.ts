@@ -1,4 +1,5 @@
 import 'fake-indexeddb/auto'
+import Dexie from 'dexie'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { db } from '../../db/schema'
 import { DEFAULT_AVAILABLE_PLATES_KG } from '../../shared/calculations/equipmentLoad'
@@ -7,6 +8,7 @@ import {
   buildProgressExport,
   buildSessionExport,
   completeActiveDeload,
+  deleteAllWorkoutLogs,
   exportProgressCsv,
   exportFullBackup,
   importFullBackup,
@@ -68,6 +70,21 @@ describe('settings export services', () => {
     })
   })
 
+  it('rolls back a multi-session deletion when a later session fails', async () => {
+    await seedProgressData({ dayName: 'Día', exerciseName: 'Press', routineName: 'Rutina' })
+    await db.workoutSessions.put(workoutSession({ id: 'session-2', date: '2026-01-03' }))
+    const original = db.workoutSessions.delete.bind(db.workoutSessions)
+    const spy = vi.spyOn(db.workoutSessions, 'delete').mockImplementationOnce(original).mockRejectedValueOnce(new Error('falló la eliminación'))
+    try {
+      await expect(deleteAllWorkoutLogs()).rejects.toThrow()
+      expect(await db.workoutSessions.count()).toBe(2)
+      expect(await db.exerciseLogs.count()).toBe(1)
+      expect(await db.setLogs.count()).toBe(1)
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
   it('exports historical session names even after planning names change', async () => {
     await seedProgressData({ dayName: 'Hoy', exerciseName: 'Press', routineName: 'Actual' })
     await db.workoutSessions.update('session-1', { routineName: 'Antes', dayName: 'Día anterior' })
@@ -86,6 +103,32 @@ describe('settings export services', () => {
     expect(await db.workoutSessions.get('session-1')).toMatchObject({ manuallyCompleted: true, routineName: 'Nombre original', dayName: 'Día original', sessionExercises: [{ id: 'session-extra', name: 'Remo' }] })
   })
 
+  it('exports a consistent snapshot when a routine and its day change during export', async () => {
+    await seedProgressData({ dayName: 'Antes', exerciseName: 'Press', routineName: 'Antes' })
+    const original = db.routineDays.toArray.bind(db.routineDays)
+    let pendingWrite: Promise<unknown> | undefined
+    const readWithConcurrentWrite = () => Dexie.Promise.resolve((async () => {
+      const days = await original()
+      pendingWrite = Dexie.ignoreTransaction(() => db.transaction('rw', [db.routines, db.routineDays], async () => {
+        await db.routines.update('routine-1', { name: 'Después' })
+        await db.routineDays.update('day-1', { name: 'Después' })
+      }))
+      const delay = new Promise<void>((resolve) => setTimeout(resolve, 40))
+      const race = Promise.race([pendingWrite, delay])
+      await (Dexie.currentTransaction ? Dexie.waitFor(race) : race)
+      return days
+    })())
+    const spy = vi.spyOn(db.routineDays, 'toArray').mockImplementation(readWithConcurrentWrite as typeof db.routineDays.toArray)
+    try {
+      await exportFullBackup()
+      await pendingWrite
+      const backup = vi.mocked(downloadJson).mock.calls.at(-1)?.[1] as { tables: { routines: Routine[]; routineDays: RoutineDay[] } }
+      expect(backup.tables.routines[0]?.name).toBe(backup.tables.routineDays[0]?.name)
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
 
   it('resolves default plate weights when settings do not have an inventory', () => {
     expect(resolveAvailablePlateWeightsKg(null)).toEqual(DEFAULT_AVAILABLE_PLATES_KG)
@@ -95,11 +138,19 @@ describe('settings export services', () => {
   it('updates available plate weights normalized in kg', async () => {
     await db.settings.put(appSettings())
 
-    await updateAvailablePlateWeights([2.5, 20, 20, 0, 10])
+    await updateAvailablePlateWeights([2.5, 20, 20, 10])
 
     await expect(db.settings.get('app')).resolves.toMatchObject({
       availablePlateWeightsKg: [20, 10, 2.5],
     })
+  })
+
+  it('rejects invalid plate weights without replacing the saved inventory', async () => {
+    await db.settings.put(appSettings())
+    const before = await db.settings.get('app')
+    await expect(updateAvailablePlateWeights([20, -1])).rejects.toThrow()
+    await expect(updateAvailablePlateWeights([Infinity])).rejects.toThrow()
+    expect(await db.settings.get('app')).toEqual(before)
   })
   it('exports user-readable progress CSV with BOM and drop-set rows', async () => {
     await seedProgressData({
@@ -154,6 +205,36 @@ describe('deload services', () => {
 
   afterEach(async () => {
     await resetDb()
+  })
+
+  it('rejects impossible deload dates without changing existing cycles', async () => {
+    await startDeloadNow('2026-02-01')
+    const before = await db.deloadCycles.toArray()
+    await expect(scheduleDeload('2026-02-30', '2026-02-01')).rejects.toThrow()
+    await expect(startDeloadNow('2026-02-30')).rejects.toThrow()
+    await expect(completeActiveDeload('2026-02-30')).rejects.toThrow()
+    expect(await db.deloadCycles.toArray()).toEqual(before)
+  })
+
+  it('does not complete a deload before its start date', async () => {
+    await startDeloadNow('2026-02-10')
+    await expect(completeActiveDeload('2026-02-09')).rejects.toThrow()
+    expect((await db.deloadCycles.toArray())[0]).toMatchObject({ status: 'active', completedAt: null })
+  })
+
+  it('does not close an active deload before its start when creating another cycle', async () => {
+    await startDeloadNow('2026-02-10')
+    const before = await db.deloadCycles.toArray()
+    await expect(startDeloadNow('2026-02-09')).rejects.toThrow()
+    await expect(scheduleDeload('2026-02-20', '2026-02-09')).rejects.toThrow()
+    expect(await db.deloadCycles.toArray()).toEqual(before)
+  })
+
+  it('creates only one suggestion under concurrent overview requests', async () => {
+    await db.workoutSessions.put(workoutSession({ date: '2026-01-01', id: 'session-1' }))
+    const [first, second] = await Promise.all([getDeloadOverview('2026-02-05'), getDeloadOverview('2026-02-05')])
+    expect(first.currentCycle?.id).toBe(second.currentCycle?.id)
+    expect(await db.deloadCycles.count()).toBe(1)
   })
 
   it('anchors suggestions to the last completed deload when one exists', async () => {
@@ -243,16 +324,22 @@ describe('deload services', () => {
     ])
   })
 
-  it('updates deload reduction settings with clamped values', async () => {
+  it('updates valid deload reduction settings', async () => {
     await updateDeloadReductionSettings({
-      seriesReductionPercent: 99,
-      weightReductionPercent: 10,
+      seriesReductionPercent: 60,
+      weightReductionPercent: 70,
     })
 
     await expect(db.settings.get('app')).resolves.toMatchObject({
       deloadSeriesReductionPercent: 60,
       deloadWeightReductionPercent: 70,
     })
+  })
+
+  it('rejects out-of-range deload settings without changing saved values', async () => {
+    const before = await db.settings.get('app')
+    await expect(updateDeloadReductionSettings({ seriesReductionPercent: 99, weightReductionPercent: 10 })).rejects.toThrow()
+    expect(await db.settings.get('app')).toEqual(before)
   })
 })
 

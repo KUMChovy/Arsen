@@ -1,28 +1,31 @@
 import { ArrowLeft } from 'lucide-react'
 import { useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Card } from '../../../shared/components/Card'
 import { PageHeader } from '../../../shared/components/PageHeader'
 import { formatWeight } from '../../../shared/utils/weight'
 import { getAppSettings } from '../../settings/services'
 import { exportSessionCsv, exportSessionJson } from '../../settings/services'
 import { HealthSummaryCard } from '../../health/components/HealthSummaryCard'
-import { addDropSet, deleteDropSet, deleteHistoricalExercise, deleteMainSet, deleteWorkoutSession, duplicateSessionAsDraft, updateDropSet, updateHistoricalSession, updateHistoricalSet } from '../../workout/services'
+import { addDropSet, deleteDropSet, deleteHistoricalExercise, deleteMainSet, deleteWorkoutSession, duplicateSessionAsDraft, moveMainSetToExercise, updateDropSet, updateHistoricalSession, updateHistoricalSet, updateMainSet, updateWorkoutSession } from '../../workout/services'
 import { EditSetSheet } from '../../workout/components/EditSetSheet'
 import { confirmDanger } from '../../../shared/utils/alerts'
 import { localDateKey } from '../../../shared/utils/date'
+import { canonicalName } from '../../../shared/utils/normalize'
 import { EditHistoricalSetSheet, type HistoricalSetEditInput } from '../components/EditHistoricalSetSheet'
 import { EditHistoricalSessionSheet, type HistoricalSessionEditInput } from '../components/EditHistoricalSessionSheet'
 import { SessionActionMenu } from '../components/SessionActionMenu'
 import { SessionExerciseCard } from '../components/SessionExerciseCard'
 import { compareSessions } from '../comparison'
-import { useHistory, useSessionDetailById } from '../hooks'
+import { useHistory, useProgressEditOptions, useSessionDetailById } from '../hooks'
+import { EditSetSheet as MoveSetSheet, type EditSetState } from './ProgressPage'
 import type { HistorySessionSummary, SessionDetail } from '../repository'
 
 export function ProgressHistorySessionPage() {
   const { sessionId = '' } = useParams()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const detail = useSessionDetailById(sessionId)
   const settings = useLiveQuery(() => getAppSettings(), [], undefined)
   const unit = settings?.preferredUnit ?? detail?.displayUnit ?? 'kg'
@@ -30,15 +33,20 @@ export function ProgressHistorySessionPage() {
   if (detail === undefined) return <Card className="p-4 text-sm text-arsen-muted">Cargando sesión...</Card>
   if (!detail) return <NotFoundState />
 
-  return <SessionContent detail={detail} unit={unit} onBack={() => navigate(-1)} />
+  return <SessionContent detail={detail} initialExercise={searchParams.get('exercise') ?? ''} unit={unit} onBack={() => navigate(-1)} />
 }
 
-function SessionContent({ detail, onBack, unit }: { detail: SessionDetail; onBack: () => void; unit: 'kg' | 'lb' }) {
-  const [expanded, setExpanded] = useState(() => new Set(detail.exercises.map((exercise) => exercise.exerciseLogId)))
+function SessionContent({ detail, initialExercise, onBack, unit }: { detail: SessionDetail; initialExercise: string; onBack: () => void; unit: 'kg' | 'lb' }) {
+  const [expanded, setExpanded] = useState(() => new Set<string>())
+  const [selectedExercise, setSelectedExercise] = useState(initialExercise)
+  const [search, setSearch] = useState('')
+  const visibleExercises = detail.exercises.filter((exercise) => (!selectedExercise || (exercise.canonicalName ?? canonicalName(exercise.exerciseName)) === selectedExercise) && canonicalName(exercise.exerciseName).includes(canonicalName(search)))
   const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [editingSet, setEditingSet] = useState<{ exerciseLogId: string; set: SessionDetail['exercises'][number]['sets'][number] } | null>(null)
+  const [movingSet, setMovingSet] = useState<EditSetState | null>(null)
+  const editOptions = useProgressEditOptions()
   const [editingDrop, setEditingDrop] = useState<{ id: string; reps: number; rir: number; weightKg: number } | null>(null)
   const [addingDropForSet, setAddingDropForSet] = useState<string | null>(null)
   const [comparing, setComparing] = useState(false)
@@ -215,9 +223,16 @@ function SessionContent({ detail, onBack, unit }: { detail: SessionDetail; onBac
       </section>
       {detail.health ? <HealthSummaryCard onSync={() => undefined} showSync={false} summary={detail.health} /> : null}
       {comparing ? <SessionComparisonPanel current={detail} sessions={history?.sessions ?? []} onClose={() => setComparing(false)} /> : null}
+      <details className="rounded-[12px] border border-white/10 bg-arsen-surface">
+        <summary className="flex min-h-12 cursor-pointer items-center gap-2 px-3 py-3 text-sm font-black"><span>Buscar y filtrar ejercicios</span>{selectedExercise || search ? <span className="text-xs text-arsen-purple2">Activo</span> : null}</summary>
+        <div className="space-y-3 border-t border-white/10 p-3">
+          <label className="block text-xs font-bold text-arsen-muted">Buscar ejercicio<input aria-label="Buscar ejercicio en la sesión" className="mt-1 min-h-11 w-full rounded-[10px] border border-white/10 bg-arsen-bg px-3 text-sm text-arsen-ink" onChange={(event) => setSearch(event.target.value)} type="search" value={search} /></label>
+          <label className="block text-xs font-bold text-arsen-muted">Ejercicio<select aria-label="Filtrar ejercicio de la sesión" className="mt-1 min-h-11 w-full rounded-[10px] border border-white/10 bg-arsen-bg px-3 text-sm text-arsen-ink" onChange={(event) => setSelectedExercise(event.target.value)} value={selectedExercise}><option value="">Todos los ejercicios</option>{[...new Map(detail.exercises.map((exercise) => [exercise.canonicalName ?? canonicalName(exercise.exerciseName), exercise.exerciseName])).entries()].map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select></label>
+        </div>
+      </details>
       <section aria-label="Ejercicios de la sesión" className="space-y-2">
         <h2 className="text-base font-black">Ejercicios</h2>
-        {detail.exercises.map((exercise) => (
+        {visibleExercises.map((exercise) => (
           <SessionExerciseCard
             key={exercise.exerciseLogId}
             exercise={exercise}
@@ -225,6 +240,7 @@ function SessionContent({ detail, onBack, unit }: { detail: SessionDetail; onBac
             onAddDrop={(setId) => setAddingDropForSet(setId)}
             onEditDrop={(drop) => setEditingDrop({ id: drop.id, reps: drop.reps, rir: drop.rir, weightKg: drop.weightKg })}
             onEditSet={(set) => setEditingSet({ exerciseLogId: exercise.exerciseLogId, set })}
+            onMoveSet={(set) => setMovingSet({ date: detail.date, dayId: detail.dayId, reps: set.reps, rir: set.rir, routineExerciseId: exercise.routineExerciseId, routineId: detail.routineId, sessionId: detail.id, setLogId: set.id, weightKg: set.weightKg })}
             onRemove={() => void removeExercise(exercise.exerciseLogId)}
             onRemoveDrop={(dropId) => void removeDropSet(dropId)}
             onRemoveSet={(setId) => void removeSet(setId)}
@@ -240,9 +256,19 @@ function SessionContent({ detail, onBack, unit }: { detail: SessionDetail; onBac
           return <Card className="p-3" key={exercise.exerciseLogId}><div className="flex items-center gap-3"><ExerciseArt alt={exercise.exerciseName} bundledAssetId={exercise.bundledAssetId} className="size-12" muscle={exercise.mainMuscle} /><div className="min-w-0 flex-1"><strong className="block truncate text-sm">{exercise.exerciseName}</strong><span className="text-xs text-arsen-muted">{exercise.sets.length} series · {exercise.mainMuscle}</span></div><button aria-label={isExpanded ? `Contraer ${exercise.exerciseName}` : `Expandir ${exercise.exerciseName}`} className="grid size-10 place-items-center rounded-[10px] border border-white/10 text-arsen-purple2" onClick={() => toggleExercise(exercise.exerciseLogId)} type="button"><ChevronDown aria-hidden="true" className={['size-4 transition-transform', isExpanded ? 'rotate-180' : ''].join(' ')} /></button></div>{isExpanded ? <div className="mt-3 space-y-2"><div className="flex flex-wrap gap-2"><Link aria-label={`Ver progreso de ${exercise.exerciseName}`} className="inline-flex min-h-10 items-center rounded-[10px] border border-white/10 px-3 text-xs font-bold text-arsen-purple2" to={`/progreso/ejercicio/${encodeURIComponent(exerciseCanonicalName)}`}>Ver progreso del ejercicio</Link><button aria-label={`Eliminar ${exercise.exerciseName}`} className="grid size-10 place-items-center rounded-[9px] border border-red-300/25 text-red-300" disabled={saving} onClick={() => removeExercise(exercise.exerciseLogId)} title="Eliminar ejercicio" type="button"><Trash2 aria-hidden="true" className="size-4" /></button></div>{exercise.sets.map((set) => <div className="rounded-[10px] border border-white/10 bg-arsen-bg/50 p-2 text-sm" key={set.id}><div className="flex items-center justify-between gap-2"><span><strong>Serie {set.order + 1}</strong> · {formatWeight(set.weightKg, unit)} x {set.reps} · RIR {set.rir}</span><div className="flex gap-1"><button aria-label={`Editar serie ${set.order + 1}`} className="grid size-10 place-items-center rounded-[9px] border border-white/10 text-arsen-purple2" disabled={saving} onClick={() => setEditingSet({ exerciseLogId: exercise.exerciseLogId, set })} title="Editar serie" type="button"><Pencil aria-hidden="true" className="size-4" /></button><button aria-label={`Eliminar serie ${set.order + 1}`} className="grid size-10 place-items-center rounded-[9px] border border-red-300/25 text-red-300" disabled={saving} onClick={() => void removeSet(set.id)} title="Eliminar serie" type="button"><Trash2 aria-hidden="true" className="size-4" /></button></div></div><button aria-label={`Agregar drop a serie ${set.order + 1}`} className="mt-2 grid size-10 place-items-center rounded-[9px] border border-white/10 text-arsen-purple2" disabled={saving} onClick={() => setAddingDropForSet(set.id)} title="Agregar drop" type="button"><Plus aria-hidden="true" className="size-4" /></button>{set.dropSets.map((dropSet) => <div className="mt-1 flex items-center justify-between gap-2 pl-3 text-xs text-arsen-muted" key={dropSet.id}><span>Drop {dropSet.order + 1}: {formatWeight(dropSet.weightKg, unit)} x {dropSet.reps} · RIR {dropSet.rir}</span><div className="flex gap-1"><button aria-label={`Editar drop ${dropSet.order + 1}`} className="grid size-9 place-items-center rounded-[9px] border border-white/10 text-arsen-purple2" disabled={saving} onClick={() => setEditingDrop({ id: dropSet.id, reps: dropSet.reps, rir: dropSet.rir, weightKg: dropSet.weightKg })} title="Editar drop" type="button"><Pencil aria-hidden="true" className="size-3.5" /></button><button aria-label={`Eliminar drop ${dropSet.order + 1}`} className="grid size-9 place-items-center rounded-[9px] border border-red-300/25 text-red-300" disabled={saving} onClick={() => void removeDropSet(dropSet.id)} title="Eliminar drop" type="button"><Trash2 aria-hidden="true" className="size-3.5" /></button></div></div>)}</div>)}</div> : null}</Card>
         })}
         */}
-        {detail.exercises.length === 0 ? <Card className="p-4 text-sm text-arsen-muted">Sesión sin ejercicios registrados.</Card> : null}
+        {visibleExercises.length === 0 ? <Card className="p-4 text-sm text-arsen-muted">{detail.exercises.length === 0 ? 'Sesión sin ejercicios registrados.' : 'No hay ejercicios para esta búsqueda.'}</Card> : null}
       </section>
       {error ? <p role="alert" className="rounded-[10px] border border-red-300/30 bg-red-300/10 p-3 text-sm text-red-200">{error}</p> : null}
+      {movingSet && editOptions ? <MoveSetSheet disabled={saving} editOptions={editOptions} initial={movingSet} onClose={() => setMovingSet(null)} onSave={(input) => {
+        setSaving(true)
+        setError(null)
+        void (async () => {
+          await updateWorkoutSession(input.sessionId, { date: input.date, dayId: input.dayId, routineId: input.routineId })
+          await moveMainSetToExercise(input.setLogId, input.routineExerciseId)
+          await updateMainSet(input.setLogId, { reps: input.reps, rir: input.rir, weightKg: input.weightKg })
+          setMovingSet(null)
+        })().catch((caught: unknown) => setError(caught instanceof Error ? caught.message : 'No se pudo mover la serie')).finally(() => setSaving(false))
+      }} /> : null}
       {editingSet ? <EditSetSheet disabled={saving} dropSets={editingSet.set.dropSets} onClose={() => setEditingSet(null)} onDelete={deleteEditingSet} onSave={saveSet} set={editingSet.set} unit={unit} /> : null}
       {editingDrop || addingDropForSet ? <EditHistoricalSetSheet description="El drop se guarda asociado a su serie principal." initial={editingDrop ?? { reps: 1, rir: 0, weightKg: 0 }} title={editingDrop ? 'Editar drop' : 'Agregar drop'} disabled={saving} onClose={() => { setEditingDrop(null); setAddingDropForSet(null) }} onSave={saveDrop} unit={unit} /> : null}
       {editing ? <EditHistoricalSessionSheet detail={detail} disabled={saving} onClose={() => setEditing(false)} onSave={saveSession} /> : null}

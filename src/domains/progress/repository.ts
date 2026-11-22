@@ -246,7 +246,7 @@ export async function getProgressOverview(filters: ProgressOverviewFilters = {})
     db.routines.toArray(),
     db.routineDays.toArray(),
   ])
-  const sessions = filters.dayId ? allSessions.filter((session) => session.dayId === filters.dayId) : allSessions
+  const sessions = allSessions.filter((session) => (!filters.dayId || session.dayId === filters.dayId) && (!filters.routineId || session.routineId === filters.routineId))
   const sessionIds = new Set(sessions.map((session) => session.id))
   const filteredExerciseLogs = filters.canonicalName
     ? exerciseLogs.filter((log) => sessionIds.has(log.sessionId) && log.snapshot.canonicalName === filters.canonicalName)

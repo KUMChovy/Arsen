@@ -8,9 +8,9 @@ export type NavItem = {
 }
 
 export const navItems: NavItem[] = [
-  { label: 'Entreno', path: '/', icon: Dumbbell },
   { label: 'Rutina', path: '/rutina', icon: CalendarDays },
   { label: 'Progreso', path: '/progreso', icon: ChartColumnIncreasing },
+  { label: 'Entreno', path: '/', icon: Dumbbell },
   { label: 'Historial', path: '/historial', icon: History },
   { label: 'Ajustes', path: '/settings', icon: Settings },
 ]

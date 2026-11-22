@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-08-10T00:22:51.1637230-06:00",
+  "generatedAt": "2026-11-22T15:51:46.781Z",
   "title": "Design System: Arsen",
   "extensions": {
     "colorMeta": {
@@ -320,9 +320,9 @@
       "name": "Bottom Navigation Item",
       "kind": "nav",
       "refersTo": "bottom-nav-item",
-      "description": "Icon-first tab item for the fixed bottom nav.",
-      "html": "<a class=\"ds-nav-item ds-nav-item-active\" href=\"#\"><svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M6 6h12v12H6z\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"/></svg><span>Entreno</span></a>",
-      "css": ".ds-nav-item { display: grid; place-items: center; gap: 4px; border-radius: 8px; color: var(--color-arsen-muted, oklch(0.73 0.012 280)); text-decoration: none; font: 500 11px/1.2 Inter, ui-sans-serif, system-ui, sans-serif; transition: color 150ms ease; } .ds-nav-item svg { width: 24px; height: 24px; } .ds-nav-item:hover, .ds-nav-item-active { color: var(--color-arsen-purple, oklch(0.62 0.16 295)); } .ds-nav-item:focus-visible { outline: 2px solid var(--color-arsen-acid, oklch(0.86 0.20 125)); outline-offset: 2px; }"
+      "description": "The centered Entreno tab is visually prominent and fills violet in its active state.",
+      "html": "<a class=\"ds-nav-item ds-nav-item-active\" href=\"#\" aria-current=\"page\"><span class=\"ds-nav-icon\"><svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M6.5 6.5 17.5 17.5M4 9l5-5m6 16 5-5M3 8l5-5m8 18 5-5\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\"/></svg></span><span>Entreno</span></a>",
+      "css": ".ds-nav-item { display:grid; place-items:center; gap:4px; border-radius:8px; color:var(--color-arsen-muted, oklch(0.73 0.012 280)); text-decoration:none; font:900 11px/1.2 Inter, ui-sans-serif, system-ui, sans-serif; } .ds-nav-icon { display:grid; place-items:center; width:44px; height:44px; border-radius:14px; border:1px solid oklch(0.62 0.16 295 / 0.6); background:oklch(0.62 0.16 295 / 0.25); color:var(--color-arsen-purple2, oklch(0.72 0.13 300)); } .ds-nav-item svg { width:24px; height:24px; } .ds-nav-item-active { color:var(--color-arsen-ink, oklch(0.96 0.005 280)); } .ds-nav-item-active .ds-nav-icon { background:var(--color-arsen-purple, oklch(0.62 0.16 295)); color:white; } .ds-nav-item:focus-visible { outline:2px solid var(--color-arsen-acid, oklch(0.86 0.20 125)); outline-offset:2px; }"
     },
     {
       "name": "Bottom Sheet",

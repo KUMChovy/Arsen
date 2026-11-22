@@ -225,7 +225,7 @@ Borders are thin and mostly translucent white. Active purple states can strength
 
 ### Navigation
 
-Bottom navigation is fixed, four-column, and icon-first. Each item uses a 24px Lucide icon, 11px label, and active purple color. Inactive items stay muted and brighten on hover. The nav background is Deep Phone Shell at 95% opacity with backdrop blur and a top border.
+Bottom navigation is fixed, five-column, and icon-first. Entreno is the centered primary tab, with a 44px violet framed icon that fills violet when active. The other tabs use 24px Lucide icons and 11px labels; active tabs use purple and inactive tabs are muted. The nav background is Deep Phone Shell at 95% opacity with backdrop blur and a top border.
 
 ### Sheets
 

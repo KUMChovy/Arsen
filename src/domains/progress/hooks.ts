@@ -18,7 +18,7 @@ import {
 } from './repository'
 
 export function useProgressOverview(filters: ProgressOverviewFilters) {
-  return useLiveQuery(() => getProgressOverview(filters), [filters.canonicalName, filters.dayId], undefined)
+  return useLiveQuery(() => getProgressOverview(filters), [filters.canonicalName, filters.dayId, filters.routineId], undefined)
 }
 
 export function useProgressSummary(filters: ProgressOverviewFilters = {}) {
@@ -50,7 +50,7 @@ export function usePersonalRecords(filters: Pick<HistoryFilters, 'canonicalName'
 }
 
 export function useProgressExerciseOptions(filters: Pick<ProgressOverviewFilters, 'dayId' | 'routineId'> = {}) {
-  return useLiveQuery(() => getProgressExerciseOptions(filters), [filters.dayId], undefined)
+  return useLiveQuery(() => getProgressExerciseOptions(filters), [filters.dayId, filters.routineId], undefined)
 }
 
 export function useProgressExerciseDetail(canonicalName: string | null, filters: ProgressOverviewFilters = {}) {
@@ -66,7 +66,7 @@ export function useProgressDayOptions() {
 }
 
 export function useTrainingDates(filters: ProgressOverviewFilters = {}) {
-  return useLiveQuery(() => getTrainingDates(filters), [filters.canonicalName, filters.dayId], undefined)
+  return useLiveQuery(() => getTrainingDates(filters), [filters.canonicalName, filters.dayId, filters.routineId], undefined)
 }
 
 export function useExistingSessionForDateAndDay(date: string | undefined, dayId: string | null | undefined) {
@@ -79,7 +79,7 @@ export function useExistingSessionForDateAndDay(date: string | undefined, dayId:
 export function useSessionDetail(sessionId: string | null, filters: ProgressOverviewFilters = {}) {
   return useLiveQuery(
     () => (sessionId ? getSessionDetail(sessionId, filters) : Promise.resolve(null)),
-    [sessionId, filters.canonicalName, filters.dayId],
+    [sessionId, filters.canonicalName, filters.dayId, filters.routineId],
     undefined,
   )
 }
@@ -89,7 +89,7 @@ export function useSessionDetailById(sessionId: string | null) {
 }
 
 export function useSessionsForDate(date: string | undefined, filters: ProgressOverviewFilters = {}) {
-  return useLiveQuery(() => getSessionsForDate(date ?? '', filters), [date, filters.canonicalName, filters.dayId], undefined)
+  return useLiveQuery(() => getSessionsForDate(date ?? '', filters), [date, filters.canonicalName, filters.dayId, filters.routineId], undefined)
 }
 
 export function useProgressEditOptions() {

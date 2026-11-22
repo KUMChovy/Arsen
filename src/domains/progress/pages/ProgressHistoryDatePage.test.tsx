@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, render, screen } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { RecentSessionSummary, SessionDetail } from '../repository'
@@ -9,11 +9,14 @@ import { ProgressHistoryDatePage } from './ProgressHistoryDatePage'
 const progressMocks = vi.hoisted(() => ({
   detail: null as SessionDetail | null,
   sessions: [] as RecentSessionSummary[],
+  matches: null as string[] | null,
 }))
 
 vi.mock('../hooks', () => ({
   useExistingSessionForDateAndDay: () => null,
   useProgressEditOptions: () => ({ routines: [], days: [], exercises: [] }),
+  useProgressExerciseOptions: () => [],
+  useHistory: () => progressMocks.matches === null ? undefined : { sessions: progressMocks.matches.map((sessionId) => ({ sessionId })) },
   useSessionDetail: () => progressMocks.detail,
   useSessionsForDate: () => progressMocks.sessions,
 }))
@@ -45,6 +48,7 @@ describe('ProgressHistoryDatePage', () => {
   beforeEach(() => {
     progressMocks.detail = null
     progressMocks.sessions = []
+    progressMocks.matches = null
   })
 
   it('shows create session action on an empty date', () => {
@@ -73,6 +77,7 @@ describe('ProgressHistoryDatePage', () => {
 
     expect(screen.getByRole('button', { name: /Crear sesion/i })).toBeInTheDocument()
     expect(screen.queryByText(/No hay sesiones para esta fecha/i)).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /Rutina A/ })).toHaveAttribute('href', '/historial/sesion/session-1')
   })
 
   it('opens the create session sheet from the calendar create URL', () => {
@@ -81,32 +86,23 @@ describe('ProgressHistoryDatePage', () => {
     expect(screen.getByText(/Registra series olvidadas desde progreso/i)).toBeInTheDocument()
   })
 
-  it('renders session weights and volume in the preferred unit', () => {
+  it('opens each session directly while preserving the exercise filter', () => {
+    progressMocks.sessions = [
+      { bestSetId: null, bestSetLabel: 'Sin series', date: '2026-08-01', dayName: 'Día A', exerciseCount: 1, id: 'session-1', routineName: 'Rutina A', setCount: 0, volumeKg: 0 },
+      { bestSetId: null, bestSetLabel: 'Sin series', date: '2026-08-01', dayName: 'Día B', exerciseCount: 1, id: 'session-2', routineName: 'Rutina B', setCount: 0, volumeKg: 0 },
+    ]
+    renderPage('/progreso/historial/2026-08-01?exercise=remo')
+    expect(screen.getByRole('link', { name: /Rutina A/ })).toHaveAttribute('href', '/historial/sesion/session-1?exercise=remo')
+    expect(screen.getByRole('link', { name: /Rutina B/ })).toHaveAttribute('href', '/historial/sesion/session-2?exercise=remo')
+    expect(screen.queryByRole('button', { name: /Expandir sesion/i })).not.toBeInTheDocument()
+  })
+
+  it('renders the session summary in the preferred unit', () => {
     progressMocks.sessions = [{ bestSetId: 'set-1', bestSetLabel: '60 kg x 8', date: '2026-08-01', dayName: 'Dia A', exerciseCount: 1, id: 'session-1', routineName: 'Rutina A', setCount: 1, volumeKg: 480 }]
-    progressMocks.detail = {
-      createdAt: '2026-08-01T12:00:00.000Z',
-      date: '2026-08-01',
-      dayId: 'day-1',
-      dayName: 'Dia A',
-      displayUnit: 'kg',
-      exercises: [{ bundledAssetId: null, exerciseLogId: 'log-1', exerciseName: 'Press', mainMuscle: 'Pecho', routineExerciseId: 'exercise-1', sets: [{ displayUnit: 'kg', dropSets: [{ id: 'drop-1', order: 0, reps: 5, rir: 1, weightKg: 50 }], id: 'set-1', order: 0, reps: 8, rir: 2, weightKg: 60 }] }],
-      id: 'session-1',
-      notes: '',
-      routineId: 'routine-1',
-      routineName: 'Rutina A',
-      status: 'draft',
-      updatedAt: '2026-08-01T12:00:00.000Z',
-    }
-
     renderPage()
-    fireEvent.click(screen.getByRole('button', { name: /Expandir sesion/i }))
-
-    expect(screen.getByText(/Mejor 132.3 lb x 8 - 1058.2 lb volumen/)).toBeInTheDocument()
-    expect(screen.getByText((_, element) => element?.tagName === 'STRONG' && element.textContent?.includes('132.3 lb') === true)).toBeInTheDocument()
-    expect(screen.getByText((_, element) => element?.tagName === 'DIV' && element.childElementCount === 0 && element.textContent?.includes('Drop 1:') === true && element.textContent.includes('110.2 lb') === true)).toBeInTheDocument()
+    expect(screen.getByText(/Mejor 132.3 lb x 8 · 1058.2 lb volumen/)).toBeInTheDocument()
   })
 })
-
 function renderPage(initialEntry = '/progreso/historial/2026-08-01') {
   render(
     <MemoryRouter initialEntries={[initialEntry]}>

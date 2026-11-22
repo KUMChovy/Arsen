@@ -1,4 +1,4 @@
-import { ArrowDownUp, Check, ChevronDown, ChevronLeft, ChevronRight, Dumbbell, Info, Moon, MoreVertical, Pencil, Repeat2, RotateCcw, SkipForward, Trash2, TrendingUp, X } from 'lucide-react'
+import { ArrowDownUp, ArrowRight, Check, ChevronDown, ChevronLeft, ChevronRight, Clock3, Copy, Dumbbell, Flame, Info, Layers3, Moon, MoreVertical, Pencil, Repeat2, RotateCcw, SkipForward, Trash2, TrendingUp, X } from 'lucide-react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import { ActionButton } from '../../../shared/components/ActionButton'
@@ -414,7 +414,13 @@ export function WorkoutPage() {
       </PageHeader>
 
       {dateKey !== todayKey ? <div className="rounded-[10px] border border-arsen-purple/40 p-3 text-sm">Sesión del {dateKey}<button className="ml-3 min-h-12 font-bold text-arsen-purple2 disabled:opacity-40" disabled={hasOpenRegisteredSetsToday || isPending} onClick={() => setDateKey(todayKey)} type="button">Volver a hoy</button></div> : null}
-      {pendingSessions.filter((session) => session.date !== dateKey).map((session) => <button className="min-h-12 w-full rounded-[10px] border border-arsen-purple/40 p-3 text-left text-sm font-bold text-arsen-purple2 disabled:opacity-40" disabled={hasOpenRegisteredSetsToday || isPending} key={session.id} onClick={() => continueSession(session)} type="button">Continuar sesión del {session.date}</button>)}
+      {pendingSessions.filter((session) => session.date !== dateKey).map((session) => (
+        <button aria-label={`Continuar sesión del ${session.date}`} className="pending-session group flex min-h-16 w-full items-center gap-3 overflow-hidden rounded-[12px] border border-arsen-purple/45 bg-arsen-purple/10 p-3 text-left disabled:cursor-not-allowed disabled:opacity-60" disabled={hasOpenRegisteredSetsToday || isPending} key={session.id} onClick={() => continueSession(session)} type="button">
+          <span aria-hidden="true" className="pending-session-indicator relative grid size-11 shrink-0 place-items-center rounded-[10px] bg-arsen-purple/25 text-arsen-purple2"><Clock3 className="size-5" /><span className="absolute right-1 top-1 size-2 rounded-full bg-arsen-acid" /></span>
+          <span className="min-w-0 flex-1"><span className="block text-xs font-black uppercase tracking-wide text-arsen-purple2">Sesión pendiente</span><span className="mt-1 block text-sm font-bold text-arsen-ink">Continuar sesión del {session.date}</span>{hasOpenRegisteredSetsToday ? <span className="mt-1 block text-xs text-arsen-muted">Finaliza la sesión actual para continuar.</span> : null}</span>
+          <ArrowRight aria-hidden="true" className="size-5 shrink-0 text-arsen-purple2 transition-transform group-enabled:group-hover:translate-x-1 motion-reduce:transition-none" />
+        </button>
+      ))}
 
       {isOffCalendar ? (
         <div className="inline-flex min-h-8 items-center rounded-full border border-arsen-purple/40 bg-arsen-purple/15 px-3 text-xs font-extrabold text-arsen-purple2">
@@ -464,7 +470,7 @@ export function WorkoutPage() {
       <div>
         <div className="mb-2 text-xs font-extrabold text-arsen-purple2">Ejercicio actual</div>
         <Card className="min-w-0 p-3">
-          <div className="grid grid-cols-[48px_56px_minmax(0,1fr)_48px] items-center gap-2 border-b border-white/10 pb-4">
+          <div className="grid grid-cols-[48px_minmax(0,1fr)_48px] items-center gap-2 border-b border-white/10 pb-4">
             <button
               aria-label="Regresar al ejercicio anterior"
               className="grid size-12 place-items-center rounded-[10px] text-arsen-muted transition-colors enabled:hover:bg-white/5 enabled:hover:text-arsen-purple2 disabled:opacity-30"
@@ -474,17 +480,15 @@ export function WorkoutPage() {
             >
               <ChevronLeft aria-hidden="true" className="size-6" />
             </button>
-            <div className="grid size-14 place-items-center overflow-hidden rounded-[14px] border border-arsen-purple/45 bg-arsen-purple/10 p-1">
+            <div className="flex min-w-0 flex-col items-center gap-3 text-center">
               <ExerciseArt
                 alt={currentExercise?.name ?? 'Ejercicio'}
                 bundledAssetId={currentExercise?.bundledAssetId}
-                className="size-12"
+                className="size-32 max-w-full"
                 customImageSrc={currentExercise?.customAssetId ? imageSrcByAssetId.get(currentExercise.customAssetId) : null}
                 muscle={currentExercise?.mainMuscle}
               />
-            </div>
-            <div className="min-w-0">
-              <h2 className="truncate text-[22px] font-black leading-tight">{currentExercise?.name ?? 'Sin ejercicio pendiente'}</h2>
+              <h2 className="w-full text-balance text-[22px] font-black leading-tight">{currentExercise?.name ?? 'Sin ejercicio pendiente'}</h2>
             </div>
             <button
               aria-label="Ir al siguiente ejercicio"
@@ -798,30 +802,33 @@ export function WorkoutPage() {
             const note = exercise.technicalNotes.trim()
             const isActive = activeExerciseId === exercise.id
             const loggedRows = isActive ? loggedRowsForExercise(exercise) : []
+            const bestSet = loggedRows.reduce<SetLog | null>((best, row) => !best || row.set.weightKg > best.weightKg ? row.set : best, null)
+            const volume = totalVolume(loggedRows.map((row) => row.set), loggedRows.flatMap((row) => row.dropSets))
 
             return (
-              <Card className={['content-auto p-2', isActive ? 'border-arsen-purple/45' : ''].join(' ')} key={exercise.id}>
-                <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2">
+              <Card className="content-auto overflow-hidden p-0" key={exercise.id}>
+                <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 bg-arsen-purple/10 p-3">
                   <button
                     aria-expanded={isActive}
                     aria-label={`Ver series de ${exercise.name}`}
-                    className="grid min-w-0 grid-cols-[52px_minmax(0,1fr)] items-center gap-4 text-left"
+                    className="grid min-w-0 grid-cols-[56px_minmax(0,1fr)_auto] items-center gap-3 text-left"
                     onClick={() => activateExercise(exercise)}
                     type="button"
                   >
                     <ExerciseArt
                       alt={exercise.name}
                       bundledAssetId={exercise.bundledAssetId}
-                      className="size-[52px]"
+                      className="size-14"
                       customImageSrc={exercise.customAssetId ? imageSrcByAssetId.get(exercise.customAssetId) : null}
                       muscle={exercise.mainMuscle}
                     />
                     <div className="min-w-0">
-                      <h3 className="truncate text-sm font-extrabold">{exercise.name}</h3>
-                      <span className="mt-1 block truncate text-xs text-arsen-muted">
-                        {exercise.mainMuscle} - {exercise.targetSets}x{formatRepRange(exercise.repsMin, exercise.repsMax)} - RIR {exercise.recommendedRir}
+                      <h3 className="truncate text-base font-black">{exercise.name}</h3>
+                      <span className="mt-1 flex items-center gap-1 truncate text-xs font-bold text-arsen-muted">
+                        <Layers3 aria-hidden="true" className="size-3.5 shrink-0 text-arsen-purple2" />{exercise.mainMuscle} · {exercise.targetSets}x{formatRepRange(exercise.repsMin, exercise.repsMax)} · RIR {exercise.recommendedRir}
                       </span>
                     </div>
+                    <ChevronDown aria-hidden="true" className={['size-4 text-arsen-purple2 transition-transform', isActive ? 'rotate-180' : ''].join(' ')} />
                   </button>
                   <span className={['rounded-full px-2 py-1 text-xs font-bold', stateClassName(state)].join(' ')}>
                     {stateLabel(state)}
@@ -839,48 +846,40 @@ export function WorkoutPage() {
                 </div>
 
                 {isActive ? (
-                  <div className="mt-3 border-t border-white/10 pt-3">
-                    <div className="mb-2 flex items-center justify-between text-xs font-extrabold">
-                      <span className="text-arsen-muted">Series registradas</span>
-                      <span className="text-arsen-purple2">{loggedRows.length}</span>
+                  <div className="space-y-3 border-t border-white/10 bg-arsen-bg/20 p-3">
+                    <div>
+                      <p className="flex items-center gap-2 text-xs font-black uppercase tracking-wide text-arsen-muted"><TrendingUp aria-hidden="true" className="size-4 text-arsen-acid" />Resumen del ejercicio</p>
+                      <p className="mt-1 text-xs text-arsen-dim">Trabajo registrado en esta sesión</p>
                     </div>
+                    <div className="grid grid-cols-2 gap-2"><div className="rounded-[10px] border border-white/10 bg-arsen-surface p-2"><span className="block text-xs text-arsen-muted">Volumen ({preferredUnit})</span><strong className="text-sm">{formatWeight(volume, preferredUnit)}</strong></div><div className="rounded-[10px] border border-white/10 bg-arsen-surface p-2"><span className="block text-xs text-arsen-muted">Mejor serie</span><strong className="text-sm">{bestSet ? `${formatWeight(bestSet.weightKg, preferredUnit)} x ${bestSet.reps}` : 'Sin datos'}</strong></div></div>
+                    <div className="flex items-center justify-between gap-3"><h4 className="text-sm font-black">Series principales</h4><span className="text-xs font-bold text-arsen-dim">{loggedRows.length} registradas</span></div>
                     <div className="space-y-2">
                       {loggedRows.length > 0 ? (
                         loggedRows.map(({ dropSets, set }) => (
-                          <div className="rounded-[10px] border border-white/10 bg-arsen-bg/45 p-3" key={set.id}>
-                            <div className="min-w-0">
-                              <strong className="block truncate text-sm">Serie {set.order + 1}</strong>
-                              <span className="mt-1 block text-xs text-arsen-muted">
-                                {formatWeight(set.weightKg, preferredUnit)} - {set.reps} reps - RIR {set.rir}
-                                {dropSets.length > 0 ? ` - ${dropSets.length} drop${dropSets.length === 1 ? '' : 's'}` : ''}
-                              </span>
-                            </div>
-                            <details className="group mt-2">
-                              <summary className="flex min-h-12 cursor-pointer items-center justify-between gap-2 rounded-[10px] border border-white/10 px-3 text-xs font-bold text-arsen-purple2">Acciones de serie {set.order + 1}<ChevronDown aria-hidden="true" className="size-4 shrink-0 group-open:rotate-180" /></summary>
-                              <div className="mt-2 grid grid-cols-1 gap-2 min-[360px]:grid-cols-3">
+                          <div className="rounded-[12px] border border-white/10 bg-arsen-surface p-3" key={set.id}>
+                            <div className="flex items-center gap-3"><span className="grid size-8 shrink-0 place-items-center rounded-[9px] bg-arsen-purple/35 text-xs font-black text-arsen-purple2">{set.order + 1}</span><div className="min-w-0 flex-1"><strong className="block truncate text-sm">{formatWeight(set.weightKg, preferredUnit)} × {set.reps} reps</strong><span className="mt-0.5 block text-xs font-bold text-arsen-muted">RIR {set.rir}</span></div><div className="flex gap-1">
                               <button
                                 aria-label={`Editar serie ${set.order + 1} de ${exercise.name}`}
-                                className="flex min-h-12 items-center justify-center gap-2 rounded-[10px] border border-white/10 px-2 text-sm font-bold text-arsen-purple2 disabled:opacity-40"
+                                className="grid size-10 place-items-center rounded-[9px] border border-white/10 text-arsen-purple2 disabled:opacity-40"
                                 disabled={isPending}
                                 onClick={() => setEditingSet({ exercise, set })}
                                 type="button"
                               >
                                 <Pencil aria-hidden="true" className="size-4" />
-                                Editar
                               </button>
-                              <button aria-label={`Duplicar serie ${set.order + 1} de ${exercise.name}`} className="min-h-12 rounded-[10px] border border-white/10 px-2 text-sm font-bold text-arsen-purple2 disabled:opacity-40" disabled={isPending} onClick={() => { setDuplicateSet(set); setSelectedExerciseId(exercise.id) }} type="button">Duplicar</button>
+                              <button aria-label={`Duplicar serie ${set.order + 1} de ${exercise.name}`} className="grid size-10 place-items-center rounded-[9px] border border-white/10 text-arsen-purple2 disabled:opacity-40" disabled={isPending} onClick={() => { setDuplicateSet(set); setSelectedExerciseId(exercise.id) }} title="Duplicar serie" type="button"><Copy aria-hidden="true" className="size-4" /></button>
                               <button
                                 aria-label={`Eliminar serie ${set.order + 1} de ${exercise.name}`}
-                                className="flex min-h-12 items-center justify-center gap-2 rounded-[10px] border border-red-300/30 px-2 text-sm font-bold text-red-300 disabled:opacity-40"
+                                className="grid size-10 place-items-center rounded-[9px] border border-red-300/30 text-red-300 disabled:opacity-40"
                                 disabled={isPending}
                                 onClick={() => deleteSet(set)}
                                 type="button"
                               >
                                 <Trash2 aria-hidden="true" className="size-4" />
-                                Eliminar
                               </button>
-                              </div>
-                            </details>
+                            </div></div>
+                            <div className="mt-3 flex items-center gap-1.5 border-t border-white/10 pt-2 text-xs font-bold text-arsen-muted"><Flame aria-hidden="true" className="size-4 text-arsen-acid" />{dropSets.length ? `${dropSets.length} drop set${dropSets.length === 1 ? '' : 's'}` : 'Sin drop set'}</div>
+                            {dropSets.map((dropSet) => <div className="mt-2 rounded-[9px] bg-arsen-bg/50 p-2 text-xs text-arsen-muted" key={dropSet.id}>Drop {dropSet.order + 1} · {formatWeight(dropSet.weightKg, preferredUnit)} × {dropSet.reps} · RIR {dropSet.rir}</div>)}
                           </div>
                         ))
                       ) : (

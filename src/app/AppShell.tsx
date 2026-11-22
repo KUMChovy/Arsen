@@ -38,14 +38,14 @@ export function AppShell() {
               className={({ isActive }) =>
                 [
                   'grid place-items-center gap-1 rounded-lg text-[11px] font-medium transition-colors',
-                  isActive ? 'text-arsen-purple' : 'text-arsen-muted hover:text-arsen-ink',
+                  item.path === '/' ? `group font-black ${isActive ? 'text-arsen-ink' : 'text-arsen-muted hover:text-arsen-ink'}` : isActive ? 'text-arsen-purple' : 'text-arsen-muted hover:text-arsen-ink',
                 ].join(' ')
               }
               end={item.path === '/'}
               key={item.path}
               to={item.path}
             >
-              <item.icon aria-hidden="true" className="size-6" />
+              <span className={item.path === '/' ? 'grid size-11 place-items-center rounded-[14px] border border-arsen-purple/60 bg-arsen-purple/25 text-arsen-purple2 group-aria-[current=page]:bg-arsen-purple group-aria-[current=page]:text-white' : 'grid size-6 place-items-center'}><item.icon aria-hidden="true" className="size-6" /></span>
               <span>{item.label}</span>
             </NavLink>
           ))}

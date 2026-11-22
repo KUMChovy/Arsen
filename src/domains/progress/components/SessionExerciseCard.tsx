@@ -1,4 +1,4 @@
-import { ChevronDown, Flame, Layers3, Pencil, Plus, Trash2, TrendingUp } from 'lucide-react'
+import { ArrowRightLeft, ChevronDown, Flame, Layers3, Pencil, Plus, Trash2, TrendingUp } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { Card } from '../../../shared/components/Card'
 import { ExerciseArt } from '../../../shared/components/ExerciseArt'
@@ -17,6 +17,7 @@ export function SessionExerciseCard({
   onAddDrop,
   onEditDrop,
   onEditSet,
+  onMoveSet,
   onRemove,
   onRemoveDrop,
   onRemoveSet,
@@ -29,6 +30,7 @@ export function SessionExerciseCard({
   onAddDrop: (setId: string) => void
   onEditDrop: (drop: SessionDrop) => void
   onEditSet: (set: SessionSet) => void
+  onMoveSet: (set: SessionSet) => void
   onRemove: () => void
   onRemoveDrop: (dropId: string) => void
   onRemoveSet: (setId: string) => void
@@ -50,7 +52,7 @@ export function SessionExerciseCard({
               <span className="truncate">{exercise.mainMuscle || 'Músculo no disponible'}</span>
             </div>
           </div>
-          <button aria-label={(expanded ? 'Contraer ' : 'Expandir ') + exercise.exerciseName} className="grid size-10 shrink-0 place-items-center rounded-[10px] border border-white/10 bg-arsen-surface text-arsen-purple2" onClick={onToggle} type="button">
+          <button aria-expanded={expanded} aria-label={(expanded ? 'Contraer ' : 'Expandir ') + exercise.exerciseName} className="grid size-10 shrink-0 place-items-center rounded-[10px] border border-white/10 bg-arsen-surface text-arsen-purple2" onClick={onToggle} type="button">
             <ChevronDown aria-hidden="true" className={['size-4 transition-transform', expanded ? 'rotate-180' : ''].join(' ')} />
           </button>
         </div>
@@ -95,7 +97,7 @@ export function SessionExerciseCard({
           </div>
 
           <div className="space-y-2">
-            {exercise.sets.map((set) => <SetRow key={set.id} saving={saving} set={set} unit={unit} onAddDrop={() => onAddDrop(set.id)} onEditDrop={onEditDrop} onEditSet={() => onEditSet(set)} onRemoveDrop={onRemoveDrop} onRemoveSet={() => onRemoveSet(set.id)} />)}
+            {exercise.sets.map((set) => <SetRow key={set.id} saving={saving} set={set} unit={unit} onAddDrop={() => onAddDrop(set.id)} onEditDrop={onEditDrop} onEditSet={() => onEditSet(set)} onMoveSet={() => onMoveSet(set)} onRemoveDrop={onRemoveDrop} onRemoveSet={() => onRemoveSet(set.id)} />)}
           </div>
         </div>
       ) : null}
@@ -110,6 +112,7 @@ function SetRow({
   onAddDrop,
   onEditDrop,
   onEditSet,
+  onMoveSet,
   onRemoveDrop,
   onRemoveSet,
 }: {
@@ -119,6 +122,7 @@ function SetRow({
   onAddDrop: () => void
   onEditDrop: (drop: SessionDrop) => void
   onEditSet: () => void
+  onMoveSet: () => void
   onRemoveDrop: (dropId: string) => void
   onRemoveSet: () => void
 }) {
@@ -132,6 +136,7 @@ function SetRow({
         </div>
         <div className="flex gap-1">
           <button aria-label={'Editar serie ' + (set.order + 1)} className="grid size-10 place-items-center rounded-[9px] border border-white/10 text-arsen-purple2" disabled={saving} onClick={onEditSet} title="Editar serie" type="button"><Pencil aria-hidden="true" className="size-4" /></button>
+          <button aria-label={'Mover serie ' + (set.order + 1)} className="grid size-10 place-items-center rounded-[9px] border border-white/10 text-arsen-purple2" disabled={saving} onClick={onMoveSet} title="Mover serie" type="button"><ArrowRightLeft aria-hidden="true" className="size-4" /></button>
           <button aria-label={'Eliminar serie ' + (set.order + 1)} className="grid size-10 place-items-center rounded-[9px] border border-red-300/25 text-red-300" disabled={saving} onClick={onRemoveSet} title="Eliminar serie" type="button"><Trash2 aria-hidden="true" className="size-4" /></button>
         </div>
       </div>

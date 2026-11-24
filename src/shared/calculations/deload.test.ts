@@ -36,6 +36,8 @@ describe('deload calculations', () => {
     expect(getDeloadSuggestedWeightKg(62.5, 80)).toBe(50)
     expect(getDeloadSuggestedWeightKg(0, 80)).toBe(0)
     expect(getDeloadSuggestedWeightKg(-10, 80)).toBe(0)
+    expect(Number.isFinite(getDeloadSuggestedWeightKg(Number.MAX_VALUE, 80))).toBe(true)
+    expect(Number.isFinite(getDeloadTargetSets(Number.MAX_VALUE, 50))).toBe(true)
   })
 
   it('detects suggestion window between weeks five and seven', () => {
@@ -53,5 +55,17 @@ describe('deload calculations', () => {
     expect(daysRemainingInDeload('2026-02-01', '2026-02-08')).toBe(0)
     expect(isDeloadComplete('2026-02-01', '2026-02-07')).toBe(false)
     expect(isDeloadComplete('2026-02-01', '2026-02-08')).toBe(true)
+  })
+
+  it('keeps deload dates on the intended calendar day in UTC+14', () => {
+    const previousTimezone = process.env.TZ
+    try {
+      process.env.TZ = 'Pacific/Kiritimati'
+      expect(addDays('2026-02-01', 7)).toBe('2026-02-08')
+      expect(daysRemainingInDeload('2026-02-01', '2026-02-01')).toBe(7)
+    } finally {
+      if (previousTimezone === undefined) delete process.env.TZ
+      else process.env.TZ = previousTimezone
+    }
   })
 })

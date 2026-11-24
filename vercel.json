@@ -1,0 +1,6 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "pnpm admin:build",
+  "outputDirectory": "dist-admin",
+  "rewrites": [{ "source": "/api/:path*", "destination": "/api/gateway?__arsen_path=:path*" }]
+}

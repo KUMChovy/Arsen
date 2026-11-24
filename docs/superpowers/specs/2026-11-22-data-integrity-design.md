@@ -13,7 +13,7 @@ Consolidar la persistencia offline, sus invariantes y el contrato de respaldo si
 - Además de IndexedDB hay selección y avisos en `localStorage`, y borradores de formularios en `sessionStorage`. Son estado local de interfaz, no datos de entrenamiento.
 - Crear días y ejercicios no comprueba actualmente todas sus relaciones dentro de la misma transacción; duplicar una rutina puede conservar un `dayId` sin correspondencia. Estos hallazgos necesitan pruebas de reproducción antes de modificarse.
 
-La base instalada de un usuario no está disponible en este repositorio: sus versiones, contenido y capacidad de conversión no pueden darse por comprobados mediante fixtures.
+El propietario confirma que no hay bases de usuarios distribuidas; los datos de desarrollo no requieren compatibilidad histórica.
 
 ## Contrato e integridad
 
@@ -27,11 +27,17 @@ El diagnóstico será de solo lectura y devolverá gravedad, entidad, identifica
 
 ## Transición y compatibilidad
 
-No eliminar las migraciones 1–7 ni restringir unilateralmente la importación histórica hasta disponer de evidencia de versiones instaladas, copia de seguridad recuperable y conversión verificada. Una migración de esquema necesaria tendrá una ruta transaccional, reversible mediante respaldo previo, que rechace estados no convertibles sin borrar ni reemplazar datos. Los fixtures de versiones anteriores prueban el mecanismo, pero no sustituyen la verificación de instalaciones reales. Documentar el puente conservado y las condiciones concretas para retirarlo. Ninguna operación destructiva se ejecuta automáticamente.
+**Actualización del 22-11-2026:** el propietario confirma que la aplicación sigue en desarrollo y no existen instalaciones previas; autoriza dejar de soportar estructuras anteriores. Se conserva la versión Dexie 7 como esquema inicial completo y se retiran las migraciones 1–6 y el puente de transición sin consumidores. Las importaciones y exportaciones disponibles en la aplicación y el generador demo siguen funcionando hasta su sustitución prevista en SPEC 02. No se borran automáticamente bases de desarrollo existentes; las que requieran las migraciones retiradas deberán restablecerse manualmente si no son compatibles.
+
+La revisión local requiere una tabla interna nueva en el esquema Dexie 8. Se conserva una única actualización desde la versión 7 de desarrollo para agregar la tabla y actualizar la versión registrada sin borrar datos.
+
+Una futura migración de esquema necesaria tendrá una ruta transaccional, reversible mediante respaldo previo, que rechace estados no convertibles sin borrar ni reemplazar datos. Ninguna operación destructiva se ejecuta automáticamente.
 
 La inicialización debe decidir atómicamente si la base está realmente vacía; una base parcialmente poblada no se rellena con demo ni se modifica silenciosamente. Separar la comprobación de instalación y la creación de demo permite interponer una futura restauración. Corregir la versión registrada sin confundirla con la del contrato.
 
 ## Respaldos, recursos y cambios
+
+**Decisión de cierre:** guardar una revisión local monotónica en una tabla interna de Dexie, independiente de las 13 tablas del contrato. Las transacciones de escritura incluyen esa tabla y registran una revisión como parte de la misma transacción; un rollback revierte también la revisión. Las lecturas y el marcado de una huella respaldada no la incrementan. El respaldo captura la revisión junto con su instantánea, pero no la incluye en el manifiesto portable; la huella sigue siendo la comprobación de contenido idéntico. Una escritura sin cambios efectivos puede incrementar la revisión de forma conservadora. No se introduce sincronización remota.
 
 El nuevo serializador leerá una instantánea transaccional, ordenará registros y propiedades de forma determinista y validará antes de reconstruir. Incluirá versión de contrato y metadatos verificables de integridad. Incluir datos propios, configuraciones pertinentes, copias personalizadas y resúmenes de salud diferenciados; excluir catálogo global empaquetado, credenciales, cachés y estado temporal de interfaz. Los recursos personalizados conservan identificadores y metadatos; su contenido binario se transporta como componentes separados identificados y verificados, no incrustado en el JSON del contrato. La reconstrucción completa exige todos los componentes referenciados y ocurre en una transacción. Conservar el respaldo histórico existente durante SPEC 01.
 
@@ -41,4 +47,4 @@ El seguimiento local de cambios confirmados debe actualizarse de forma atómica 
 
 Auditar campos, índices, operaciones y dependencias de cada tabla y documentar el mapa final, la clasificación de datos para sincronización y las limitaciones de transición. Revisar cálculos compartidos y sus consumidores; mantener el historial y la semántica de series principales, calentamiento y drop sets.
 
-Usar Vitest y fake-indexeddb para las 13 categorías de pruebas de la SPEC, incluyendo concurrencia, rollback, actualización de progreso, Health Connect, respaldo completo con recursos, migraciones y reapertura. Verificar rechazo sin modificación, preservación histórica y equivalencia de reconstrucción. Ejecutar la suite y el build completos. Informar cualquier conversión o instalación real que no pueda verificarse, sin declarar completada la transición por el mero éxito de pruebas simuladas.
+Usar Vitest y fake-indexeddb para las categorías aplicables de la SPEC, incluyendo concurrencia, rollback, actualización de progreso, Health Connect, respaldo completo con recursos y reapertura. Verificar rechazo sin modificación, preservación histórica y equivalencia de reconstrucción. Ejecutar la suite y el build completos. La prueba de conversión de bases distribuidas no aplica porque el propietario confirma que no existen.

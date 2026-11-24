@@ -483,6 +483,7 @@ export function WorkoutPage() {
             <div className="flex min-w-0 flex-col items-center gap-3 text-center">
               <ExerciseArt
                 alt={currentExercise?.name ?? 'Ejercicio'}
+                assetKind={currentExercise?.assetKind}
                 bundledAssetId={currentExercise?.bundledAssetId}
                 className="size-32 max-w-full"
                 customImageSrc={currentExercise?.customAssetId ? imageSrcByAssetId.get(currentExercise.customAssetId) : null}
@@ -817,6 +818,7 @@ export function WorkoutPage() {
                   >
                     <ExerciseArt
                       alt={exercise.name}
+                      assetKind={exercise.assetKind}
                       bundledAssetId={exercise.bundledAssetId}
                       className="size-14"
                       customImageSrc={exercise.customAssetId ? imageSrcByAssetId.get(exercise.customAssetId) : null}

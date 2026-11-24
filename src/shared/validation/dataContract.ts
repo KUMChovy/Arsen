@@ -18,13 +18,13 @@ export const imageAssetInputSchema = z.object({
   const prefix = `data:${mimeType};base64,`
   if (!dataUrl.startsWith(prefix)) return false
   const data = dataUrl.slice(prefix.length)
-  return data.length > 0 && /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(data)
+  return data.length > 0 && /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(data) && btoa(atob(data)) === data
 }, 'La imagen no coincide con su tipo o no es válida')
 export const recordedSetValuesSchema = z.object({
-  weightKg: z.number().finite().nonnegative(),
-  reps: z.number().int().positive(),
-  rir: z.number().finite().nonnegative(),
-  order: z.number().int().nonnegative(),
+  weightKg: z.number().finite().nonnegative().max(Number.MAX_SAFE_INTEGER),
+  reps: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+  rir: z.number().finite().nonnegative().max(Number.MAX_SAFE_INTEGER),
+  order: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
   displayUnit: weightUnitSchema,
 })
 export const recordedMainOrWarmupSetValuesSchema = recordedSetValuesSchema.extend({ kind: z.enum(['main', 'warmup']) })

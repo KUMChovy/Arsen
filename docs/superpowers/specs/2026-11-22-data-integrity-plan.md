@@ -4,17 +4,27 @@
 
 **Objetivo:** implementar la SPEC 01 preservando los datos locales y los flujos offline.
 
-**Arquitectura:** mantener las tablas y límites de dominio existentes; añadir un contrato estricto y diagnóstico separado del importador histórico, transacciones en los puntos de escritura, y un serializador consistente con recursos separados. La transición conserva los puentes necesarios hasta poder demostrar su retirada segura.
+**Arquitectura:** mantener las tablas y límites de dominio existentes; añadir un contrato estricto y diagnóstico separado del importador actual, transacciones en los puntos de escritura, y un serializador consistente con recursos separados. No se conserva un puente para versiones de desarrollo antiguas.
 
 **Tecnología:** TypeScript, Dexie 4, Zod 3, Vitest, fake-indexeddb.
 
 **Diseño:** `docs/superpowers/specs/2026-11-22-data-integrity-design.md`. La SPEC 01 original es autoridad para el alcance y las 13 categorías de pruebas.
 
-**Estado de ejecución (22-11-2026):** inicialización, validadores internos, diagnóstico, respaldo con recursos separados, preparación de transición desde un respaldo completo Dexie 7 y correcciones transaccionales implementados y cubiertos por pruebas. La detección de cambios usa comparación de huellas bajo demanda en vez del contador previsto; sus costes y límites están en `2026-11-22-persistence-audit.md`. La transición de instalaciones reales, el retiro seguro de compatibilidad antigua, la adopción exhaustiva del contrato en todas las escrituras y la auditoría completa de cálculos siguen pendientes. Las casillas siguientes conservan el plan original y no deben interpretarse por sí solas como resultados de verificación.
+**Decisión posterior del propietario:** no hay instalaciones anteriores y no se requiere compatibilidad con esquemas antiguos. Retirar las migraciones anteriores y el puente sin consumidores, conservar los flujos de importación y exportación que aún utiliza la aplicación, y verificar una base nueva y su reapertura. No borrar automáticamente datos de desarrollo. El esquema actual es 8.
+
+**Estado de ejecución (22-11-2026):** inicialización, validadores internos, diagnóstico, respaldo con recursos separados y correcciones transaccionales implementados y cubiertos por pruebas. Se retiraron las migraciones anteriores y el puente sin consumidores de acuerdo con la decisión del propietario. El esquema 8 agrega la revisión transaccional y conserva la huella para identificar contenido idéntico; sus límites están en `2026-11-22-persistence-audit.md`. La adopción exhaustiva del contrato en todas las escrituras y la auditoría completa de cálculos siguen pendientes. Las casillas siguientes conservan el plan original y no deben interpretarse por sí solas como resultados de verificación.
+
+**Avance posterior:** reemplazo y fusión de respaldos validan el conjunto resultante en transacción; la importación y exportación de rutinas comprueban imágenes y relaciones. Se cubrieron concurrencia al mover o duplicar, rollback en edición histórica, intervalos de Health Connect, fechas de descarga, series sin carga y discos que se redondean a cero. La revisión visual del editor quedó sin verificar por indisponibilidad del navegador; la revisión independiente no se ejecutó porque el modo acordado es completamente inline.
+
+**Revisión adicional de escrituras y cálculos (23-11-2026):** se inventariaron los puntos de mutación y los cálculos de entrenamiento, progreso y salud; se reforzaron notas, valores y órdenes, y la escritura revierte si falta la revisión local. Las pruebas automatizadas cubren las regresiones identificadas. La validación de transacciones en un navegador o WebView real sigue pendiente por indisponibilidad del entorno.
+
+**Corrección posterior de traslado y exportación:** el editor mantiene su presentación; al guardar, mueve solo la serie y sus drops a una sesión de destino existente o nueva, sin reubicar la sesión de origen. La validación, creación del destino, traslado, edición y actualización de estados se efectúan en una transacción. Un fallo conserva todos los datos y deja abierto el editor. La exportación de progreso lee sus siete tablas en una transacción de lectura; las pruebas cubren destino, rollback y escritura concurrente.
+
+**Cierre de revisión local:** añadir una tabla interna a Dexie con una revisión monotónica, incrementada en la transacción que escribe datos del contrato y excluida de los respaldos portables. Capturar su valor con cada instantánea. Probar escrituras independientes y agrupadas, rollback, lecturas, marcado de copia, concurrencia y reapertura; conservar la huella para detectar contenido idéntico.
 
 ## Restricciones globales
 
-- No incorporar servicios remotos ni eliminar automáticamente datos; conservar respaldos históricos y migraciones cuando no exista evidencia suficiente para retirarlos.
+- No incorporar servicios remotos ni eliminar automáticamente datos; conservar los flujos de respaldo que utiliza la aplicación hasta SPEC 02.
 - Usar kg en persistencia, IDs estables, instantáneas históricas y versiones independientes de Dexie, contrato y catálogo.
 - Una base parcial no recibe datos demo; una restauración incompatible no modifica datos.
 - Cada tarea empieza con una prueba que falle por la conducta ausente y termina ejecutando la prueba específica; ejecutar la suite completa y build antes de cerrar.
@@ -46,7 +56,7 @@
 
 ## 3. Contrato y diagnóstico
 
-**Archivos:** `src/shared/validation/arsenImportSchemas.ts`, nuevos `src/db/dataContract.ts`, `src/db/integrity.ts`, pruebas correspondientes y tipos de dominios.
+**Archivos:** `src/shared/validation/dataContract.ts`, `src/shared/validation/entities.ts`, `src/shared/validation/dataset.ts`, `src/db/integrity.ts`, pruebas correspondientes y tipos de dominios.
 
 - [ ] Escribir pruebas de cada entidad para fechas reales, números finitos y rangos de producto, enum, nulos, omisiones y relaciones; comprobar que registros históricos desvinculados con instantáneas no se rechazan como hijos huérfanos.
 - [ ] Ejecutar pruebas y observar rechazo ausente en el contrato nuevo.
@@ -68,19 +78,19 @@
 
 - [ ] Probar lectura consistente, orden determinista, verificación de integridad, rechazo transaccional de datos incompatibles, reconstrucción equivalente incluyendo recursos y reapertura de IndexedDB.
 - [ ] Implementar serialización versionada de datos de usuario, salud separada lógicamente y contenido de recursos fuera del JSON; no excluir copias personalizadas del catálogo. No sustituir la exportación histórica.
-- [ ] Introducir revisión local de cambios confirmados, actualizada atómicamente en todos los puntos de escritura que alimentan el backup; probar rollback y ausencia de cambios por lecturas.
+- [x] Introducir revisión local de cambios confirmados, actualizada atómicamente en los puntos de escritura que alimentan el backup; probar rollback y ausencia de cambios por lecturas.
 - [ ] Verificar round trip, integridad de componentes ausentes o alterados y preservación de datos existentes al rechazar importación.
 
 ## 6. Transición, catálogo y documentación
 
 **Archivos:** `src/db/schema.ts`, tipos y servicios de catálogo, `src/db/indexeddb.test.ts`, documento de modelo.
 
-- [ ] Probar las rutas de bases representativas existentes con snapshots, recursos y salud; comprobar que el puente conserva datos y aborta al no poder convertirlos.
-- [ ] Agregar solamente migraciones necesarias y preparar metadatos estables de catálogo sin sobrescribir personalizaciones. Mantener puentes históricos hasta haber registrado versiones reales, respaldo recuperable y conversión comprobada; documentar las condiciones de retiro.
+- [x] Retirar las migraciones antiguas y el puente de conversión sin consumidores; mantener el esquema 7 completo y verificar inicialización, reapertura y respaldo.
+- [ ] Preparar metadatos estables de catálogo sin sobrescribir personalizaciones y documentar sus límites.
 - [ ] Documentar estructura final, campos, índices, reglas, responsabilidades, hallazgos, sincronización futura frente a datos exclusivamente locales y cualquier inconsistencia no resuelta.
 
 ## 7. Revisión y verificación final
 
 - [ ] Revisar el diff completo y los flujos afectados con `requesting-code-review`, personalmente por la restricción inline; comprobar compatibilidad, validación, seguridad, accesibilidad y ausencia de archivos ajenos.
 - [ ] Ejecutar `pnpm test --run` y `pnpm build`; inspeccionar los resultados, incluidos fallos previos y generación del service worker.
-- [ ] Informar pruebas, riesgos y límites reales de la transición; no declarar migraciones reales verificadas sin acceso a esas instalaciones.
+- [ ] Informar pruebas y riesgos; documentar que las bases anteriores de desarrollo podrían requerir restablecimiento manual.

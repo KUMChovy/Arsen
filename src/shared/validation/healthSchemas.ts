@@ -29,4 +29,12 @@ export const healthSummarySchema = z.object({
   session: healthWindowSchema.optional(),
   exercises: z.array(healthExerciseSchema).optional(),
   sessionEndSource: z.enum(['completed', 'last-exercise', 'sync-time']).optional(),
-}).strict()
+}).strict().superRefine((summary, ctx) => {
+  const dayStart = Date.parse(summary.day.rangeStart)
+  const dayEnd = Date.parse(summary.day.rangeEnd)
+  for (const [index, window] of [summary.session, ...(summary.exercises ?? [])].entries()) {
+    if (window && (Date.parse(window.rangeStart) < dayStart || Date.parse(window.rangeEnd) > dayEnd)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: index === 0 ? ['session'] : ['exercises', index - 1], message: 'El intervalo está fuera del día de salud' })
+    }
+  }
+})

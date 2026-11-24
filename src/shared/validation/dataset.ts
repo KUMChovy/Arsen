@@ -55,6 +55,7 @@ export const datasetSchema = z.object({
   data.workoutSessions.forEach((row, index) => {
     const day = days.get(row.dayId)
     if (day && day.routineId !== row.routineId) issue('workoutSessions', index, 'Día y rutina incompatibles')
+    if (new Set((row.sessionExercises ?? []).map((exercise) => exercise.id)).size !== (row.sessionExercises ?? []).length) issue('workoutSessions', index, 'Ejercicio duplicado en el plan de sesión')
     if ((row.sessionExercises ?? []).some((exercise) => !assetExists(exercise.customAssetId))) issue('workoutSessions', index, 'Imagen de sesión inexistente')
     for (const summary of [...(row.healthHistory ?? []), ...(row.health ? [row.health] : [])]) {
       const healthLogIds = new Set<string>()

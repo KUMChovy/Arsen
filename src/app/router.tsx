@@ -27,6 +27,9 @@ const RoutineDayDetailPage = lazy(() =>
 const SettingsPage = lazy(() =>
   import('../domains/settings/pages/SettingsPage').then((module) => ({ default: module.SettingsPage })),
 )
+const AccountPage = lazy(() =>
+  import('../domains/account/pages/AccountPage').then((module) => ({ default: module.AccountPage })),
+)
 const WorkoutPage = lazy(() =>
   import('../domains/workout/pages/WorkoutPage').then((module) => ({ default: module.WorkoutPage })),
 )
@@ -59,6 +62,7 @@ export const router = createBrowserRouter([
       { path: '/progreso/historial/sesion/:sessionId', element: lazyPage(<ProgressHistorySessionPage />) },
       { path: '/progreso/historial/:date', element: lazyPage(<ProgressHistoryDatePage />) },
       { path: '/settings', element: lazyPage(<SettingsPage />) },
+      { path: '/cuenta', element: lazyPage(<AccountPage />) },
     ],
   },
 ])

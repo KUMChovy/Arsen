@@ -46,8 +46,8 @@ export function average(values: number[]) {
 }
 
 export function weeksSince(firstDate: string, currentDate: string) {
-  const first = new Date(`${firstDate}T00:00:00`).getTime()
-  const current = new Date(`${currentDate}T00:00:00`).getTime()
+  const first = new Date(`${firstDate}T00:00:00Z`).getTime()
+  const current = new Date(`${currentDate}T00:00:00Z`).getTime()
   if (Number.isNaN(first) || Number.isNaN(current) || current < first) return 0
 
   return Math.floor((current - first) / (7 * 24 * 60 * 60 * 1000))

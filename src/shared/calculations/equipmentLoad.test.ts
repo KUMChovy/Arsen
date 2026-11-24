@@ -40,6 +40,13 @@ describe('equipment load calculations', () => {
     })
   })
 
+  it('rejects a non-finite target', () => {
+    expect(() => calculatePlateBreakdown({ targetWeightKg: Number.NaN })).toThrow(RangeError)
+    expect(() => calculatePlateBreakdown({ targetWeightKg: Number.MAX_VALUE })).toThrow(RangeError)
+    expect(() => calculatePlateBreakdown({ targetWeightKg: 1e9, availablePlateWeightsKg: [0.01] })).toThrow(RangeError)
+    expect(buildEquipmentLoadNote({ equipment: 'Barra', unit: 'kg', weightKg: 1e100 })).toBeNull()
+  })
+
   it('calculates the closest plate breakdown below a non-exact target', () => {
     expect(calculatePlateBreakdown({ targetWeightKg: 28.2, availablePlateWeightsKg: [25, 10, 5, 2.5] })).toEqual({
       isExact: false,
@@ -52,6 +59,11 @@ describe('equipment load calculations', () => {
   it('normalizes configurable plate inventory', () => {
     expect(normalizeAvailablePlateWeightsKg([2.5, 20, 0, Number.NaN, 2.5, -1, 10])).toEqual([20, 10, 2.5])
     expect(normalizeAvailablePlateWeightsKg([])).toEqual(DEFAULT_AVAILABLE_PLATES_KG)
+  })
+
+  it('does not keep a plate that rounds to zero', () => {
+    expect(normalizeAvailablePlateWeightsKg([0.001, 20])).toEqual([20])
+    expect(normalizeAvailablePlateWeightsKg([Number.MAX_VALUE, 20])).toEqual([20])
   })
 
   it('builds a barbell note from disk weight', () => {

@@ -49,7 +49,7 @@ export function warmupProtocolLabel(protocol: WarmupProtocol) {
 }
 
 export function buildWarmupSets(workingWeightKg: number, protocolValue: string | null | undefined): WarmupSet[] {
-  if (workingWeightKg <= 0) return []
+  if (!Number.isFinite(workingWeightKg) || workingWeightKg <= 0) return []
 
   const protocol = normalizeWarmupProtocol(protocolValue)
 
@@ -60,5 +60,6 @@ export function buildWarmupSets(workingWeightKg: number, protocolValue: string |
 }
 
 function roundToHalf(value: number) {
+  if (value > Number.MAX_VALUE / 2) return value
   return Math.round(value * 2) / 2
 }

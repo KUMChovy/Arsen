@@ -3,7 +3,7 @@ import Dexie from 'dexie'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { db } from '../../db/schema'
 import type { RoutineExercise } from '../routine/types'
-import { addDropSet, applySessionTargetsToRoutine, applySessionWeightsToRoutine, completeSessionForDay, deleteMainSet, deleteHistoricalExercise, deleteWorkoutSession, duplicateSessionAsDraft, ensureExerciseLog, getOrCreateSessionForDay, getSessionTargetProposals, getSessionWeightProposals, registerMainSetForExercise, registerWarmupForExercise, saveMainSet, skipExercise, skipRoutineExerciseForDay, updateDropSet, updateExerciseNotesForDay, updateHistoricalSession, updateHistoricalSet, updateSessionExercisePlan, updateSetWithDrops } from './services'
+import { addDropSet, applySessionTargetsToRoutine, applySessionWeightsToRoutine, completeSessionForDay, deleteMainSet, deleteHistoricalExercise, deleteWorkoutSession, duplicateSessionAsDraft, ensureExerciseLog, getOrCreateSessionForDay, getSessionTargetProposals, getSessionWeightProposals, moveHistoricalSet, moveMainSetToExercise, registerMainSetForExercise, registerWarmupForExercise, saveMainSet, skipExercise, skipRoutineExerciseForDay, updateDropSet, updateExerciseNotesForDay, updateHistoricalSession, updateHistoricalSet, updateSessionExercisePlan, updateSessionNotesForDay, updateSetWithDrops } from './services'
 
 async function resetDb() {
   db.close()
@@ -37,6 +37,31 @@ describe('workout services snapshots', () => {
     expect(await db.workoutSessions.count()).toBe(0)
   })
 
+  it('rejects non-text notes and skip reasons without writing partial records', async () => {
+    const exercise = routineExercise()
+    const input = { date: '2026-08-11', dayId: 'day-1', displayUnit: 'kg' as const, routineId: 'routine-1' }
+    await expect(updateSessionNotesForDay({ ...input, notes: 42 as unknown as string })).rejects.toThrow()
+    await expect(updateExerciseNotesForDay({ ...input, exercise, notes: 42 as unknown as string })).rejects.toThrow()
+    await expect(skipRoutineExerciseForDay({ ...input, exercise, reason: 42 as unknown as string })).rejects.toThrow()
+    expect(await db.workoutSessions.count()).toBe(0)
+    expect(await db.exerciseLogs.count()).toBe(0)
+    const sessionId = await getOrCreateSessionForDay(input)
+    const before = await db.workoutSessions.get(sessionId)
+    await expect(updateHistoricalSession(sessionId, { ...input, notes: 42 as unknown as string })).rejects.toThrow()
+    expect(await db.workoutSessions.get(sessionId)).toEqual(before)
+  })
+
+  it.each(['complete', 'notes'] as const)('rolls back a new session when its %s update fails', async (action) => {
+    const spy = vi.spyOn(db.workoutSessions, 'update').mockRejectedValueOnce(new Error('falló el almacenamiento'))
+    const input = { date: '2026-08-11', dayId: 'day-1', displayUnit: 'kg' as const, routineId: 'routine-1' }
+    try {
+      await expect(action === 'complete' ? completeSessionForDay(input) : updateSessionNotesForDay({ ...input, notes: 'Nota' })).rejects.toThrow()
+      expect(await db.workoutSessions.count()).toBe(0)
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
   it('rejects an invalid display unit before creating a session', async () => {
     await expect(getOrCreateSessionForDay({ date: '2026-08-11', dayId: 'day-1', displayUnit: 'oz' as 'kg', routineId: 'routine-1' })).rejects.toThrow()
     expect(await db.workoutSessions.count()).toBe(0)
@@ -52,9 +77,55 @@ describe('workout services snapshots', () => {
     expect(await db.setLogs.count()).toBe(0)
   })
 
+  it('rejects extreme loads and repetitions before persisting a workout', async () => {
+    const exercise = routineExercise()
+    const input = { date: '2026-08-11', dayId: 'day-1', displayUnit: 'kg' as const, routineId: 'routine-1', exercise, reps: 8, rir: 1, weightKg: Number.MAX_VALUE }
+    await expect(registerMainSetForExercise(input)).rejects.toThrow()
+    await expect(registerWarmupForExercise({ ...input, weightKg: 20, reps: Number.MAX_SAFE_INTEGER + 1 })).rejects.toThrow()
+    expect(await db.workoutSessions.count()).toBe(0)
+    const registered = await registerMainSetForExercise({ ...input, weightKg: 20 })
+    const before = await db.setLogs.get(registered.setLogId)
+    await expect(updateHistoricalSet({ setLogId: registered.setLogId, weightKg: Number.MAX_VALUE, reps: 8, rir: 1 })).rejects.toThrow()
+    await expect(addDropSet({ setLogId: registered.setLogId, weightKg: 20, reps: Number.MAX_SAFE_INTEGER + 1, rir: 1, displayUnit: 'kg' })).rejects.toThrow()
+    expect(await db.setLogs.get(registered.setLogId)).toEqual(before)
+    expect(await db.dropSetLogs.count()).toBe(0)
+  })
+
+  it('does not append a set beyond the safe integer order', async () => {
+    const exercise = routineExercise()
+    const registered = await registerMainSetForExercise({ date: '2026-08-11', dayId: 'day-1', displayUnit: 'kg', routineId: 'routine-1', exercise, reps: 8, rir: 1, weightKg: 20 })
+    await db.setLogs.update(registered.setLogId, { order: Number.MAX_SAFE_INTEGER })
+    await expect(saveMainSet({ exerciseLogId: registered.exerciseLogId, displayUnit: 'kg', reps: 8, rir: 1, weightKg: 20 })).rejects.toThrow()
+    expect(await db.setLogs.count()).toBe(1)
+  })
+
   it('rejects an exercise log when its session is missing', async () => {
     await expect(ensureExerciseLog('missing', routineExercise())).rejects.toThrow()
     expect(await db.exerciseLogs.count()).toBe(0)
+  })
+
+  it('rejects an invalid exercise snapshot without creating a log', async () => {
+    const sessionId = await getOrCreateSessionForDay({ date: '2026-08-11', dayId: 'day-1', displayUnit: 'kg', routineId: 'routine-1' })
+    await expect(ensureExerciseLog(sessionId, routineExercise({ targetSets: 0 }))).rejects.toThrow()
+    expect(await db.exerciseLogs.count()).toBe(0)
+  })
+
+  it('does not create a session or snapshot for a missing custom image', async () => {
+    const exercise = routineExercise({ customAssetId: 'missing-image' })
+    await expect(registerMainSetForExercise({ date: '2026-08-11', dayId: exercise.dayId, displayUnit: 'kg', exercise, reps: 8, rir: 1, routineId: exercise.routineId, weightKg: 20 })).rejects.toThrow()
+    expect(await db.workoutSessions.count()).toBe(0)
+    expect(await db.exerciseLogs.count()).toBe(0)
+  })
+
+  it.each(['main', 'warmup', 'skip', 'notes'] as const)('rejects %s for an exercise from a different day', async (action) => {
+    const exercise = routineExercise({ dayId: 'different-day' })
+    const input = { date: '2026-08-11', dayId: 'day-1', displayUnit: 'kg' as const, exercise, routineId: 'routine-1' }
+    const operation = action === 'main' ? registerMainSetForExercise({ ...input, weightKg: 20, reps: 8, rir: 1 })
+      : action === 'warmup' ? registerWarmupForExercise({ ...input, weightKg: 20, reps: 8, rir: 1 })
+      : action === 'skip' ? skipRoutineExerciseForDay(input)
+      : updateExerciseNotesForDay({ ...input, notes: 'Nota' })
+    await expect(operation).rejects.toThrow()
+    expect(await db.workoutSessions.count()).toBe(0)
   })
 
   it('does not create an omission for a missing session', async () => {
@@ -93,6 +164,99 @@ describe('workout services snapshots', () => {
     await db.setLogs.update(created.setLogId, { order: 3 })
     const next = await saveMainSet({ exerciseLogId: created.exerciseLogId, weightKg: 20, reps: 8, rir: 1, displayUnit: 'kg' })
     expect(next.order).toBe(4)
+  })
+
+  it('appends a warmup after an order gap without duplicating an existing order', async () => {
+    const exercise = routineExercise()
+    const input = { date: '2026-08-10', dayId: exercise.dayId, displayUnit: 'kg' as const, exercise, reps: 8, rir: 1, routineId: exercise.routineId, weightKg: 20 }
+    const first = await registerWarmupForExercise(input)
+    await db.setLogs.update(first.setLogId, { order: 1 })
+    const next = await registerWarmupForExercise(input)
+    expect((await db.setLogs.get(next.setLogId))?.order).toBe(2)
+  })
+
+  it('rejects an invalid exercise in a session plan without creating a session', async () => {
+    const exercise = routineExercise({ targetSets: 0 })
+    await expect(updateSessionExercisePlan({ date: '2026-08-10', dayId: exercise.dayId, displayUnit: 'kg', exercises: [exercise], routineId: exercise.routineId })).rejects.toThrow()
+    expect(await db.workoutSessions.count()).toBe(0)
+  })
+
+  it('rejects a session plan referencing a missing custom image', async () => {
+    const exercise = routineExercise({ customAssetId: 'missing-image' })
+    await expect(updateSessionExercisePlan({ date: '2026-08-10', dayId: exercise.dayId, displayUnit: 'kg', exercises: [exercise], routineId: exercise.routineId })).rejects.toThrow()
+    expect(await db.workoutSessions.count()).toBe(0)
+  })
+
+  it('moves a main set after the highest existing destination order', async () => {
+    const source = routineExercise()
+    const destination = routineExercise({ id: 'destination', order: 1 })
+    await db.routineExercises.bulkPut([source, destination])
+    const base = { date: '2026-08-10', dayId: source.dayId, displayUnit: 'kg' as const, reps: 8, rir: 1, routineId: source.routineId, weightKg: 20 }
+    const first = await registerMainSetForExercise({ ...base, exercise: source })
+    const second = await registerMainSetForExercise({ ...base, exercise: destination })
+    await db.setLogs.update(second.setLogId, { order: 1 })
+    await moveMainSetToExercise(first.setLogId, destination.id)
+    expect(await db.setLogs.get(first.setLogId)).toMatchObject({ exerciseLogId: second.exerciseLogId, order: 2 })
+  })
+
+  it('moves only the selected set and its drops to a different date', async () => {
+    const exercise = routineExercise()
+    await db.routineExercises.put(exercise)
+    const input = { date: '2026-08-10', dayId: exercise.dayId, displayUnit: 'kg' as const, exercise, reps: 8, rir: 1, routineId: exercise.routineId, weightKg: 20 }
+    const source = await registerMainSetForExercise(input)
+    const other = await registerMainSetForExercise(input)
+    const dropId = await addDropSet({ setLogId: source.setLogId, displayUnit: 'kg', reps: 5, rir: 1, weightKg: 10 })
+    await moveHistoricalSet({ sessionId: source.sessionId, setLogId: source.setLogId, routineExerciseId: exercise.id, routineId: exercise.routineId, dayId: exercise.dayId, date: '2026-08-11', weightKg: 25, reps: 9, rir: 2 })
+    const moved = (await db.setLogs.get(source.setLogId))!
+    const targetLog = (await db.exerciseLogs.get(moved.exerciseLogId))!
+    expect(targetLog.sessionId).not.toBe(source.sessionId)
+    expect((await db.workoutSessions.get(targetLog.sessionId))?.date).toBe('2026-08-11')
+    expect((await db.workoutSessions.get(source.sessionId))?.date).toBe('2026-08-10')
+    expect((await db.setLogs.get(other.setLogId))?.exerciseLogId).toBe(source.exerciseLogId)
+    expect(moved).toMatchObject({ weightKg: 25, reps: 9, rir: 2 })
+    expect((await db.dropSetLogs.get(dropId))?.setLogId).toBe(source.setLogId)
+  })
+
+  it('rolls back the destination session and move when editing fails', async () => {
+    const exercise = routineExercise()
+    await db.routineExercises.put(exercise)
+    const source = await registerMainSetForExercise({ date: '2026-08-10', dayId: exercise.dayId, displayUnit: 'kg', exercise, reps: 8, rir: 1, routineId: exercise.routineId, weightKg: 20 })
+    const before = await db.setLogs.get(source.setLogId)
+    const spy = vi.spyOn(db.setLogs, 'update').mockRejectedValueOnce(new Error('falló el almacenamiento'))
+    try {
+      await expect(moveHistoricalSet({ sessionId: source.sessionId, setLogId: source.setLogId, routineExerciseId: exercise.id, routineId: exercise.routineId, dayId: exercise.dayId, date: '2026-08-11', weightKg: 25, reps: 9, rir: 2 })).rejects.toThrow()
+      expect(await db.setLogs.get(source.setLogId)).toEqual(before)
+      expect(await db.workoutSessions.count()).toBe(1)
+      expect(await db.exerciseLogs.count()).toBe(1)
+    } finally { spy.mockRestore() }
+  })
+
+  it('reuses an existing destination session and appends the set', async () => {
+    const exercise = routineExercise()
+    await db.routineExercises.put(exercise)
+    const base = { dayId: exercise.dayId, displayUnit: 'kg' as const, exercise, reps: 8, rir: 1, routineId: exercise.routineId, weightKg: 20 }
+    const source = await registerMainSetForExercise({ ...base, date: '2026-08-10' })
+    const target = await registerMainSetForExercise({ ...base, date: '2026-08-11' })
+    const targetId = await moveHistoricalSet({ sessionId: source.sessionId, setLogId: source.setLogId, routineExerciseId: exercise.id, routineId: exercise.routineId, dayId: exercise.dayId, date: '2026-08-11', weightKg: 30, reps: 7, rir: 1 })
+    expect(targetId).toBe(target.sessionId)
+    expect(await db.setLogs.get(source.setLogId)).toMatchObject({ exerciseLogId: target.exerciseLogId, order: 1, weightKg: 30 })
+    expect(await db.workoutSessions.count()).toBe(2)
+  })
+
+  it('rolls back a move when updating exercise state fails', async () => {
+    const source = routineExercise()
+    const destination = routineExercise({ id: 'destination', order: 1 })
+    await db.routineExercises.bulkPut([source, destination])
+    const first = await registerMainSetForExercise({ date: '2026-08-10', dayId: source.dayId, displayUnit: 'kg', exercise: source, reps: 8, rir: 1, routineId: source.routineId, weightKg: 20 })
+    const before = await db.setLogs.get(first.setLogId)
+    const spy = vi.spyOn(db.exerciseLogs, 'update').mockRejectedValueOnce(new Error('falló el almacenamiento'))
+    try {
+      await expect(moveMainSetToExercise(first.setLogId, destination.id)).rejects.toThrow()
+      expect(await db.setLogs.get(first.setLogId)).toEqual(before)
+      expect(await db.exerciseLogs.where('sessionId').equals(first.sessionId).count()).toBe(1)
+    } finally {
+      spy.mockRestore()
+    }
   })
 
   it('assigns distinct orders to concurrent drop sets', async () => {
@@ -194,6 +358,16 @@ describe('workout services snapshots', () => {
     await db.setLogs.update(result.setLogId, { reps: 0 })
     await completeSessionForDay(common)
     expect(await getSessionTargetProposals(result.sessionId)).toEqual([])
+  })
+
+  it('does not propose an invalid stored weight for a routine', async () => {
+    const exercise = routineExercise()
+    await db.routineExercises.put(exercise)
+    const input = { date: '2026-08-11', dayId: exercise.dayId, displayUnit: 'kg' as const, routineId: exercise.routineId }
+    const recorded = await registerMainSetForExercise({ ...input, exercise, reps: 8, rir: 1, weightKg: 70 })
+    await completeSessionForDay(input)
+    await db.setLogs.update(recorded.setLogId, { weightKg: -1 })
+    expect(await getSessionWeightProposals(recorded.sessionId)).toEqual([])
   })
 
   it('rejects a session request for an existing day owned by another routine', async () => {
@@ -517,6 +691,15 @@ describe('workout services snapshots', () => {
     const registered = await registerMainSetForExercise({ date: '2026-08-11', dayId: exercise.dayId, displayUnit: 'kg', exercise, reps: 8, rir: 1, routineId: exercise.routineId, weightKg: 60 })
     await expect(updateHistoricalSet({ setLogId: registered.setLogId, order: -1, reps: 8, rir: 1, weightKg: 60 })).rejects.toThrow()
     expect((await db.setLogs.get(registered.setLogId))?.order).toBe(0)
+  })
+
+  it('rejects an order already used by another set of the same kind', async () => {
+    const exercise = routineExercise()
+    const first = await registerMainSetForExercise({ date: '2026-08-11', dayId: exercise.dayId, displayUnit: 'kg', exercise, reps: 8, rir: 1, routineId: exercise.routineId, weightKg: 60 })
+    const second = await saveMainSet({ exerciseLogId: first.exerciseLogId, displayUnit: 'kg', reps: 8, rir: 1, weightKg: 60 })
+    const before = await db.setLogs.get(second.id)
+    await expect(updateHistoricalSet({ setLogId: second.id, order: 0, reps: 10, rir: 1, weightKg: 70 })).rejects.toThrow()
+    expect(await db.setLogs.get(second.id)).toEqual(before)
   })
 
   it('rolls back a historical set edit if session state cannot be updated', async () => {

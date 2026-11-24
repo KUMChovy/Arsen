@@ -15,9 +15,22 @@ describe('resolveHealthDayWindow', () => {
       rangeStart: new Date(2026, 6, 20).toISOString(),
     })
   })
+
+  it('rejects impossible calendar dates', () => {
+    expect(() => resolveHealthDayWindow('2026-02-30', new Date('2026-04-01T12:00:00Z'))).toThrow()
+  })
 })
 
 describe('resolveHealthWindows', () => {
+  it('does not infer a health window from timestamps outside the session day', () => {
+    const outside = new Date(2026, 6, 21, 12).toISOString()
+    const later = new Date(2026, 6, 21, 13).toISOString()
+    const result = resolveHealthWindows({ date: '2026-07-20', status: 'completed', startedAt: outside, completedAt: later }, [
+      { canonicalName: 'press', exerciseLogId: 'log', exerciseName: 'Press', routineExerciseId: 'exercise', setCount: 2, setTimes: [outside, later] },
+    ], new Date(2026, 6, 22, 12))
+    expect(result.session).toBeNull()
+    expect(result.exercises).toEqual([])
+  })
   it('resolves the completed session and each exercise from its main set timestamps', () => {
     const result = resolveHealthWindows(
       {

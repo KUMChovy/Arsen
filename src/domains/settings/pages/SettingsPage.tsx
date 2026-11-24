@@ -16,6 +16,7 @@ import {
   Scale,
   Settings,
   Trash2,
+  UserRound,
   type LucideIcon,
 } from 'lucide-react'
 import { Card } from '../../../shared/components/Card'
@@ -230,6 +231,7 @@ export function SettingsPage() {
       ) : null}
 
       <SettingsSection title="Datos">
+        <ActionRow icon={UserRound} label="Cuenta y respaldo" meta="Iniciar sesión y administrar tu cuenta" onClick={() => navigate('/cuenta')} />
         <ActionRow
           busy={busyAction === 'backup-export'}
           icon={CloudUpload}

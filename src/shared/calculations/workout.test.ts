@@ -36,4 +36,15 @@ describe('workout calculations', () => {
     expect(weeksSince('2026-01-01', '2026-02-12')).toBe(6)
     expect(shouldNotifyDeload('2026-01-01', '2026-02-12')).toBe(true)
   })
+
+  it('counts calendar weeks across a daylight-saving transition', () => {
+    const previousTimezone = process.env.TZ
+    try {
+      process.env.TZ = 'America/New_York'
+      expect(weeksSince('2026-02-28', '2026-03-14')).toBe(2)
+    } finally {
+      if (previousTimezone === undefined) delete process.env.TZ
+      else process.env.TZ = previousTimezone
+    }
+  })
 })

@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ProgressHistorySessionPage } from './ProgressHistorySessionPage'
 import type { SessionDetail } from '../repository'
 
-const mocks = vi.hoisted(() => ({ detail: null as SessionDetail | null | undefined, updateSession: vi.fn(), updateSet: vi.fn(), updateDrop: vi.fn(), addDrop: vi.fn(), deleteDrop: vi.fn(), deleteSet: vi.fn() }))
+const mocks = vi.hoisted(() => ({ detail: null as SessionDetail | null | undefined, moveSet: vi.fn(), updateSession: vi.fn(), updateSet: vi.fn(), updateSetWithDrops: vi.fn(), updateDrop: vi.fn(), addDrop: vi.fn(), deleteDrop: vi.fn(), deleteSet: vi.fn() }))
 
 vi.mock('../hooks', () => ({
   useHistory: () => ({ sessions: [] }),
@@ -19,10 +19,10 @@ vi.mock('dexie-react-hooks', () => ({
 }))
 
 vi.mock('../../settings/services', () => ({ getAppSettings: vi.fn(() => Promise.resolve({ healthIntegrationEnabled: false, preferredUnit: 'kg' })) }))
-vi.mock('../../workout/services', () => ({ addDropSet: mocks.addDrop, deleteDropSet: mocks.deleteDrop, deleteMainSet: mocks.deleteSet, updateDropSet: mocks.updateDrop, updateHistoricalSession: mocks.updateSession, updateHistoricalSet: mocks.updateSet }))
+vi.mock('../../workout/services', () => ({ addDropSet: mocks.addDrop, deleteDropSet: mocks.deleteDrop, deleteMainSet: mocks.deleteSet, moveHistoricalSet: mocks.moveSet, updateDropSet: mocks.updateDrop, updateHistoricalSession: mocks.updateSession, updateHistoricalSet: mocks.updateSet, updateSetWithDrops: mocks.updateSetWithDrops }))
 
 describe('ProgressHistorySessionPage', () => {
-  afterEach(() => { cleanup(); mocks.detail = null; mocks.updateSession.mockReset(); mocks.updateSet.mockReset(); mocks.updateDrop.mockReset(); mocks.addDrop.mockReset(); mocks.deleteDrop.mockReset(); mocks.deleteSet.mockReset() })
+  afterEach(() => { cleanup(); mocks.detail = null; mocks.moveSet.mockReset(); mocks.updateSession.mockReset(); mocks.updateSet.mockReset(); mocks.updateSetWithDrops.mockReset(); mocks.updateDrop.mockReset(); mocks.addDrop.mockReset(); mocks.deleteDrop.mockReset(); mocks.deleteSet.mockReset() })
 
   it('starts with exercise details collapsed and lets the user open them', () => {
     mocks.detail = detailFixture()
@@ -102,6 +102,17 @@ describe('ProgressHistorySessionPage', () => {
     expect(screen.getByText(/Editar drop set/i)).toBeInTheDocument()
   })
 
+  it('keeps the historical set editor open and reports a failed save', async () => {
+    mocks.detail = detailFixture()
+    mocks.updateSetWithDrops.mockRejectedValueOnce(new Error('No se pudo guardar'))
+    renderPage()
+    fireEvent.click(screen.getByRole('button', { name: 'Expandir Press inclinado' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Editar serie 1' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }))
+    expect(await screen.findByText('No se pudo guardar')).toBeInTheDocument()
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+  })
+
   it('keeps the option to move a historical set to another exercise', () => {
     mocks.detail = detailFixture()
     renderPage()
@@ -109,6 +120,18 @@ describe('ProgressHistorySessionPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Mover serie 1' }))
     expect(screen.getByText('Rutina')).toBeInTheDocument()
     expect(screen.getByText('Ejercicio', { selector: 'span' })).toBeInTheDocument()
+  })
+
+  it('keeps the move editor open and reports a failed atomic move', async () => {
+    mocks.detail = detailFixture()
+    mocks.moveSet.mockRejectedValueOnce(new Error('No se pudo mover'))
+    renderPage()
+    fireEvent.click(screen.getByRole('button', { name: 'Expandir Press inclinado' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Mover serie 1' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }))
+    expect(await screen.findByText('No se pudo mover')).toBeInTheDocument()
+    expect(screen.getByText('Rutina', { selector: 'span' })).toBeInTheDocument()
+    expect(mocks.moveSet).toHaveBeenCalledTimes(1)
   })
 
   it('opens a mobile-friendly, unit-aware editor for a drop set', () => {

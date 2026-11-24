@@ -51,10 +51,10 @@ import type { WeightUnit } from '../../workout/types'
 import { WarmupProtocolInfoSheet } from '../components/WarmupProtocolInfoSheet'
 import { ExerciseImageSelector, type ExerciseImageSelection } from '../components/ExerciseImageSelector'
 import { ExerciseActions } from '../components/ExerciseActions'
-import { SinfulShellBrowserSheet } from '../components/SinfulShellBrowserSheet'
+import { CatalogExerciseArt, SinfulShellBrowserSheet } from '../components/SinfulShellBrowserSheet'
 import { sinfulShellCatalog, type SinfulShellExercise } from '../data/sinfulShellCatalog'
 import type { Equipment, ExerciseAsset, ExerciseCatalogItem, LoadMode, MuscleGroup, Routine, RoutineDay, RoutineExercise } from '../types'
-import { useActiveRoutineBundle, useExerciseAssets, useExerciseCatalog, useRoutineSummaries } from '../hooks'
+import { useActiveRoutineBundle, useExerciseAssets, useExerciseCatalog, useGlobalCatalog, useRoutineSummaries } from '../hooks'
 import { exportRoutineJson, importRoutineJson } from '../importExport'
 import {
   addCatalogExerciseToDay,
@@ -111,6 +111,7 @@ const weekdayOptions = [
 export function RoutinePage() {
   const navigate = useNavigate()
   const bundle = useActiveRoutineBundle()
+  const globalCatalog = useGlobalCatalog()
   const summaries = useRoutineSummaries()
   const catalog = useExerciseCatalog() ?? []
   const exerciseAssets = useExerciseAssets() ?? []
@@ -259,6 +260,7 @@ export function RoutinePage() {
       {mode === 'catalog' ? (
         <CatalogPanel
           catalog={catalog}
+          globalCount={globalCatalog?.exercises.length ?? sinfulShellCatalog.length}
           disabled={isPending}
           imageSrcByAssetId={imageSrcByAssetId}
           onCreate={() => setCatalogSheet({ item: null })}
@@ -321,6 +323,7 @@ export function RoutinePage() {
       {sinfulShellOpen ? (
         <SinfulShellBrowserSheet
           catalog={catalog}
+          remoteCatalog={globalCatalog}
           disabled={isPending}
           mode={sinfulShellOpen.mode}
           onAddCopy={(exercise) => {
@@ -781,6 +784,7 @@ function ExerciseEditRow({
       <DragHandle label={`Reordenar ${exercise.name}`} />
       <ExerciseArt
         alt={exercise.name}
+        assetKind={exercise.assetKind}
         bundledAssetId={exercise.bundledAssetId}
         className="size-12"
         customImageSrc={exercise.customAssetId ? imageSrcByAssetId.get(exercise.customAssetId) : null}
@@ -805,6 +809,7 @@ function ExerciseEditRow({
 
 function CatalogPanel({
   catalog,
+  globalCount,
   disabled,
   imageSrcByAssetId,
   onCreate,
@@ -813,6 +818,7 @@ function CatalogPanel({
   onOpenSinfulShell,
 }: {
   catalog: ExerciseCatalogItem[]
+  globalCount: number
   disabled: boolean
   imageSrcByAssetId: Map<string, string>
   onCreate: () => void
@@ -833,7 +839,7 @@ function CatalogPanel({
       >
         <span className="min-w-0">
           <strong className="block truncate text-sm text-arsen-ink">Explorar Sinful Shell</strong>
-          <span className="mt-1 block truncate text-xs font-semibold text-arsen-muted">{sinfulShellCatalog.length} ejercicios incluidos</span>
+          <span className="mt-1 block truncate text-xs font-semibold text-arsen-muted">{globalCount} {globalCount === 1 ? 'ejercicio disponible' : 'ejercicios disponibles'}</span>
         </span>
         <span className="grid size-10 place-items-center rounded-[10px] bg-arsen-purple/20 text-arsen-purple2">
           <ListPlus aria-hidden="true" className="size-5" />
@@ -856,6 +862,7 @@ function CatalogPanel({
           <Card className="grid grid-cols-[52px_minmax(0,1fr)_auto] items-center gap-4 p-2" key={item.id}>
             <ExerciseArt
               alt={item.name}
+              assetKind={item.assetKind}
               bundledAssetId={item.bundledAssetId}
               className="size-[52px]"
               customImageSrc={item.customAssetId ? imageSrcByAssetId.get(item.customAssetId) : null}
@@ -938,6 +945,7 @@ function CatalogPickerSheet({
             <Card className="grid grid-cols-[52px_minmax(0,1fr)_auto] items-center gap-4 p-2">
               <ExerciseArt
                 alt={item.name}
+                assetKind={item.assetKind}
                 bundledAssetId={item.bundledAssetId}
                 className="size-[52px]"
                 customImageSrc={item.customAssetId ? imageSrcByAssetId.get(item.customAssetId) : null}
@@ -1068,13 +1076,16 @@ function CatalogExerciseEditorSheet({
         {isSinfulShellLocked ? (
           <>
             <div className="grid grid-cols-[64px_minmax(0,1fr)] items-center gap-3 rounded-[12px] border border-white/10 bg-arsen-surface p-3">
-              <ExerciseArt
-                alt={form.name || 'Imagen del ejercicio'}
-                bundledAssetId={form.bundledAssetId}
-                className="size-16"
-                customImageSrc={null}
-                muscle={form.mainMuscle}
-              />
+              {sourceSinfulShellExercise ? <CatalogExerciseArt exercise={sourceSinfulShellExercise} className="size-16" /> : (
+                <ExerciseArt
+                  alt={form.name || 'Imagen del ejercicio'}
+                  assetKind={item?.assetKind}
+                  bundledAssetId={form.bundledAssetId}
+                  className="size-16"
+                  customImageSrc={null}
+                  muscle={form.mainMuscle}
+                />
+              )}
               <div className="min-w-0">
                 <h3 className="truncate text-sm font-black text-arsen-ink">{form.name}</h3>
                 <p className="mt-1 truncate text-xs font-semibold text-arsen-muted">{form.mainMuscle}</p>
@@ -1194,6 +1205,7 @@ function CatalogExerciseEditorSheet({
             mode: sourceSinfulShellExercise ? 'create-from-sinful-shell' : 'manual',
             name: form.name,
             sinfulShellId: sourceSinfulShellExercise?.id ?? item?.sinfulShellId ?? null,
+            globalCatalogVersion: sourceSinfulShellExercise ? sourceSinfulShellExercise.globalCatalogVersion ?? 0 : undefined,
             technicalNotes: form.technicalNotes,
             warmupProtocol: selectedWarmupProtocol,
           })
@@ -1311,6 +1323,7 @@ function RoutineExerciseRecipeSheet({
         <Card className="grid grid-cols-[52px_minmax(0,1fr)] items-center gap-4 p-2">
           <ExerciseArt
             alt={form.name}
+            assetKind={visualReference?.assetKind}
             bundledAssetId={visualReference?.bundledAssetId}
             className="size-[52px]"
             customImageSrc={visualReference?.customAssetId ? imageSrcByAssetId.get(visualReference.customAssetId) : null}

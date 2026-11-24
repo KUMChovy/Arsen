@@ -18,6 +18,12 @@ describe('warmups', () => {
     ])
   })
 
+  it('does not generate warmups from a non-finite weight', () => {
+    expect(buildWarmupSets(Number.NaN, 'strength')).toEqual([])
+    expect(buildWarmupSets(Number.POSITIVE_INFINITY, 'strength')).toEqual([])
+    expect(buildWarmupSets(Number.MAX_VALUE, 'strength').every((set) => Number.isFinite(set.weightKg))).toBe(true)
+  })
+
   it('builds every approved protocol', () => {
     expect(buildWarmupSets(80, 'none')).toHaveLength(0)
     expect(buildWarmupSets(80, 'strength').map((set) => set.weightKg)).toEqual([40, 56, 68])

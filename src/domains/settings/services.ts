@@ -1,6 +1,6 @@
 import Papa from 'papaparse'
 import type { Table } from 'dexie'
-import { CURRENT_SCHEMA_VERSION, db } from '../../db/schema'
+import { CURRENT_SCHEMA_VERSION, dataTables, db } from '../../db/schema'
 import type {
   ExerciseCatalogItem,
   ExerciseAsset,
@@ -11,10 +11,9 @@ import type {
 } from '../routine/types'
 import type { AppSettings, DeloadCycle, DeloadOverview, DeloadPhase } from './types'
 import type { DropSetLog, ExerciseLog, SetLog, SkipLog, WeightUnit, WorkoutSession } from '../workout/types'
-import { loadSettingsForEquipment, normalizeAvailablePlateWeightsKg } from '../../shared/calculations/equipmentLoad'
+import { normalizeAvailablePlateWeightsKg } from '../../shared/calculations/equipmentLoad'
 import { volumeForSet, weeksSince } from '../../shared/calculations/workout'
 import { estimatedOneRm } from '../progress/calculations'
-import { normalizeWarmupProtocol } from '../../shared/calculations/warmups'
 import {
   DELOAD_SKIP_COOLDOWN_DAYS,
   addDays,
@@ -27,9 +26,9 @@ import {
 import { downloadJson, downloadText } from '../../shared/utils/download'
 import { createId } from '../../shared/utils/id'
 import { localDateKey } from '../../shared/utils/date'
-import { backupSchema } from '../../shared/validation/arsenImportSchemas'
-import { trainingDateSchema } from '../../shared/validation/dataContract'
+import { timestampSchema, trainingDateSchema } from '../../shared/validation/dataContract'
 import { settingsEntitySchema } from '../../shared/validation/entities'
+import { datasetSchema } from '../../shared/validation/dataset'
 import { deleteWorkoutSession } from '../workout/services'
 
 /**
@@ -44,13 +43,13 @@ export async function exportFullBackup() {
       deloadCycles: await db.deloadCycles.toArray(),
       dropSetLogs: await db.dropSetLogs.toArray(),
       exerciseAssets: await db.exerciseAssets.toArray(),
-      exerciseCatalog: (await db.exerciseCatalog.toArray()).map(stripLegacyCatalogProgression),
+      exerciseCatalog: await db.exerciseCatalog.toArray(),
       exerciseLogs: await db.exerciseLogs.toArray(),
       routineDays: await db.routineDays.toArray(),
-      routineExercises: (await db.routineExercises.toArray()).map(stripLegacyProgression),
+      routineExercises: await db.routineExercises.toArray(),
       routines: await db.routines.toArray(),
       setLogs: await db.setLogs.toArray(),
-      settings: await db.settings.toArray(),
+      settings: (await db.settings.toArray()).map(({ lastContractBackupSha256: _lastBackup, ...settings }) => settings),
       skipLogs: await db.skipLogs.toArray(),
       weeklyVolumeTargets: await db.weeklyVolumeTargets.toArray(),
       workoutSessions: await db.workoutSessions.toArray(),
@@ -66,9 +65,9 @@ export type BackupImportMode = 'merge' | 'replace'
  * Imports a full backup JSON file, replacing or merging every persisted table after schema validation.
  */
 export async function importFullBackup(file: File, mode: BackupImportMode = 'replace') {
-  const backup = parseBackup(await file.text())
+  const backup = parseBackup(await file.text(), mode === 'replace')
   const tables = backup.tables
-  if (mode === 'replace' && !db.tables.some((table) => (tables[table.name as keyof BackupTables]?.length ?? 0) > 0)) {
+  if (mode === 'replace' && !dataTables().some((table) => (tables[table.name as keyof BackupTables]?.length ?? 0) > 0)) {
     throw new Error('El respaldo no contiene datos para reemplazar los datos locales')
   }
 
@@ -92,6 +91,9 @@ export async function importFullBackup(file: File, mode: BackupImportMode = 'rep
     async () => {
       if (mode === 'replace') await clearBackupTables()
       await putBackupTables(tables, mode)
+      const rows = await Promise.all(dataTables().map(async (table) => [table.name, await table.toArray()] as const))
+      if (!datasetSchema.safeParse(Object.fromEntries(rows)).success) throw new Error('La importación produciría datos o relaciones inválidos')
+      if ((await db.settings.get('app'))?.schemaVersion !== CURRENT_SCHEMA_VERSION) throw new Error('La versión de los datos no es compatible')
     },
   )
 }
@@ -121,11 +123,11 @@ async function putBackupTables(tables: BackupTables, mode: BackupImportMode) {
     putRows(db.deloadCycles, tables.deloadCycles ?? [], mode),
     putRows(db.dropSetLogs, tables.dropSetLogs ?? [], mode),
     putRows(db.exerciseAssets, tables.exerciseAssets ?? [], mode),
-    putRows(db.exerciseCatalog, (tables.exerciseCatalog ?? []).map(stripLegacyCatalogProgression), mode),
+    putRows(db.exerciseCatalog, tables.exerciseCatalog ?? [], mode),
     putRows(db.exerciseLogs, tables.exerciseLogs ?? [], mode),
     putRows(db.routineDays, tables.routineDays ?? [], mode),
-    putRows(db.routineExercises, (tables.routineExercises ?? []).map(stripLegacyProgression), mode),
-    putRows(db.routines, tables.routines ?? [], mode),
+    putRows(db.routineExercises, tables.routineExercises ?? [], mode),
+    putRows(db.routines, (tables.routines ?? []).map((routine) => mode === 'merge' && !shouldImportSettings ? { ...routine, isActive: false } : routine), mode),
     putRows(db.setLogs, tables.setLogs ?? [], mode),
     shouldImportSettings ? putRows(db.settings, tables.settings ?? [], mode) : Promise.resolve(),
     putRows(db.skipLogs, tables.skipLogs ?? [], mode),
@@ -495,6 +497,7 @@ export async function getAppSettings() {
 }
 
 export async function updatePreferredUnit(preferredUnit: WeightUnit) {
+  if (!settingsEntitySchema.shape.preferredUnit.safeParse(preferredUnit).success) throw new Error('La unidad de peso no es válida')
   await db.settings.update('app', {
     preferredUnit,
     updatedAt: new Date().toISOString(),
@@ -506,7 +509,7 @@ export function resolveAvailablePlateWeightsKg(settings?: Pick<AppSettings, 'ava
 }
 
 export async function updateAvailablePlateWeights(availablePlateWeightsKg: number[]) {
-  if (!Array.isArray(availablePlateWeightsKg) || availablePlateWeightsKg.some((weight) => !Number.isFinite(weight) || weight <= 0)) throw new Error('Los pesos de discos deben ser números positivos')
+  if (!Array.isArray(availablePlateWeightsKg) || availablePlateWeightsKg.some((weight) => !Number.isFinite(weight) || !Number.isFinite(weight * 100) || Math.round(weight * 100) <= 0)) throw new Error('Los pesos de discos deben ser números positivos')
   await db.settings.update('app', {
     availablePlateWeightsKg: normalizeAvailablePlateWeightsKg(availablePlateWeightsKg),
     updatedAt: new Date().toISOString(),
@@ -539,7 +542,7 @@ async function deleteSessionsInTransaction(getIds: () => Promise<string[]>) {
 }
 
 export async function buildProgressExport(filters: ProgressExportFilters = {}) {
-  const [routines, days, exercises, sessions, exerciseLogs, setLogs, dropSetLogs] = await Promise.all([
+  const [routines, days, exercises, sessions, exerciseLogs, setLogs, dropSetLogs] = await db.transaction('r', [db.routines, db.routineDays, db.routineExercises, db.workoutSessions, db.exerciseLogs, db.setLogs, db.dropSetLogs], () => Promise.all([
     db.routines.toArray(),
     db.routineDays.toArray(),
     db.routineExercises.toArray(),
@@ -547,7 +550,7 @@ export async function buildProgressExport(filters: ProgressExportFilters = {}) {
     db.exerciseLogs.toArray(),
     db.setLogs.toArray(),
     db.dropSetLogs.toArray(),
-  ])
+  ]))
   const routineById = new Map(routines.map((routine) => [routine.id, routine]))
   const dayById = new Map(days.map((day) => [day.id, day]))
   const exerciseById = new Map(exercises.map((exercise) => [exercise.id, exercise]))
@@ -810,40 +813,34 @@ type BackupTables = {
   workoutSessions?: WorkoutSession[]
 }
 
-function parseBackup(content: string): { tables: BackupTables } {
+function parseBackup(content: string, requireComplete: boolean): { tables: BackupTables } {
   const parsed: unknown = JSON.parse(content)
+  if (typeof parsed !== 'object' || parsed === null || !('schemaVersion' in parsed) || parsed.schemaVersion !== CURRENT_SCHEMA_VERSION || !('exportedAt' in parsed) || !timestampSchema.safeParse(parsed.exportedAt).success) {
+    throw new Error('La versión o fecha del respaldo no es válida')
+  }
   const rawTables = typeof parsed === 'object' && parsed !== null && 'tables' in parsed ? parsed.tables : null
-  if (typeof rawTables !== 'object' || rawTables === null || !db.tables.some((table) => Object.hasOwn(rawTables, table.name))) {
+  if (typeof rawTables !== 'object' || rawTables === null || !dataTables().some((table) => Object.hasOwn(rawTables, table.name))) {
     throw new Error('El archivo no es un respaldo Arsen valido')
   }
-  const result = backupSchema.safeParse(parsed)
+  if ('settings' in rawTables && Array.isArray(rawTables.settings) && rawTables.settings.some((setting: unknown) => typeof setting === 'object' && setting !== null && 'lastContractBackupSha256' in setting)) {
+    throw new Error('El respaldo contiene datos locales incompatibles')
+  }
+  if (requireComplete && dataTables().some((table) => !Object.hasOwn(rawTables, table.name) || !Array.isArray((rawTables as Record<string, unknown>)[table.name]))) {
+    throw new Error('El respaldo está incompleto y no puede reemplazar los datos locales')
+  }
+  if (requireComplete) {
+    const strict = datasetSchema.safeParse(rawTables)
+    if (!strict.success) throw new Error('El respaldo contiene datos o relaciones inválidos')
+    return { tables: strict.data }
+  }
+  const result = datasetSchema.innerType().partial().strict().safeParse(rawTables)
   if (!result.success) {
     throw new Error('El archivo no es un respaldo Arsen valido')
   }
+  for (const table of dataTables()) {
+    const rows = result.data[table.name as keyof BackupTables] ?? []
+    if (new Set(rows.map((row) => row.id)).size !== rows.length) throw new Error('El respaldo contiene identificadores duplicados')
+  }
 
-  return { tables: result.data.tables as BackupTables }
-}
-
-function stripLegacyProgression(exercise: RoutineExercise): RoutineExercise {
-  const copy = { ...exercise } as RoutineExercise & { progression?: unknown }
-  delete copy.progression
-  copy.warmupProtocol = normalizeWarmupProtocol(copy.warmupProtocol)
-  const loadSettings = loadSettingsForEquipment(copy)
-  copy.equipment = loadSettings.equipment
-  copy.loadMode = loadSettings.loadMode
-  copy.barWeightKg = loadSettings.barWeightKg
-
-  return copy
-}
-
-function stripLegacyCatalogProgression(item: ExerciseCatalogItem): ExerciseCatalogItem {
-  const copy = { ...item } as ExerciseCatalogItem & { progressionStrategy?: unknown }
-  delete copy.progressionStrategy
-  copy.warmupProtocol = normalizeWarmupProtocol(copy.warmupProtocol)
-  const loadSettings = loadSettingsForEquipment(copy)
-  copy.equipment = loadSettings.equipment
-  copy.loadMode = loadSettings.loadMode
-  copy.barWeightKg = loadSettings.barWeightKg
-
-  return copy
+  return { tables: result.data as BackupTables }
 }

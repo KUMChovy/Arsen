@@ -1,18 +1,23 @@
 import { ArrowLeft, Check, ListPlus, Search, X } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { ExerciseArt } from '../../../shared/components/ExerciseArt'
 import {
   type SinfulShellExercise,
-  getSinfulShellExerciseById,
   searchSinfulShellExercises,
+  sinfulShellCatalog,
   sinfulShellMuscleFilters,
 } from '../data/sinfulShellCatalog'
+import { remoteCatalogExercises } from '../remoteCatalogSource'
+import type { PublishedCatalog } from '../../../shared/validation/remoteCatalog'
+import { catalogImageReference } from '../../../shared/assets/catalogImageReference'
+import { requestCatalogCheck } from '../catalogScheduler'
 import type { ExerciseCatalogItem, MuscleGroup } from '../types'
 
 export type SinfulShellBrowserMode = 'catalog' | 'routine-add'
 
 type SinfulShellBrowserSheetProps = {
   catalog: ExerciseCatalogItem[]
+  remoteCatalog?: PublishedCatalog | null
   disabled: boolean
   mode: SinfulShellBrowserMode
   onAddCopy: (exercise: SinfulShellExercise) => void
@@ -22,16 +27,18 @@ type SinfulShellBrowserSheetProps = {
 }
 
 export function SinfulShellBrowserSheet(props: SinfulShellBrowserSheetProps) {
-  const { catalog, disabled, mode, onAddCopy, onAddCopyToRoutine, onClose, onViewCatalogCopy } = props
+  const { catalog, remoteCatalog, disabled, mode, onAddCopy, onAddCopyToRoutine, onClose, onViewCatalogCopy } = props
   const [query, setQuery] = useState('')
   const [muscle, setMuscle] = useState<MuscleGroup | 'Todos'>('Todos')
   const [selectedExerciseId, setSelectedExerciseId] = useState<string | null>(null)
+  useEffect(() => { requestCatalogCheck() }, [])
   const catalogCopyBySinfulShellId = useMemo(
     () => new Map(catalog.filter((item) => item.sinfulShellId).map((item) => [item.sinfulShellId, item])),
     [catalog],
   )
-  const results = useMemo(() => searchSinfulShellExercises({ muscle, query }), [muscle, query])
-  const selectedExercise = selectedExerciseId ? getSinfulShellExerciseById(selectedExerciseId) : null
+  const exercises = useMemo(() => remoteCatalog ? remoteCatalogExercises(remoteCatalog) : sinfulShellCatalog, [remoteCatalog])
+  const results = useMemo(() => searchSinfulShellExercises({ muscle, query, exercises }), [muscle, query, exercises])
+  const selectedExercise = selectedExerciseId ? exercises.find((exercise) => exercise.id === selectedExerciseId) ?? null : null
   const selectedCopy = selectedExercise ? catalogCopyBySinfulShellId.get(selectedExercise.id) ?? null : null
 
   return (
@@ -62,6 +69,7 @@ export function SinfulShellBrowserSheet(props: SinfulShellBrowserSheetProps) {
             onSelect={setSelectedExerciseId}
             query={query}
             results={results}
+            total={exercises.length}
           />
         )}
       </section>
@@ -79,6 +87,7 @@ function SinfulShellBrowser({
   onSelect,
   query,
   results,
+  total,
 }: {
   catalogCopyBySinfulShellId: Map<string | null | undefined, ExerciseCatalogItem>
   disabled: boolean
@@ -89,6 +98,7 @@ function SinfulShellBrowser({
   onSelect: (exerciseId: string) => void
   query: string
   results: readonly SinfulShellExercise[]
+  total: number
 }) {
   return (
     <div className="space-y-3">
@@ -96,7 +106,7 @@ function SinfulShellBrowser({
         <div className="flex items-center justify-between gap-3">
           <div>
             <h2 className="text-xl font-black">Sinful Shell</h2>
-            <p className="text-xs font-semibold text-arsen-muted">74 ejercicios incluidos</p>
+            <p className="text-xs font-semibold text-arsen-muted">{total} {total === 1 ? 'ejercicio disponible' : 'ejercicios disponibles'}</p>
           </div>
           <button className="grid size-9 shrink-0 place-items-center rounded-[10px] text-arsen-muted" onClick={onClose} type="button">
             <X aria-hidden="true" className="size-5" />
@@ -146,7 +156,7 @@ function SinfulShellBrowser({
               onClick={() => onSelect(exercise.id)}
               type="button"
             >
-              <ExerciseArt alt={exercise.name} bundledAssetId={exercise.bundledAssetId} className="size-[52px]" muscle={exercise.mainMuscle} />
+              <CatalogExerciseArt exercise={exercise} className="size-[52px]" />
               <span className="min-w-0">
                 <strong className="block truncate text-sm">{exercise.name}</strong>
                 <span className="mt-1 block truncate text-xs text-arsen-muted">{exercise.mainMuscle}</span>
@@ -206,7 +216,7 @@ function SinfulShellDetail({
         </button>
       </div>
 
-      <ExerciseArt alt={exercise.name} bundledAssetId={exercise.bundledAssetId} className="aspect-[4/3] w-full" muscle={exercise.mainMuscle} />
+      <CatalogExerciseArt exercise={exercise} className="aspect-[4/3] w-full" />
 
       <div className="space-y-2">
         <div className="flex flex-wrap items-center gap-2">
@@ -272,4 +282,8 @@ function SinfulShellDetail({
       </div>
     </div>
   )
+}
+
+export function CatalogExerciseArt({ exercise, className }: { exercise: SinfulShellExercise; className: string }) {
+  return <ExerciseArt alt={exercise.name} assetKind={exercise.remoteImage ? catalogImageReference(exercise.remoteImage) : null} bundledAssetId={exercise.bundledAssetId} className={className} muscle={exercise.mainMuscle} />
 }

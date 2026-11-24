@@ -5,6 +5,7 @@ import { formatWeight, kgToUnit } from '../utils/weight'
 const equipmentValues: Equipment[] = ['Barra', 'Mancuerna', 'Maquina', 'Maquina de polea', 'Peso corporal', 'Otro']
 export const DEFAULT_AVAILABLE_PLATES_KG = [25, 20, 15, 10, 5, 2.5, 1.25]
 const WEIGHT_EPSILON = 0.0001
+const MAX_PLATES_IN_BREAKDOWN = 10000
 
 export function normalizeEquipment(value: unknown): Equipment {
   if (value === 'Polea') return 'Maquina de polea'
@@ -31,18 +32,22 @@ export function loadSettingsForEquipment(input: {
 }
 
 export function normalizeAvailablePlateWeightsKg(value?: number[] | null) {
-  const normalized = [...new Set((value ?? []).filter((weight) => Number.isFinite(weight) && weight > 0).map(roundGymWeight))].sort((a, b) => b - a)
+  const normalized = [...new Set((value ?? []).filter((weight) => Number.isFinite(weight) && weight > 0).map(roundGymWeight).filter((weight) => Number.isFinite(weight) && weight > 0))].sort((a, b) => b - a)
 
   return normalized.length > 0 ? normalized : DEFAULT_AVAILABLE_PLATES_KG
 }
 
 export function calculatePlateBreakdown(input: { availablePlateWeightsKg?: number[] | null; targetWeightKg: number }) {
+  if (!Number.isFinite(input.targetWeightKg)) throw new RangeError('El peso no es válido')
   const targetWeightKg = Math.max(roundGymWeight(input.targetWeightKg), 0)
+  if (!Number.isFinite(targetWeightKg)) throw new RangeError('El peso no es válido')
   let remainingWeightKg = targetWeightKg
   const platesKg: number[] = []
 
   for (const plateKg of normalizeAvailablePlateWeightsKg(input.availablePlateWeightsKg)) {
+    if (Math.floor((remainingWeightKg + WEIGHT_EPSILON) / plateKg) > MAX_PLATES_IN_BREAKDOWN - platesKg.length) throw new RangeError('La carga requiere demasiados discos')
     while (remainingWeightKg + WEIGHT_EPSILON >= plateKg) {
+      if (platesKg.length >= MAX_PLATES_IN_BREAKDOWN) throw new RangeError('La carga requiere demasiados discos')
       platesKg.push(plateKg)
       remainingWeightKg = roundGymWeight(remainingWeightKg - plateKg)
     }
@@ -70,10 +75,16 @@ export function buildEquipmentLoadNote(input: {
 
   const settings = loadSettingsForEquipment(input)
   if (settings.equipment === 'Barra') {
-    const breakdown = calculatePlateBreakdown({
-      availablePlateWeightsKg: input.availablePlateWeightsKg,
-      targetWeightKg: input.weightKg / 2,
-    })
+    let breakdown: ReturnType<typeof calculatePlateBreakdown>
+    try {
+      breakdown = calculatePlateBreakdown({
+        availablePlateWeightsKg: input.availablePlateWeightsKg,
+        targetWeightKg: input.weightKg / 2,
+      })
+    } catch (error) {
+      if (error instanceof RangeError) return null
+      throw error
+    }
     const platesLabel = breakdown.platesKg.length > 0 ? formatPlateList(breakdown.platesKg, input.unit) : 'sin discos'
     const parts = [`Discos: ${platesLabel} por lado`]
     if (!breakdown.isExact) parts.push(`Faltan ${formatWeight(breakdown.remainingWeightKg, input.unit)} por lado`)

@@ -1,21 +1,14 @@
-import { z } from 'zod'
-import { CURRENT_SCHEMA_VERSION, db } from './schema'
+import { CURRENT_SCHEMA_VERSION, dataTables, db } from './schema'
 import { DATA_CONTRACT_VERSION, imageAssetInputSchema } from '../shared/validation/dataContract'
 import { datasetSchema, type ValidatedDataset } from '../shared/validation/dataset'
-import { healthSummarySchema } from '../shared/validation/healthSchemas'
+import { backupManifestSchema } from '../shared/validation/backupManifest'
 
 export type ContractBackup = {
   manifest: string
   manifestSha256: string
   binaries: Array<{ id: string; bytes: Uint8Array }>
+  revision: number
 }
-
-const manifestSchema = z.object({
-  version: z.literal(DATA_CONTRACT_VERSION),
-  tables: z.record(z.unknown()),
-  assets: z.array(z.object({ id: z.string().min(1), sha256: z.string().regex(/^[a-f0-9]{64}$/) }).strict()),
-  health: z.array(z.object({ sessionId: z.string().min(1), summary: healthSummarySchema.optional(), history: z.array(healthSummarySchema).optional() }).strict().refine((item) => Boolean(item.summary || item.history?.length))),
-}).strict()
 
 function canonical(value: unknown): string {
   if (value === null || typeof value !== 'object') {
@@ -47,28 +40,51 @@ function encodeBase64(bytes: Uint8Array): string {
 }
 
 async function readDataset() {
-  return db.transaction('r', db.tables, async () => ({
+  return db.transaction('r', db.tables, async () => ({ data: {
     settings: await db.settings.toArray(), deloadCycles: await db.deloadCycles.toArray(), routines: await db.routines.toArray(),
     routineDays: await db.routineDays.toArray(), routineExercises: await db.routineExercises.toArray(), exerciseCatalog: await db.exerciseCatalog.toArray(),
     exerciseAssets: await db.exerciseAssets.toArray(), weeklyVolumeTargets: await db.weeklyVolumeTargets.toArray(), workoutSessions: await db.workoutSessions.toArray(),
     exerciseLogs: await db.exerciseLogs.toArray(), setLogs: await db.setLogs.toArray(), dropSetLogs: await db.dropSetLogs.toArray(), skipLogs: await db.skipLogs.toArray(),
-  }))
+  }, revision: await getLocalRevision() }))
 }
 
-export async function createContractBackup(): Promise<ContractBackup> {
-  return buildContractBackup(await readDataset())
+export async function createContractBackup(options?: { includeHealth?: boolean }): Promise<ContractBackup> {
+  const snapshot = await readDataset()
+  return { ...await buildContractBackup(snapshot.data, options?.includeHealth !== false), revision: snapshot.revision }
 }
 
-export async function createContractBackupFromDataset(raw: unknown): Promise<ContractBackup> {
-  return buildContractBackup(raw)
+export async function createRemoteContractBackup(options?: { healthConsent?: boolean }): Promise<ContractBackup> {
+  const snapshot = await readDataset()
+  const settings = snapshot.data.settings.map(({
+    notificationPermission: _notificationPermission,
+    healthIntegrationEnabled: _healthIntegrationEnabled,
+    healthIntegrationFirstConnectedAt: _healthIntegrationFirstConnectedAt,
+    lastDeloadNotificationDate: _lastDeloadNotificationDate,
+    storagePersisted: _storagePersisted,
+    ...portable
+  }) => ({ ...portable, storagePersisted: null }))
+  return { ...await buildContractBackup({ ...snapshot.data, settings }, options?.healthConsent === true), revision: snapshot.revision }
 }
 
-async function buildContractBackup(raw: unknown): Promise<ContractBackup> {
+export async function getLocalRevision(): Promise<number> {
+  return db.transaction('r', db.tables, async () => {
+    const record = await db.localMetadata.get('revision')
+    if (!record) {
+      const counts = await Promise.all(dataTables().map((table) => table.count()))
+      if (counts.some((count) => count > 0)) throw new Error('Falta la revisión local de los datos')
+      return 0
+    }
+    if (record.id !== 'revision' || !Number.isSafeInteger(record.value) || record.value < 0) throw new Error('La revisión local no es válida')
+    return record.value
+  })
+}
+
+async function buildContractBackup(raw: unknown, includeHealth = true): Promise<Omit<ContractBackup, 'revision'>> {
   const validation = datasetSchema.safeParse(raw)
   if (!validation.success) throw new Error(`Los datos no cumplen el contrato: ${validation.error.issues[0]?.message ?? 'datos inválidos'}`)
   const data = validation.data
   if (data.settings[0]?.schemaVersion !== CURRENT_SCHEMA_VERSION) throw new Error('La versión registrada requiere una transición explícita')
-  const health = data.workoutSessions.flatMap((session) => session.health || session.healthHistory?.length ? [{ sessionId: session.id, ...(session.health ? { summary: session.health } : {}), ...(session.healthHistory?.length ? { history: session.healthHistory } : {}) }] : [])
+  const health = includeHealth ? data.workoutSessions.flatMap((session) => session.health || session.healthHistory?.length ? [{ sessionId: session.id, ...(session.health ? { summary: session.health } : {}), ...(session.healthHistory?.length ? { history: session.healthHistory } : {}) }] : []) : []
   const binaries: ContractBackup['binaries'] = []
   const assetHashes: Array<{ id: string; sha256: string }> = []
   const assetMetadata = []
@@ -98,7 +114,7 @@ async function buildContractBackup(raw: unknown): Promise<ContractBackup> {
 }
 
 export async function getContractBackupStatus(): Promise<'current' | 'needed'> {
-  const data = await readDataset()
+  const { data } = await readDataset()
   const saved = data.settings.find((settings) => settings.id === 'app')?.lastContractBackupSha256
   if (!saved) return 'needed'
   const backup = await buildContractBackup(data)
@@ -114,6 +130,15 @@ export async function markContractBackupSaved(manifestSha256: string): Promise<v
 }
 
 export async function restoreContractBackup(backup: ContractBackup): Promise<void> {
+  return restoreBackup(backup, null)
+}
+
+export async function restoreRemoteContractBackup(backup: ContractBackup, expectedLocalRevision: number): Promise<void> {
+  if (!Number.isSafeInteger(expectedLocalRevision) || expectedLocalRevision < 0) throw new Error('La revisión de restauración no es válida')
+  return restoreBackup(backup, expectedLocalRevision)
+}
+
+async function restoreBackup(backup: ContractBackup, expectedLocalRevision: number | null): Promise<void> {
   const manifest = backup.manifest
   const manifestSha256 = backup.manifestSha256
   const copiedBinaries = backup.binaries.map((binary) => {
@@ -121,11 +146,12 @@ export async function restoreContractBackup(backup: ContractBackup): Promise<voi
     return { id: binary.id, bytes: new Uint8Array(binary.bytes) }
   })
   if (await sha256(new TextEncoder().encode(manifest)) !== manifestSha256) throw new Error('La integridad del respaldo no coincide')
-  const parsed = manifestSchema.safeParse(JSON.parse(manifest))
+  const parsed = backupManifestSchema.safeParse(JSON.parse(manifest))
   if (!parsed.success) throw new Error('El manifiesto del respaldo no es válido')
   const { tables, assets, health } = parsed.data
   if (!Array.isArray(tables.exerciseAssets) || !Array.isArray(tables.workoutSessions)) throw new Error('El respaldo no contiene todas las tablas')
   if (!Array.isArray(tables.settings) || tables.settings.some((setting) => typeof setting !== 'object' || setting === null || 'lastContractBackupSha256' in setting)) throw new Error('La configuración del respaldo no es válida')
+  if (expectedLocalRevision !== null && tables.settings.some((setting) => typeof setting !== 'object' || setting === null || !('storagePersisted' in setting) || setting.storagePersisted !== null || ['notificationPermission', 'healthIntegrationEnabled', 'healthIntegrationFirstConnectedAt', 'lastDeloadNotificationDate'].some((key) => key in setting))) throw new Error('El respaldo contiene configuración específica de otro dispositivo')
   const binaries = new Map(copiedBinaries.map((binary) => [binary.id, binary.bytes]))
   const hashes = new Map(assets.map((asset) => [asset.id, asset.sha256]))
   if (binaries.size !== copiedBinaries.length || hashes.size !== assets.length || binaries.size !== hashes.size) throw new Error('Los componentes de imagen no son válidos')
@@ -152,14 +178,27 @@ export async function restoreContractBackup(backup: ContractBackup): Promise<voi
   const result = datasetSchema.safeParse({ ...tables, exerciseAssets: imageRows, workoutSessions: sessionRows })
   if (!result.success) throw new Error(`Los datos del respaldo no cumplen el contrato: ${result.error.issues[0]?.message ?? 'datos inválidos'}`)
   if (result.data.settings[0]?.schemaVersion !== CURRENT_SCHEMA_VERSION) throw new Error('La versión del esquema del respaldo no es compatible')
-  await replaceDataset(result.data)
+  await replaceDataset(result.data, expectedLocalRevision)
 }
 
-async function replaceDataset(data: ValidatedDataset) {
+async function replaceDataset(data: ValidatedDataset, expectedLocalRevision: number | null) {
   await db.transaction('rw', db.tables, async () => {
-    await Promise.all(db.tables.map((table) => table.clear()))
+    if (expectedLocalRevision !== null) {
+      const revision = await db.localMetadata.get('revision')
+      if (!revision || revision.id !== 'revision' || revision.value !== expectedLocalRevision) throw new Error('Los datos locales cambiaron después de la vista previa')
+    }
+    const current = expectedLocalRevision !== null ? await db.settings.get('app') : undefined
+    const settings = current ? data.settings.map((setting) => ({
+      ...setting,
+      storagePersisted: current.storagePersisted,
+      ...(current.notificationPermission === undefined ? {} : { notificationPermission: current.notificationPermission }),
+      ...(current.healthIntegrationEnabled === undefined ? {} : { healthIntegrationEnabled: current.healthIntegrationEnabled }),
+      ...(current.healthIntegrationFirstConnectedAt === undefined ? {} : { healthIntegrationFirstConnectedAt: current.healthIntegrationFirstConnectedAt }),
+      ...(current.lastDeloadNotificationDate === undefined ? {} : { lastDeloadNotificationDate: current.lastDeloadNotificationDate }),
+    })) : data.settings
+    await Promise.all(dataTables().map((table) => table.clear()))
     await Promise.all([
-      db.settings.bulkAdd(data.settings), db.deloadCycles.bulkAdd(data.deloadCycles), db.routines.bulkAdd(data.routines),
+      db.settings.bulkAdd(settings), db.deloadCycles.bulkAdd(data.deloadCycles), db.routines.bulkAdd(data.routines),
       db.routineDays.bulkAdd(data.routineDays), db.routineExercises.bulkAdd(data.routineExercises), db.exerciseCatalog.bulkAdd(data.exerciseCatalog),
       db.exerciseAssets.bulkAdd(data.exerciseAssets), db.weeklyVolumeTargets.bulkAdd(data.weeklyVolumeTargets), db.workoutSessions.bulkAdd(data.workoutSessions),
       db.exerciseLogs.bulkAdd(data.exerciseLogs), db.setLogs.bulkAdd(data.setLogs), db.dropSetLogs.bulkAdd(data.dropSetLogs), db.skipLogs.bulkAdd(data.skipLogs),

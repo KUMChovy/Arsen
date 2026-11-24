@@ -1,12 +1,48 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest'
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ExerciseCatalogItem } from '../types'
 import { SinfulShellBrowserSheet } from './SinfulShellBrowserSheet'
 
+vi.mock('../../../shared/assets/catalogImages', () => ({ readCatalogImage: async () => new Blob(['image'], { type: 'image/png' }) }))
+
 describe('SinfulShellBrowserSheet', () => {
-  afterEach(cleanup)
+  afterEach(() => { cleanup(); vi.unstubAllGlobals() })
+
+  it('shows newly published exercises from the downloaded catalog and allows selecting them', () => {
+    const onAddCopy = vi.fn()
+    const exercise = {
+      id: 'sinful-shell-nuevo', name: 'Ejercicio nuevo', canonicalName: 'ejercicio-nuevo', mainMuscle: 'Pecho' as const,
+      aliases: ['alias único'], technicalNotes: 'Indicaciones nuevas.',
+      image: { url: 'https://assets.example.test/a.png', sha256: 'a'.repeat(64), sizeBytes: 100, mimeType: 'image/png' as const },
+    }
+    render(<SinfulShellBrowserSheet catalog={[]} remoteCatalog={{ version: 2, exercises: [exercise] }} disabled={false} mode="catalog" onAddCopy={onAddCopy} onClose={vi.fn()} onViewCatalogCopy={vi.fn()} />)
+    expect(screen.getByText('1 ejercicio disponible')).toBeInTheDocument()
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Buscar en Sinful Shell' }), { target: { value: 'alias único' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Ejercicio nuevo Disponible' }))
+    expect(screen.getByText('Indicaciones nuevas.')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Agregar a mi catalogo' }))
+    expect(onAddCopy).toHaveBeenCalledWith(expect.objectContaining({ id: exercise.id, name: exercise.name }))
+  })
+
+  it('displays the cached image of a published exercise and releases its object URL', async () => {
+    const revoke = vi.fn()
+    const OriginalURL = URL
+    vi.stubGlobal('URL', class extends OriginalURL {
+      static createObjectURL = () => 'blob:cached-exercise'
+      static revokeObjectURL = revoke
+    })
+    const exercise = {
+      id: 'sinful-shell-nuevo', name: 'Ejercicio nuevo', canonicalName: 'ejercicio-nuevo', mainMuscle: 'Pecho' as const,
+      aliases: [], technicalNotes: 'Indicaciones nuevas.',
+      image: { url: 'https://assets.example.test/a.png', sha256: 'a'.repeat(64), sizeBytes: 100, mimeType: 'image/png' as const },
+    }
+    const { unmount } = render(<SinfulShellBrowserSheet catalog={[]} remoteCatalog={{ version: 2, exercises: [exercise] }} disabled={false} mode="catalog" onAddCopy={vi.fn()} onClose={vi.fn()} onViewCatalogCopy={vi.fn()} />)
+    await waitFor(() => expect(screen.getByRole('img', { name: 'Ejercicio nuevo' })).toHaveAttribute('data-image-source', 'custom'))
+    unmount()
+    expect(revoke).toHaveBeenCalledWith('blob:cached-exercise')
+  })
 
   it('searches by alias and opens detail before import', () => {
     const onAddCopy = vi.fn()

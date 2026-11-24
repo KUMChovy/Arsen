@@ -1,5 +1,22 @@
 import { useLiveQuery } from 'dexie-react-hooks'
+import { useEffect } from 'react'
 import { getActiveRoutineBundle, getExerciseAssets, getExerciseCatalog, getRoutineDayDetail, getRoutines, getRoutineSummaries, getWorkoutDayById, getWorkoutDayForDate } from './repository'
+import { startCatalogScheduler } from './catalogScheduler'
+import { syncRemoteCatalog } from './syncRemoteCatalog'
+import { readRemoteCatalog } from './remoteCatalogCache'
+
+export function useGlobalCatalog() {
+  return useLiveQuery(() => readRemoteCatalog(), [], undefined)
+}
+
+export function useGlobalCatalogSync(ready: boolean) {
+  useEffect(() => {
+    const origin = import.meta.env.VITE_CATALOG_API_ORIGIN
+    if (!ready || !origin) return
+    const scheduler = startCatalogScheduler(() => syncRemoteCatalog(origin))
+    return () => scheduler.stop()
+  }, [ready])
+}
 
 export function useActiveRoutineBundle() {
   return useLiveQuery(() => getActiveRoutineBundle(), [], undefined)

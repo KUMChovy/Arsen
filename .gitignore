@@ -3,5 +3,10 @@
 .pnpm-store/
 node_modules/
 dist/
+dist-admin/
 .env
 .env.local
+.vercel/
+api/gateway.mjs
+.vercel
+.env*

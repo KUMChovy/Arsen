@@ -1,12 +1,27 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest'
-import { cleanup, render, screen } from '@testing-library/react'
-import { afterEach, describe, expect, it } from 'vitest'
+import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import * as catalogImages from '../assets/catalogImages'
 import { ExerciseArt } from './ExerciseArt'
 
 describe('ExerciseArt', () => {
   afterEach(() => {
     cleanup()
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+  })
+
+  it('shows a cached global image referenced by a personal copy and releases it on unmount', async () => {
+    const revoke = vi.fn()
+    const OriginalURL = URL
+    vi.stubGlobal('URL', class extends OriginalURL { static createObjectURL = () => 'blob:global-image'; static revokeObjectURL = revoke })
+    vi.spyOn(catalogImages, 'readCatalogImage').mockResolvedValue(new Blob(['image'], { type: 'image/png' }))
+    const reference = `global-image-v1:${'a'.repeat(64)}:100:png`
+    const { unmount } = render(<ExerciseArt alt="Global" assetKind={reference} muscle="Pecho" />)
+    await waitFor(() => expect(screen.getByRole('img', { name: 'Global' })).toHaveAttribute('data-image-source', 'custom'))
+    unmount()
+    expect(revoke).toHaveBeenCalledWith('blob:global-image')
   })
 
   it('uses a custom image before bundled and muscle fallback', () => {

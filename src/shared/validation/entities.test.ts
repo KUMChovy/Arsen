@@ -13,6 +13,8 @@ describe('persisted entity validation', () => {
     const exercise = { id: 'exercise', routineId: 'routine', dayId: 'day', sourceExerciseId: null, assetKind: null, bundledAssetId: null, customAssetId: null, name: 'Press', canonicalName: 'press', mainMuscle: 'Pecho', equipment: 'Barra', loadMode: 'single', barWeightKg: 20, targetSets: 3, repsMin: 8, repsMax: 10, recommendedRir: 1, rest: '90 seg', restSeconds: 90, warmupSets: 0, warmupProtocol: 'none', technicalNotes: '', currentWeightKg: 20, order: 0, createdAt: now, updatedAt: now }
     expect(routineExerciseEntitySchema.safeParse(exercise).success).toBe(true)
     expect(routineExerciseEntitySchema.safeParse({ ...exercise, currentWeightKg: Infinity }).success).toBe(false)
+    expect(routineExerciseEntitySchema.safeParse({ ...exercise, currentWeightKg: Number.MAX_VALUE }).success).toBe(false)
+    expect(routineExerciseEntitySchema.safeParse({ ...exercise, targetSets: Number.MAX_SAFE_INTEGER + 1 }).success).toBe(false)
     expect(routineExerciseEntitySchema.safeParse({ ...exercise, repsMin: 12, repsMax: 8 }).success).toBe(false)
     expect(routineExerciseEntitySchema.safeParse({ ...exercise, targetSets: -1 }).success).toBe(false)
   })

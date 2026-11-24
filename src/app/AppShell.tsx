@@ -5,6 +5,7 @@ import { useAppProviders } from './providers'
 import { useHealthAutoSync } from '../domains/health/hooks'
 import { getAppSettings } from '../domains/settings/services'
 import { useDeloadOverview } from '../domains/settings/hooks'
+import { useGlobalCatalogSync } from '../domains/routine/hooks'
 
 export function AppShell() {
   const { databaseError, databaseStatus } = useAppProviders()
@@ -12,6 +13,7 @@ export function AppShell() {
   const appSettings = useLiveQuery(() => getAppSettings(), [], undefined)
   const deloadActive = deload?.phase === 'active'
   useHealthAutoSync(appSettings?.healthIntegrationEnabled === true)
+  useGlobalCatalogSync(databaseStatus === 'ready')
 
   return (
     <div className="min-h-dvh bg-arsen-bg text-arsen-ink">

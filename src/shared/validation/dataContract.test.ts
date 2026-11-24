@@ -20,5 +20,7 @@ describe('persistent data contract primitives', () => {
     for (const weightKg of [-1, Infinity, NaN]) expect(recordedSetValuesSchema.safeParse({ ...set, weightKg }).success).toBe(false)
     expect(recordedSetValuesSchema.safeParse({ ...set, reps: 0 }).success).toBe(false)
     expect(recordedSetValuesSchema.safeParse({ ...set, reps: 1.5 }).success).toBe(false)
+    expect(recordedSetValuesSchema.safeParse({ ...set, weightKg: Number.MAX_VALUE }).success).toBe(false)
+    expect(recordedSetValuesSchema.safeParse({ ...set, reps: Number.MAX_SAFE_INTEGER + 1 }).success).toBe(false)
   })
 })

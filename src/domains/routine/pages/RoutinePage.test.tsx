@@ -5,10 +5,12 @@ import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { RoutinePage } from './RoutinePage'
 import type { RoutineDay } from '../types'
+import type { PublishedCatalog } from '../../../shared/validation/remoteCatalog'
 
 const routinePageMocks = vi.hoisted(() => ({
   addCatalogExerciseToDay: vi.fn(() => Promise.resolve('exercise-1')),
   catalog: [] as RoutinePageCatalogItem[],
+  globalCatalog: null as PublishedCatalog | null,
   createCatalogExercise: vi.fn(() => Promise.resolve('catalog-1')),
   createExerciseAsset: vi.fn(() => Promise.resolve('asset-uploaded')),
   createRoutine: vi.fn(() => Promise.resolve('routine-created')),
@@ -21,6 +23,7 @@ vi.mock('../hooks', () => ({
   useActiveRoutineBundle: () => routinePageMocks.bundle,
   useExerciseAssets: () => [],
   useExerciseCatalog: () => routinePageMocks.catalog,
+  useGlobalCatalog: () => routinePageMocks.globalCatalog,
   useRoutines: () => routinePageMocks.routines,
   useRoutineSummaries: () => routinePageMocks.routines.map((routine) => ({ routine, days: routinePageMocks.bundle?.routine.id === routine.id ? routinePageMocks.bundle.days : [], exerciseCount: routinePageMocks.bundle?.routine.id === routine.id ? [...routinePageMocks.bundle.exercisesByDay.values()].reduce((count, exercises) => count + exercises.length, 0) : 0 })),
 }))
@@ -67,6 +70,7 @@ describe('RoutinePage catalog image upload', () => {
     routinePageMocks.setActiveRoutine.mockResolvedValue(undefined)
     routinePageMocks.bundle = defaultBundle()
     routinePageMocks.catalog = []
+    routinePageMocks.globalCatalog = null
     routinePageMocks.routines = [routine]
   })
 
@@ -291,6 +295,20 @@ describe('RoutinePage catalog image upload', () => {
     expect(screen.queryByLabelText('Nombre')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Musculo')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Imagen del ejercicio/i })).not.toBeInTheDocument()
+  })
+
+  it('uses the downloaded catalog count and opens a published remote exercise', () => {
+    routinePageMocks.globalCatalog = { version: 5, exercises: [{
+      id: 'sinful-shell-nuevo', name: 'Ejercicio nuevo', canonicalName: 'ejercicio-nuevo', mainMuscle: 'Pecho',
+      aliases: [], technicalNotes: 'Indicaciones nuevas.',
+      image: { url: 'https://assets.example.test/a.png', sha256: 'a'.repeat(64), sizeBytes: 100, mimeType: 'image/png' },
+    }] }
+    render(<MemoryRouter><RoutinePage /></MemoryRouter>)
+    fireEvent.click(screen.getByRole('button', { name: 'Catalogo' }))
+    expect(screen.getByText('1 ejercicio disponible')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /Explorar Sinful Shell/i }))
+    fireEvent.click(screen.getByRole('button', { name: 'Ejercicio nuevo Disponible' }))
+    expect(screen.getByText('Indicaciones nuevas.')).toBeInTheDocument()
   })
 
   it('saves a Sinful Shell copy through create-from-sinful-shell mode', async () => {

@@ -26,7 +26,10 @@ export async function diagnoseIntegrity(): Promise<IntegrityIssue[]> {
     const add = (entity: string, id: string, code: string, message: string, possibleSolution: string, severity: IntegrityIssue['severity'] = 'error') => {
       issues.push({ severity, entity, id, code, message, possibleSolution })
     }
+    const revision = await db.localMetadata.get('revision')
+    if (revision && (revision.id !== 'revision' || !Number.isSafeInteger(revision.value) || revision.value < 0)) add('localMetadata', 'revision', 'invalid-revision', 'La revisión local no es válida.', 'Conservar los datos y revisar la revisión antes de preparar otro respaldo.')
     const dataset = { settings, deloadCycles: cycles, routines, routineDays: days, routineExercises: exercises, exerciseCatalog: catalog, exerciseAssets: assets, weeklyVolumeTargets: targets, workoutSessions: sessions, exerciseLogs: logs, setLogs: sets, dropSetLogs: drops, skipLogs: skips }
+    if (!revision && Object.values(dataset).some((records) => records.length > 0)) add('localMetadata', 'revision', 'missing-revision', 'Falta la revisión local de los datos.', 'Conservar los datos y revisar la revisión antes de preparar otro respaldo.')
     const result = datasetSchema.safeParse(dataset)
     if (!result.success) {
       const reported = new Set<string>()

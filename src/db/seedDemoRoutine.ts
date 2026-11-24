@@ -5,7 +5,8 @@ import { DEFAULT_DELOAD_SERIES_PERCENT, DEFAULT_DELOAD_WEIGHT_PERCENT } from '..
 import { bundledAssetIdForExercise } from '../shared/assets/exerciseImages'
 import { createId } from '../shared/utils/id'
 import { canonicalName } from '../shared/utils/normalize'
-import { CURRENT_SCHEMA_VERSION, db } from './schema'
+import { settingsEntitySchema } from '../shared/validation/entities'
+import { CURRENT_SCHEMA_VERSION, dataTables, db } from './schema'
 import { demoRoutineSource } from './demoRoutineSource'
 
 const weekdayByDemoDay: Record<string, RoutineDay['weekday']> = {
@@ -113,8 +114,12 @@ export async function ensureDemoData() {
     'rw',
     db.tables,
     async () => {
-      if (await db.settings.get('app')) return
-      const counts = await Promise.all(db.tables.map((table) => table.count()))
+      const existingSettings = await db.settings.get('app')
+      if (existingSettings) {
+        if (!settingsEntitySchema.safeParse(existingSettings).success || existingSettings.schemaVersion !== CURRENT_SCHEMA_VERSION) throw new Error('La configuración guardada no es válida. No se modificaron los datos.')
+        return
+      }
+      const counts = await Promise.all(dataTables().map((table) => table.count()))
       if (counts.some((count) => count > 0)) {
         throw new Error('La base de datos contiene datos pero no tiene configuración. No se crearon datos de demostración.')
       }

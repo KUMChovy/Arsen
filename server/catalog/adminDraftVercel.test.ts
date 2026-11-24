@@ -1,0 +1,38 @@
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { serveAdminCatalogDrafts } from './adminDraftVercel'
+
+describe('catalog administration deployment gate', () => {
+  afterEach(() => vi.unstubAllEnvs())
+  const request = () => new Request('https://api.example.test/api/v1/admin/catalog/drafts')
+  it('remains unavailable without explicit enablement and required configuration', async () => {
+    vi.stubEnv('ADMIN_CATALOG_API_ENABLED', '')
+    expect((await serveAdminCatalogDrafts(request())).status).toBe(503)
+    vi.stubEnv('ADMIN_CATALOG_API_ENABLED', 'true')
+    vi.stubEnv('DATABASE_URL', '')
+    expect((await serveAdminCatalogDrafts(request())).status).toBe(503)
+  })
+  it('rejects unauthenticated requests when configured', async () => {
+    vi.stubEnv('ADMIN_CATALOG_API_ENABLED', 'true')
+    vi.stubEnv('DATABASE_URL', 'postgresql://user:password@localhost/db')
+    vi.stubEnv('CLERK_SECRET_KEY', 'sk_test_example')
+    vi.stubEnv('CLERK_ISSUER', 'https://clerk.example.test')
+    vi.stubEnv('ACCOUNT_ALLOWED_ORIGINS', 'https://admin.example.test')
+    expect((await serveAdminCatalogDrafts(request())).status).toBe(401)
+    const archive = new Request('https://api.example.test/api/v1/admin/catalog/archive', { method: 'POST', body: JSON.stringify({ id: 'ejercicio' }) })
+    expect((await serveAdminCatalogDrafts(archive)).status).toBe(401)
+    const publish = () => new Request('https://api.example.test/api/v1/admin/catalog/publish', { method: 'POST', body: JSON.stringify({ id: 'ejercicio' }) })
+    vi.stubEnv('CATALOG_IMAGE_ORIGIN', '')
+    expect((await serveAdminCatalogDrafts(publish())).status).toBe(503)
+    vi.stubEnv('CATALOG_IMAGE_ORIGIN', 'https://arsentest.public.blob.vercel-storage.com')
+    expect((await serveAdminCatalogDrafts(publish())).status).toBe(401)
+    const imageUpload = () => new Request('https://api.example.test/api/v1/admin/catalog/image-upload', { method: 'POST', body: JSON.stringify({ mimeType: 'image/png', sizeBytes: 10 }) })
+    vi.stubEnv('CATALOG_IMAGE_UPLOAD_ENABLED', '')
+    expect((await serveAdminCatalogDrafts(imageUpload())).status).toBe(503)
+    vi.stubEnv('CATALOG_IMAGE_UPLOAD_ENABLED', 'true')
+    vi.stubEnv('BLOB_READ_WRITE_TOKEN', 'vercel_blob_rw_private_example')
+    vi.stubEnv('CATALOG_BLOB_READ_WRITE_TOKEN', 'vercel_blob_rw_private_example')
+    expect((await serveAdminCatalogDrafts(imageUpload())).status).toBe(503)
+    vi.stubEnv('CATALOG_BLOB_READ_WRITE_TOKEN', 'vercel_blob_rw_public_example')
+    expect((await serveAdminCatalogDrafts(imageUpload())).status).toBe(401)
+  })
+})

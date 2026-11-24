@@ -1,5 +1,4 @@
 import 'fake-indexeddb/auto'
-import Dexie from 'dexie'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { db } from './schema'
 import type { ExerciseAsset, ExerciseCatalogItem, Routine, RoutineDay, RoutineExercise } from '../domains/routine/types'
@@ -46,12 +45,12 @@ describe('IndexedDB integration', () => {
     await importFullBackup(
       backupFile({
         settings: [settings('remote-routine', 'kg')],
-        routines: [routine('remote-routine', 'Remote')],
+        routines: [{ ...routine('remote-routine', 'Remote'), isActive: true }],
       }),
       'replace',
     )
 
-    await expect(db.routines.toArray()).resolves.toEqual([routine('remote-routine', 'Remote')])
+    await expect(db.routines.toArray()).resolves.toEqual([{ ...routine('remote-routine', 'Remote'), isActive: true }])
     await expect(db.settings.get('app')).resolves.toMatchObject({
       activeRoutineId: 'remote-routine',
       preferredUnit: 'kg',
@@ -61,7 +60,14 @@ describe('IndexedDB integration', () => {
   it('rejects a backup without recognized tables before replacing local data', async () => {
     const local = routine('local', 'Local')
     await db.routines.add(local)
-    await expect(importFullBackup({ text: async () => JSON.stringify({ tables: {} }) } as File, 'replace')).rejects.toThrow()
+    await expect(importFullBackup({ text: async () => JSON.stringify({ schemaVersion: 8, exportedAt: now, tables: {} }) } as File, 'replace')).rejects.toThrow()
+    expect(await db.routines.toArray()).toEqual([local])
+  })
+
+  it('rejects a partial backup before replacing unrelated local data', async () => {
+    const local = routine('local', 'Local')
+    await db.routines.add(local)
+    await expect(importFullBackup({ text: async () => JSON.stringify({ schemaVersion: 8, exportedAt: now, tables: { settings: [settings('local', 'kg')] } }) } as File, 'replace')).rejects.toThrow()
     expect(await db.routines.toArray()).toEqual([local])
   })
 
@@ -95,6 +101,7 @@ describe('IndexedDB integration', () => {
   })
 
   it('keeps existing rows when a merged backup contains the same identifiers', async () => {
+    await seedValidSettings()
     await db.routines.put(routine('shared', 'Local'))
     await importFullBackup(backupFile({ routines: [routine('shared', 'Remote'), routine('new', 'New')] }), 'merge')
     expect(await db.routines.get('shared')).toEqual(routine('shared', 'Local'))
@@ -102,6 +109,7 @@ describe('IndexedDB integration', () => {
   })
 
   it('imports deload cycles in full backups', async () => {
+    await seedValidSettings()
     await importFullBackup(
       backupFile({
         deloadCycles: [
@@ -119,13 +127,14 @@ describe('IndexedDB integration', () => {
         ],
         settings: [settings('routine-1', 'kg')],
       }),
-      'replace',
+      'merge',
     )
 
     await expect(db.deloadCycles.get('deload-1')).resolves.toMatchObject({ status: 'completed' })
   })
 
   it('restores session health summaries from a full backup and accepts legacy sessions', async () => {
+    await seedValidSettings()
     const health: HealthSummary = {
       day: {
         metrics: healthMetrics(),
@@ -156,7 +165,7 @@ describe('IndexedDB integration', () => {
       updatedAt: now,
     }
 
-    await importFullBackup(backupFile({ workoutSessions: [session] }), 'replace')
+    await importFullBackup(backupFile({ workoutSessions: [session] }), 'merge')
 
     await expect(db.workoutSessions.get(session.id)).resolves.toMatchObject({
       health: {
@@ -173,23 +182,25 @@ describe('IndexedDB integration', () => {
             ...session,
             health: undefined,
             id: 'legacy-session',
+            date: '2026-07-21',
             startedAt: undefined,
             lastExerciseAt: undefined,
             completedAt: undefined,
           },
         ],
       }),
-      'replace',
+      'merge',
     )
 
     await expect(db.workoutSessions.get('legacy-session')).resolves.toMatchObject({ id: 'legacy-session' })
   })
 
   it('preserves health source dates and historical summaries through the legacy importer', async () => {
+    await seedValidSettings()
     const now = '2026-07-20T20:00:00.000Z'
     const health = { sourceDate: '2026-07-20', syncedAt: now, day: { rangeStart: now, rangeEnd: now, metrics: healthMetrics() } }
     const session: WorkoutSession = { id: 'with-history', routineId: 'routine', dayId: 'day', date: '2026-07-21', notes: '', displayUnit: 'kg', status: 'completed', createdAt: now, updatedAt: now, health, healthHistory: [health] }
-    await importFullBackup(backupFile({ workoutSessions: [session] }), 'replace')
+    await importFullBackup(backupFile({ workoutSessions: [session] }), 'merge')
     expect(await db.workoutSessions.get(session.id)).toMatchObject({ health: { sourceDate: '2026-07-20' }, healthHistory: [{ sourceDate: '2026-07-20' }] })
   })
   it('registers main sets, drop sets and completes exercise state', async () => {
@@ -587,40 +598,37 @@ describe('IndexedDB integration', () => {
   })
 
   it('preserves indication notes when importing a backup', async () => {
-    const legacyExercise = { ...routineExercise({ technicalNotes: 'Rodillas siguen la punta del pie.' }), progression: 'legacy' }
+    await seedValidSettings()
+    await db.routines.put(routine('routine-1', 'Rutina'))
+    await db.routineDays.put(routineDay('day-1', 'routine-1', 'D?a'))
+    const exercise = routineExercise({ technicalNotes: 'Rodillas siguen la punta del pie.' })
 
     await importFullBackup(
       backupFile({
         exerciseCatalog: [catalogExercise({ technicalNotes: 'Empuja el piso con todo el pie.' })],
-        routineExercises: [legacyExercise],
+        routineExercises: [exercise],
       }),
-      'replace',
+      'merge',
     )
 
     await expect(db.exerciseCatalog.get('catalog-1')).resolves.toMatchObject({ technicalNotes: 'Empuja el piso con todo el pie.' })
     await expect(db.routineExercises.get('exercise-1')).resolves.toMatchObject({ technicalNotes: 'Rodillas siguen la punta del pie.' })
-    expect(await db.routineExercises.get('exercise-1')).not.toHaveProperty('progression')
   })
 
-  it('strips legacy catalog progression strategy when importing a backup', async () => {
+  it('rejects obsolete catalog fields instead of changing imported data silently', async () => {
+    await seedValidSettings()
     const legacyCatalogExercise = {
       ...catalogExercise({ technicalNotes: 'Completa el rango alto antes de subir peso.' }),
       progressionStrategy: 'legacy_catalog_strategy',
     } as ExerciseCatalogItem
 
-    await importFullBackup(
+    await expect(importFullBackup(
       backupFile({
         exerciseCatalog: [legacyCatalogExercise],
       }),
-      'replace',
-    )
-
-    const savedCatalogExercise = await db.exerciseCatalog.get('catalog-1')
-
-    await expect(db.exerciseCatalog.get('catalog-1')).resolves.toMatchObject({
-      technicalNotes: 'Completa el rango alto antes de subir peso.',
-    })
-    expect(savedCatalogExercise).not.toHaveProperty('progressionStrategy')
+      'merge',
+    )).rejects.toThrow()
+    expect(await db.exerciseCatalog.get('catalog-1')).toBeUndefined()
   })
 
   it('exports chronological progress with routines, graph points and drop set volume', async () => {
@@ -695,6 +703,7 @@ describe('IndexedDB integration', () => {
   })
 
   it('imports custom exercise assets from full backup', async () => {
+    await seedValidSettings()
     await importFullBackup(
       backupFile({
         exerciseAssets: [
@@ -709,7 +718,7 @@ describe('IndexedDB integration', () => {
         ],
         exerciseCatalog: [catalogExercise({ customAssetId: 'asset-1' })],
       }),
-      'replace',
+      'merge',
     )
 
     await expect(db.exerciseAssets.get('asset-1')).resolves.toMatchObject({
@@ -717,30 +726,6 @@ describe('IndexedDB integration', () => {
     })
     await expect(db.exerciseCatalog.get('catalog-1')).resolves.toMatchObject({
       customAssetId: 'asset-1',
-    })
-  })
-
-  it('migrates v5 legacy visual fields to null', async () => {
-    db.close()
-    await db.delete()
-    const legacyDb = new Dexie('arsen')
-    legacyDb.version(5).stores({
-      exerciseCatalog: 'id, canonicalName, mainMuscle, equipment',
-      exerciseLogs: 'id, sessionId, routineExerciseId, state',
-      routineExercises: 'id, routineId, dayId, canonicalName, [dayId+order], sourceExerciseId',
-    })
-    await legacyDb.open()
-    await legacyDb.table('exerciseCatalog').put({ id: 'catalog-v5' })
-    await legacyDb.table('routineExercises').put({ id: 'exercise-v5' })
-    await legacyDb.table('exerciseLogs').put({ id: 'log-v5', snapshot: {} })
-    legacyDb.close()
-
-    await db.open()
-
-    await expect(db.exerciseCatalog.get('catalog-v5')).resolves.toMatchObject({ assetKind: null, customAssetId: null })
-    await expect(db.routineExercises.get('exercise-v5')).resolves.toMatchObject({ assetKind: null, customAssetId: null })
-    await expect(db.exerciseLogs.get('log-v5')).resolves.toMatchObject({
-      snapshot: { assetKind: null, customAssetId: null },
     })
   })
 
@@ -1167,6 +1152,10 @@ async function resetDb() {
   await db.open()
 }
 
+async function seedValidSettings() {
+  await db.settings.put({ ...settings('', 'kg'), activeRoutineId: null, schemaVersion: 8 })
+}
+
 function backupFile(tables: {
   deloadCycles?: DeloadCycle[]
   exerciseAssets?: ExerciseAsset[]
@@ -1180,8 +1169,12 @@ function backupFile(tables: {
     [
       JSON.stringify({
         exportedAt: now,
-        schemaVersion: 1,
-        tables,
+        schemaVersion: 8,
+        tables: {
+          deloadCycles: [], dropSetLogs: [], exerciseAssets: [], exerciseCatalog: [], exerciseLogs: [],
+          routineDays: [], routineExercises: [], routines: [], setLogs: [], settings: [], skipLogs: [],
+          weeklyVolumeTargets: [], workoutSessions: [], ...tables,
+        },
       }),
     ],
     'backup.json',
@@ -1217,7 +1210,7 @@ function settings(activeRoutineId: string, preferredUnit: 'kg' | 'lb'): AppSetti
     deloadNotifications: true,
     id: 'app',
     preferredUnit,
-    schemaVersion: 1,
+    schemaVersion: 8,
     storagePersisted: null,
     updatedAt: now,
   }

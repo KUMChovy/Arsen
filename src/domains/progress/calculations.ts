@@ -1,4 +1,6 @@
 import type { DropSetLog, SetLog } from '../workout/types'
+import { trainingDateSchema } from '../../shared/validation/dataContract'
+import { localDateKey } from '../../shared/utils/date'
 
 export type ProgressMetricKey = 'weight' | 'reps' | 'volume' | 'estimatedOneRm'
 export type ProgressPeriodKey = '4w' | '8w' | '12w' | 'all'
@@ -95,7 +97,7 @@ export function buildWeeklyVolume(sessions: Array<{ date: string; volumeKg: numb
 }
 
 function isValidSet(set: { reps: number; weightKg: number }) {
-  return isValidLoad(set.weightKg) && Number.isInteger(set.reps) && set.reps > 0
+  return Number.isFinite(set.weightKg) && set.weightKg >= 0 && Number.isInteger(set.reps) && set.reps > 0
 }
 
 function isValidLoad(value: number) {
@@ -103,7 +105,7 @@ function isValidLoad(value: number) {
 }
 
 function isDateKey(value: string) {
-  return /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(parseDateKey(value).getTime())
+  return trainingDateSchema.safeParse(value).success
 }
 
 function parseDateKey(value: string) {
@@ -111,7 +113,7 @@ function parseDateKey(value: string) {
 }
 
 function toDateKey(value: Date) {
-  return value.toISOString().slice(0, 10)
+  return localDateKey(value)
 }
 
 function addDays(value: Date, days: number) {

@@ -1,13 +1,85 @@
 import 'fake-indexeddb/auto'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import Dexie from 'dexie'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { db } from '../../db/schema'
-import { registerMainSetForExercise, registerWarmupForExercise, updateExerciseNotesForDay } from '../workout/services'
+import { deleteWorkoutSession, registerMainSetForExercise, registerWarmupForExercise, updateExerciseNotesForDay } from '../workout/services'
 import type { Routine, RoutineDay, RoutineExercise } from '../routine/types'
-import { getHistory, getPersonalRecords, getProgressExerciseDetail, getProgressExerciseOptions, getProgressHistory, getProgressSummary, getSessionDetail } from './repository'
+import { getHistory, getPersonalRecords, getProgressDataset, getProgressEditOptions, getProgressExerciseDetail, getProgressExerciseOptions, getProgressHistory, getProgressSummary, getSessionDetail } from './repository'
 
 describe('progress repository queries', () => {
   beforeEach(async () => resetDb())
   afterEach(async () => resetDb())
+
+  it('reads routine and day data from one consistent snapshot', async () => {
+    await db.routines.put(makeRoutine('routine', 'Antes'))
+    await db.routineDays.put(makeDay('day', 'routine', 'Antes'))
+    const original = db.routines.toArray.bind(db.routines)
+    let pending: Promise<unknown> | undefined
+    const spy = vi.spyOn(db.routines, 'toArray').mockImplementationOnce(() => Dexie.Promise.resolve((async () => {
+      pending = Dexie.ignoreTransaction(() => db.transaction('rw', [db.routines, db.routineDays], async () => {
+        await db.routines.update('routine', { name: 'Después' })
+        await db.routineDays.update('day', { name: 'Después' })
+      }))
+      const race = Promise.race([pending, new Promise<void>((resolve) => setTimeout(resolve, 40))])
+      await (Dexie.currentTransaction ? Dexie.waitFor(race) : race)
+      return original()
+    })()))
+    try {
+      const data = await getProgressDataset()
+      await pending
+      expect(data.routines[0]?.name).toBe(data.days[0]?.name)
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  it('reads session details consistently while the session is deleted', async () => {
+    const routine = makeRoutine('routine', 'Rutina')
+    const day = makeDay('day', routine.id, 'Día')
+    const exercise = makeExercise('exercise', routine.id, day.id)
+    await db.routines.put(routine)
+    await db.routineDays.put(day)
+    const { sessionId } = await registerMainSetForExercise({ date: '2026-08-01', dayId: day.id, displayUnit: 'kg', exercise, reps: 8, rir: 2, routineId: routine.id, weightKg: 60 })
+    const original = db.workoutSessions.get.bind(db.workoutSessions)
+    let pending: Promise<unknown> | undefined
+    const spy = vi.spyOn(db.workoutSessions, 'get').mockImplementationOnce((key) => Dexie.Promise.resolve((async () => {
+      const result = await original(key)
+      pending = Dexie.ignoreTransaction(() => deleteWorkoutSession(sessionId))
+      const race = Promise.race([pending, new Promise<void>((resolve) => setTimeout(resolve, 40))])
+      await (Dexie.currentTransaction ? Dexie.waitFor(race) : race)
+      return result
+    })()))
+    try {
+      const detail = await getSessionDetail(sessionId)
+      await pending
+      expect(detail?.exercises[0]?.sets).toHaveLength(1)
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  it('reads edit options from one snapshot while routines are renamed', async () => {
+    await db.routines.put(makeRoutine('routine', 'Antes'))
+    await db.routineDays.put(makeDay('day', 'routine', 'Antes'))
+    const original = db.routineDays.toArray.bind(db.routineDays)
+    let pending: Promise<unknown> | undefined
+    const spy = vi.spyOn(db.routineDays, 'toArray').mockImplementationOnce(() => Dexie.Promise.resolve((async () => {
+      pending = Dexie.ignoreTransaction(() => db.transaction('rw', [db.routines, db.routineDays], async () => {
+        await db.routines.update('routine', { name: 'Después' })
+        await db.routineDays.update('day', { name: 'Después' })
+      }))
+      const race = Promise.race([pending, new Promise<void>((resolve) => setTimeout(resolve, 40))])
+      await (Dexie.currentTransaction ? Dexie.waitFor(race) : race)
+      return original()
+    })()))
+    try {
+      const options = await getProgressEditOptions()
+      await pending
+      expect(options.routines[0]?.name).toBe(options.days[0]?.name)
+    } finally {
+      spy.mockRestore()
+    }
+  })
 
   it('shows the original routine and day names after they are renamed or deleted', async () => {
     const routine = makeRoutine('routine-history', 'Original')

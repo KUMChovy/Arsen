@@ -75,6 +75,7 @@ export type ProgressBestMark = {
 }
 
 export type SessionExerciseDetail = {
+  assetKind?: string | null
   bundledAssetId: string | null
   canonicalName?: string
   exerciseLogId: string
@@ -226,6 +227,7 @@ export type ProgressExerciseSession = ExerciseSessionAggregate & {
 }
 
 export type ProgressExerciseDetail = {
+  assetKind?: string | null
   bestEstimatedOneRmKg: number | null
   bundledAssetId: string | null
   canonicalName: string
@@ -467,88 +469,89 @@ export async function getProgressDayOptions(): Promise<ProgressDayOption[]> {
 }
 
 export async function getSessionDetail(sessionId: string, filters: ProgressOverviewFilters = {}): Promise<SessionDetail | null> {
-  const session = await db.workoutSessions.get(sessionId)
-  if (!session) return null
-  if (filters.dayId && session.dayId !== filters.dayId) return null
+  return db.transaction('r', [db.workoutSessions, db.routines, db.routineDays, db.exerciseLogs, db.setLogs, db.dropSetLogs], async () => {
+    const session = await db.workoutSessions.get(sessionId)
+    if (!session) return null
+    if (filters.dayId && session.dayId !== filters.dayId) return null
 
-  const [routine, day, exerciseLogs] = await Promise.all([
-    db.routines.get(session.routineId),
-    db.routineDays.get(session.dayId),
-    db.exerciseLogs.where('sessionId').equals(session.id).toArray(),
-  ])
-  const visibleExerciseLogs = filters.canonicalName
-    ? exerciseLogs.filter((log) => log.snapshot.canonicalName === filters.canonicalName)
-    : exerciseLogs
-  const exerciseLogIds = visibleExerciseLogs.map((log) => log.id)
-  const setLogs = exerciseLogIds.length > 0 ? await db.setLogs.where('exerciseLogId').anyOf(exerciseLogIds).toArray() : []
-  const setLogIds = setLogs.map((set) => set.id)
-  const dropSets = setLogIds.length > 0 ? await db.dropSetLogs.where('setLogId').anyOf(setLogIds).toArray() : []
-  const dropSetsBySetId = new Map<string, typeof dropSets>()
+    const [routine, day, exerciseLogs] = await Promise.all([
+      db.routines.get(session.routineId),
+      db.routineDays.get(session.dayId),
+      db.exerciseLogs.where('sessionId').equals(session.id).toArray(),
+    ])
+    const visibleExerciseLogs = filters.canonicalName
+      ? exerciseLogs.filter((log) => log.snapshot.canonicalName === filters.canonicalName)
+      : exerciseLogs
+    const exerciseLogIds = visibleExerciseLogs.map((log) => log.id)
+    const setLogs = exerciseLogIds.length > 0 ? await db.setLogs.where('exerciseLogId').anyOf(exerciseLogIds).toArray() : []
+    const setLogIds = setLogs.map((set) => set.id)
+    const dropSets = setLogIds.length > 0 ? await db.dropSetLogs.where('setLogId').anyOf(setLogIds).toArray() : []
+    const dropSetsBySetId = new Map<string, typeof dropSets>()
 
-  for (const dropSet of dropSets) {
-    const current = dropSetsBySetId.get(dropSet.setLogId)
-    if (current) current.push(dropSet)
-    else dropSetsBySetId.set(dropSet.setLogId, [dropSet])
-  }
+    for (const dropSet of dropSets) {
+      const current = dropSetsBySetId.get(dropSet.setLogId)
+      if (current) current.push(dropSet)
+      else dropSetsBySetId.set(dropSet.setLogId, [dropSet])
+    }
 
-  return {
-    completedAt: session.completedAt,
-    createdAt: session.createdAt,
-    date: session.date,
-    dayId: session.dayId,
-    dayName: session.dayName ?? day?.name ?? 'Dia eliminado',
-    displayUnit: session.displayUnit,
-    exercises: visibleExerciseLogs.map((log) => ({
-      bundledAssetId: log.snapshot.bundledAssetId ?? null,
-      canonicalName: log.snapshot.canonicalName,
-      exerciseLogId: log.id,
-      exerciseName: log.snapshot.name,
-      mainMuscle: log.snapshot.mainMuscle,
-      notes: log.notes,
-      routineExerciseId: log.routineExerciseId,
-      warmupSets: setLogs
-        .filter((set) => set.kind === 'warmup' && set.exerciseLogId === log.id)
-        .sort((a, b) => a.order - b.order)
-        .map(({ id, order, reps, rir, weightKg, displayUnit }) => ({ id, order, reps, rir, weightKg, displayUnit })),
-      sets: setLogs
-        .filter((set) => set.kind === 'main' && set.exerciseLogId === log.id)
-        .sort((a, b) => a.order - b.order)
-        .map((set) => ({
-          displayUnit: set.displayUnit,
-          dropSets: (dropSetsBySetId.get(set.id) ?? [])
-            .sort((a, b) => a.order - b.order)
-            .map((dropSet) => ({
-              id: dropSet.id,
-              order: dropSet.order,
-              reps: dropSet.reps,
-              rir: dropSet.rir,
-              weightKg: dropSet.weightKg,
-            })),
-          id: set.id,
-          order: set.order,
-          reps: set.reps,
-          rir: set.rir,
-          weightKg: set.weightKg,
-        })),
-    })),
-    id: session.id,
-    health: session.health,
-    lastExerciseAt: session.lastExerciseAt,
-    notes: session.notes,
-    routineId: session.routineId,
-    routineName: session.routineName ?? routine?.name ?? 'Rutina eliminada',
-    startedAt: session.startedAt,
-    status: session.status,
-    updatedAt: session.updatedAt,
-  }
+    return {
+      completedAt: session.completedAt,
+      createdAt: session.createdAt,
+      date: session.date,
+      dayId: session.dayId,
+      dayName: session.dayName ?? day?.name ?? 'Dia eliminado',
+      displayUnit: session.displayUnit,
+      exercises: visibleExerciseLogs.map((log) => ({
+        assetKind: log.snapshot.assetKind ?? null,
+        bundledAssetId: log.snapshot.bundledAssetId ?? null,
+        canonicalName: log.snapshot.canonicalName,
+        exerciseLogId: log.id,
+        exerciseName: log.snapshot.name,
+        mainMuscle: log.snapshot.mainMuscle,
+        notes: log.notes,
+        routineExerciseId: log.routineExerciseId,
+        warmupSets: setLogs
+          .filter((set) => set.kind === 'warmup' && set.exerciseLogId === log.id)
+          .sort((a, b) => a.order - b.order)
+          .map(({ id, order, reps, rir, weightKg, displayUnit }) => ({ id, order, reps, rir, weightKg, displayUnit })),
+        sets: setLogs
+          .filter((set) => set.kind === 'main' && set.exerciseLogId === log.id)
+          .sort((a, b) => a.order - b.order)
+          .map((set) => ({
+            displayUnit: set.displayUnit,
+            dropSets: (dropSetsBySetId.get(set.id) ?? [])
+              .sort((a, b) => a.order - b.order)
+              .map((dropSet) => ({
+                id: dropSet.id,
+                order: dropSet.order,
+                reps: dropSet.reps,
+                rir: dropSet.rir,
+                weightKg: dropSet.weightKg,
+              })),
+            id: set.id,
+            order: set.order,
+            reps: set.reps,
+            rir: set.rir,
+            weightKg: set.weightKg,
+          })),
+      })),
+      id: session.id,
+      health: session.health,
+      lastExerciseAt: session.lastExerciseAt,
+      notes: session.notes,
+      routineId: session.routineId,
+      routineName: session.routineName ?? routine?.name ?? 'Rutina eliminada',
+      startedAt: session.startedAt,
+      status: session.status,
+      updatedAt: session.updatedAt,
+    }
+  })
 }
 
 export async function getProgressEditOptions(): Promise<ProgressEditOptions> {
-  const [routines, days, exercises] = await Promise.all([
-    db.routines.orderBy('updatedAt').reverse().toArray(),
-    db.routineDays.toArray(),
-    db.routineExercises.toArray(),
-  ])
+  const [routines, days, exercises] = await db.transaction('r', [db.routines, db.routineDays, db.routineExercises], () => Promise.all([
+    db.routines.orderBy('updatedAt').reverse().toArray(), db.routineDays.toArray(), db.routineExercises.toArray(),
+  ]))
   const routineById = new Map(routines.map((routine) => [routine.id, routine.name]))
 
   return {
@@ -573,17 +576,13 @@ export async function getProgressEditOptions(): Promise<ProgressEditOptions> {
 }
 
 export async function getProgressDataset(): Promise<ProgressDataset> {
-  const [days, dropSetLogs, exerciseLogs, routineExercises, routines, sessions, setLogs] = await Promise.all([
-    db.routineDays.toArray(),
-    db.dropSetLogs.toArray(),
-    db.exerciseLogs.toArray(),
-    db.routineExercises.toArray(),
-    db.routines.toArray(),
-    db.workoutSessions.orderBy('date').toArray(),
-    db.setLogs.toArray(),
-  ])
-
-  return { days, dropSetLogs, exerciseLogs, routineExercises, routines, sessions, setLogs }
+  return db.transaction('r', [db.routineDays, db.dropSetLogs, db.exerciseLogs, db.routineExercises, db.routines, db.workoutSessions, db.setLogs], async () => {
+    const [days, dropSetLogs, exerciseLogs, routineExercises, routines, sessions, setLogs] = await Promise.all([
+      db.routineDays.toArray(), db.dropSetLogs.toArray(), db.exerciseLogs.toArray(), db.routineExercises.toArray(),
+      db.routines.toArray(), db.workoutSessions.orderBy('date').toArray(), db.setLogs.toArray(),
+    ])
+    return { days, dropSetLogs, exerciseLogs, routineExercises, routines, sessions, setLogs }
+  })
 }
 
 export async function getProgressSummary(filters: ProgressOverviewFilters = {}): Promise<ProgressSummary> {
@@ -735,6 +734,7 @@ export async function getProgressExerciseDetail(canonicalName: string, filters: 
   if (!sourceLog || sessions.length === 0) return null
 
   return {
+    assetKind: sourceLog.snapshot.assetKind ?? null,
     bestEstimatedOneRmKg: maxOrNull(sessions.map((session) => session.estimatedOneRmKg)),
     bundledAssetId: sourceLog.snapshot.bundledAssetId ?? null,
     canonicalName,

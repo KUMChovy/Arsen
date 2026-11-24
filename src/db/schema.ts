@@ -1,4 +1,4 @@
-import Dexie, { type Table } from 'dexie'
+import Dexie, { type DexieOptions, type Table } from 'dexie'
 import type {
   ExerciseAsset,
   ExerciseCatalogItem,
@@ -9,11 +9,11 @@ import type {
 } from '../domains/routine/types'
 import type { AppSettings, DeloadCycle } from '../domains/settings/types'
 import type { DropSetLog, ExerciseLog, SetLog, SkipLog, WorkoutSession } from '../domains/workout/types'
-import { loadSettingsForEquipment } from '../shared/calculations/equipmentLoad'
-import { DEFAULT_DELOAD_SERIES_PERCENT, DEFAULT_DELOAD_WEIGHT_PERCENT } from '../shared/calculations/deload'
-import { normalizeWarmupProtocol } from '../shared/calculations/warmups'
+import { CONTRACT_TABLE_NAMES, installRevisionTracking } from './revisionTracking'
+import type { PublishedCatalog } from '../shared/validation/remoteCatalog'
 
-export const CURRENT_SCHEMA_VERSION = 7
+import { CURRENT_SCHEMA_VERSION } from './schemaVersion'
+export { CURRENT_SCHEMA_VERSION } from './schemaVersion'
 
 export class ArsenDatabase extends Dexie {
   settings!: Table<AppSettings, string>
@@ -29,180 +29,11 @@ export class ArsenDatabase extends Dexie {
   setLogs!: Table<SetLog, string>
   dropSetLogs!: Table<DropSetLog, string>
   skipLogs!: Table<SkipLog, string>
+  localMetadata!: Table<{ id: 'revision'; value: number } | { id: 'globalCatalog'; value: PublishedCatalog }, string>
 
-  constructor() {
-    super('arsen')
+  constructor(name = 'arsen', options?: DexieOptions) {
+    super(name, options)
 
-    this.version(1).stores({
-      settings: 'id, activeRoutineId, preferredUnit',
-      routines: 'id, isActive, name, updatedAt',
-      routineDays: 'id, routineId, [routineId+order], weekday',
-      routineExercises: 'id, routineId, dayId, canonicalName, [dayId+order], sourceExerciseId',
-      exerciseCatalog: 'id, canonicalName, mainMuscle, equipment',
-      exerciseAssets: 'id, updatedAt',
-      weeklyVolumeTargets: 'id, routineId, muscle',
-      workoutSessions: 'id, routineId, dayId, date, [date+routineId], [date+dayId]',
-      exerciseLogs: 'id, sessionId, routineExerciseId, state',
-      setLogs: 'id, exerciseLogId, kind, [exerciseLogId+order]',
-      dropSetLogs: 'id, setLogId, [setLogId+order]',
-      skipLogs: 'id, sessionId, routineExerciseId',
-    })
-
-    this.version(2)
-      .stores({
-        settings: 'id, activeRoutineId, preferredUnit',
-        routines: 'id, isActive, name, updatedAt',
-        routineDays: 'id, routineId, [routineId+order], weekday',
-        routineExercises: 'id, routineId, dayId, canonicalName, [dayId+order], sourceExerciseId',
-        exerciseCatalog: 'id, canonicalName, mainMuscle, equipment',
-        exerciseAssets: 'id, updatedAt',
-        weeklyVolumeTargets: 'id, routineId, muscle',
-        workoutSessions: 'id, routineId, dayId, date, [date+routineId], [date+dayId]',
-        exerciseLogs: 'id, sessionId, routineExerciseId, state',
-        setLogs: 'id, exerciseLogId, kind, [exerciseLogId+order]',
-        dropSetLogs: 'id, setLogId, [setLogId+order]',
-        skipLogs: 'id, sessionId, routineExerciseId',
-      })
-      .upgrade((tx) =>
-        tx
-          .table('routineExercises')
-          .toCollection()
-          .modify((item) => {
-            delete item.progression
-          }),
-      )
-
-    this.version(3)
-      .stores({
-        settings: 'id, activeRoutineId, preferredUnit',
-        routines: 'id, isActive, name, updatedAt',
-        routineDays: 'id, routineId, [routineId+order], weekday',
-        routineExercises: 'id, routineId, dayId, canonicalName, [dayId+order], sourceExerciseId',
-        exerciseCatalog: 'id, canonicalName, mainMuscle, equipment',
-        exerciseAssets: 'id, updatedAt',
-        weeklyVolumeTargets: 'id, routineId, muscle',
-        workoutSessions: 'id, routineId, dayId, date, [date+routineId], [date+dayId]',
-        exerciseLogs: 'id, sessionId, routineExerciseId, state',
-        setLogs: 'id, exerciseLogId, kind, [exerciseLogId+order]',
-        dropSetLogs: 'id, setLogId, [setLogId+order]',
-        skipLogs: 'id, sessionId, routineExerciseId',
-      })
-      .upgrade((tx) =>
-        tx
-          .table('exerciseCatalog')
-          .toCollection()
-          .modify((item) => {
-            delete item.progressionStrategy
-          }),
-      )
-
-    this.version(4)
-      .stores({
-        settings: 'id, activeRoutineId, preferredUnit',
-        routines: 'id, isActive, name, updatedAt',
-        routineDays: 'id, routineId, [routineId+order], weekday',
-        routineExercises: 'id, routineId, dayId, canonicalName, [dayId+order], sourceExerciseId',
-        exerciseCatalog: 'id, canonicalName, mainMuscle, equipment',
-        exerciseAssets: 'id, updatedAt',
-        weeklyVolumeTargets: 'id, routineId, muscle',
-        workoutSessions: 'id, routineId, dayId, date, [date+routineId], [date+dayId]',
-        exerciseLogs: 'id, sessionId, routineExerciseId, state',
-        setLogs: 'id, exerciseLogId, kind, [exerciseLogId+order]',
-        dropSetLogs: 'id, setLogId, [setLogId+order]',
-        skipLogs: 'id, sessionId, routineExerciseId',
-      })
-      .upgrade((tx) =>
-        Promise.all([
-          tx
-            .table('exerciseCatalog')
-            .toCollection()
-            .modify((item) => {
-              item.warmupProtocol = normalizeWarmupProtocol(item.warmupProtocol)
-            }),
-          tx
-            .table('routineExercises')
-            .toCollection()
-            .modify((item) => {
-              item.warmupProtocol = normalizeWarmupProtocol(item.warmupProtocol)
-            }),
-        ]),
-      )
-
-    this.version(5)
-      .stores({
-        settings: 'id, activeRoutineId, preferredUnit',
-        routines: 'id, isActive, name, updatedAt',
-        routineDays: 'id, routineId, [routineId+order], weekday',
-        routineExercises: 'id, routineId, dayId, canonicalName, [dayId+order], sourceExerciseId',
-        exerciseCatalog: 'id, canonicalName, mainMuscle, equipment',
-        exerciseAssets: 'id, updatedAt',
-        weeklyVolumeTargets: 'id, routineId, muscle',
-        workoutSessions: 'id, routineId, dayId, date, [date+routineId], [date+dayId]',
-        exerciseLogs: 'id, sessionId, routineExerciseId, state',
-        setLogs: 'id, exerciseLogId, kind, [exerciseLogId+order]',
-        dropSetLogs: 'id, setLogId, [setLogId+order]',
-        skipLogs: 'id, sessionId, routineExerciseId',
-      })
-      .upgrade((tx) =>
-        Promise.all(
-          ['exerciseCatalog', 'routineExercises'].map((tableName) =>
-            tx
-              .table(tableName)
-              .toCollection()
-              .modify((item) => {
-                const settings = loadSettingsForEquipment({
-                  barWeightKg: item.barWeightKg,
-                  equipment: item.equipment,
-                  loadMode: item.loadMode,
-                })
-                item.equipment = settings.equipment
-                item.loadMode = settings.loadMode
-                item.barWeightKg = settings.barWeightKg
-              }),
-          ),
-        ),
-      )
-
-    this.version(6)
-      .stores({
-        settings: 'id, activeRoutineId, preferredUnit',
-        routines: 'id, isActive, name, updatedAt',
-        routineDays: 'id, routineId, [routineId+order], weekday',
-        routineExercises: 'id, routineId, dayId, canonicalName, [dayId+order], sourceExerciseId',
-        exerciseCatalog: 'id, canonicalName, mainMuscle, equipment',
-        exerciseAssets: 'id, updatedAt',
-        weeklyVolumeTargets: 'id, routineId, muscle',
-        workoutSessions: 'id, routineId, dayId, date, [date+routineId], [date+dayId]',
-        exerciseLogs: 'id, sessionId, routineExerciseId, state',
-        setLogs: 'id, exerciseLogId, kind, [exerciseLogId+order]',
-        dropSetLogs: 'id, setLogId, [setLogId+order]',
-        skipLogs: 'id, sessionId, routineExerciseId',
-      })
-      .upgrade((tx) =>
-        Promise.all([
-          tx
-            .table('exerciseCatalog')
-            .toCollection()
-            .modify((item) => {
-              item.assetKind = typeof item.assetKind === 'string' ? item.assetKind : null
-              item.customAssetId = typeof item.customAssetId === 'string' ? item.customAssetId : null
-            }),
-          tx
-            .table('routineExercises')
-            .toCollection()
-            .modify((item) => {
-              item.assetKind = typeof item.assetKind === 'string' ? item.assetKind : null
-              item.customAssetId = typeof item.customAssetId === 'string' ? item.customAssetId : null
-            }),
-          tx
-            .table('exerciseLogs')
-            .toCollection()
-            .modify((log) => {
-              log.snapshot.assetKind = typeof log.snapshot.assetKind === 'string' ? log.snapshot.assetKind : null
-              log.snapshot.customAssetId = typeof log.snapshot.customAssetId === 'string' ? log.snapshot.customAssetId : null
-            }),
-        ]),
-      )
     this.version(7)
       .stores({
         settings: 'id, activeRoutineId, preferredUnit',
@@ -219,22 +50,17 @@ export class ArsenDatabase extends Dexie {
         skipLogs: 'id, sessionId, routineExerciseId',
         deloadCycles: 'id, status, startedAt, completedAt, scheduledStartDate, skippedAt, updatedAt',
       })
-      .upgrade((tx) =>
-        tx
-          .table('settings')
-          .toCollection()
-          .modify((settings) => {
-            settings.deloadSeriesReductionPercent =
-              typeof settings.deloadSeriesReductionPercent === 'number'
-                ? settings.deloadSeriesReductionPercent
-                : DEFAULT_DELOAD_SERIES_PERCENT
-            settings.deloadWeightReductionPercent =
-              typeof settings.deloadWeightReductionPercent === 'number'
-                ? settings.deloadWeightReductionPercent
-                : DEFAULT_DELOAD_WEIGHT_PERCENT
-          }),
-      )
+    this.version(8).stores({ localMetadata: 'id' }).upgrade(async (transaction) => {
+      await transaction.table('localMetadata').add({ id: 'revision', value: 0 })
+      await transaction.table('settings').toCollection().modify({ schemaVersion: CURRENT_SCHEMA_VERSION })
+    })
+    this.on('populate', (transaction) => transaction.table('localMetadata').add({ id: 'revision', value: 0 }))
+    installRevisionTracking(this)
   }
 }
 
 export const db = new ArsenDatabase()
+
+export function dataTables() {
+  return db.tables.filter((table) => (CONTRACT_TABLE_NAMES as readonly string[]).includes(table.name))
+}

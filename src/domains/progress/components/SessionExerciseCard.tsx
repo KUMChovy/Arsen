@@ -44,7 +44,7 @@ export function SessionExerciseCard({
     <Card className="overflow-hidden p-0">
       <div className="bg-arsen-purple/10 p-3">
         <div className="flex items-center gap-3">
-          <ExerciseArt alt={exercise.exerciseName} bundledAssetId={exercise.bundledAssetId} className="size-14" muscle={exercise.mainMuscle} />
+          <ExerciseArt alt={exercise.exerciseName} assetKind={exercise.assetKind} bundledAssetId={exercise.bundledAssetId} className="size-14" muscle={exercise.mainMuscle} />
           <div className="min-w-0 flex-1">
             <h3 className="truncate text-base font-black">{exercise.exerciseName}</h3>
             <div className="mt-1 flex flex-wrap items-center gap-2 text-xs font-bold text-arsen-muted">

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SettingsPage } from './SettingsPage'
 import { updateAvailablePlateWeights, updateDeloadReductionSettings } from '../services'
@@ -96,6 +96,11 @@ vi.mock('../../routine/importExport', () => ({
 vi.mock('../../health/services', () => healthPageMocks)
 
 describe('SettingsPage', () => {
+  it('opens account settings without activating a backup', () => {
+    render(<MemoryRouter initialEntries={['/settings']}><Routes><Route path="/settings" element={<SettingsPage />} /><Route path="/cuenta" element={<p>Página de cuenta</p>} /></Routes></MemoryRouter>)
+    fireEvent.click(screen.getByRole('button', { name: /cuenta y respaldo/i }))
+    expect(screen.getByText('Página de cuenta')).toBeInTheDocument()
+  })
   afterEach(() => {
     cleanup()
     settingsPageMocks.completeActiveDeload.mockClear()

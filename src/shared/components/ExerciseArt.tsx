@@ -1,7 +1,11 @@
+import { useEffect, useState } from 'react'
 import { getBundledExerciseAsset, getMuscleAsset } from '../assets/exerciseImages'
+import { readCatalogImage } from '../assets/catalogImages'
+import { parseCatalogImageReference } from '../assets/catalogImageReference'
 
 type ExerciseArtProps = {
   alt: string
+  assetKind?: string | null
   bundledAssetId?: string | null
   className?: string
   customImageSrc?: string | null
@@ -11,12 +15,31 @@ type ExerciseArtProps = {
 const placeholderArt =
   'radial-gradient(circle at 50% 38%, color-mix(in oklab, var(--color-arsen-purple) 30%, transparent), color-mix(in oklab, var(--color-arsen-ink) 4%, transparent) 42%, transparent 68%)'
 
-export function ExerciseArt({ alt, bundledAssetId, className = 'size-[66px]', customImageSrc, muscle }: ExerciseArtProps) {
+export function ExerciseArt({ alt, assetKind, bundledAssetId, className = 'size-[66px]', customImageSrc, muscle }: ExerciseArtProps) {
+  const [globalImage, setGlobalImage] = useState<{ reference: string; src: string } | null>(null)
+  useEffect(() => {
+    let active = true
+    let objectUrl: string | null = null
+    setGlobalImage(null)
+    const image = !customImageSrc ? parseCatalogImageReference(assetKind) : null
+    if (image) {
+      void readCatalogImage(image).then((blob) => {
+        if (!active || !blob) return
+        objectUrl = URL.createObjectURL(blob)
+        setGlobalImage({ reference: assetKind!, src: objectUrl })
+      }).catch(() => undefined)
+    }
+    return () => {
+      active = false
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+    }
+  }, [assetKind, customImageSrc])
   const bundledAsset = getBundledExerciseAsset(bundledAssetId)
   const muscleSrc = getMuscleAsset(muscle)
-  const imageSource = customImageSrc ? 'custom' : bundledAsset ? 'bundled' : muscleSrc ? 'muscle' : 'placeholder'
-  const backgroundImage = customImageSrc
-    ? `url(${customImageSrc})`
+  const resolvedImageSrc = customImageSrc || (globalImage && globalImage.reference === assetKind ? globalImage.src : null)
+  const imageSource = resolvedImageSrc ? 'custom' : bundledAsset ? 'bundled' : muscleSrc ? 'muscle' : 'placeholder'
+  const backgroundImage = resolvedImageSrc
+    ? `url(${resolvedImageSrc})`
     : bundledAsset
       ? `url(${bundledAsset.url})`
       : muscleSrc

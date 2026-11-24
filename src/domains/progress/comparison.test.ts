@@ -12,6 +12,12 @@ describe('compareSessions', () => {
   it('returns a limitation when sessions have no shared exercises', () => {
     expect(compareSessions(detail('a', 'press', 100), detail('b', 'sentadilla', 200))).toMatchObject({ comparable: false, sharedExercises: [] })
   })
+
+  it('matches exercise names using the same normalization when a canonical name is absent', () => {
+    const left = { id: 'a', exercises: [{ exerciseName: 'Elevación lateral', sets: [] }] }
+    const right = { id: 'b', exercises: [{ canonicalName: 'elevacion-lateral', exerciseName: 'Elevación lateral', sets: [] }] }
+    expect(compareSessions(left, right)).toMatchObject({ comparable: true, sharedExercises: ['elevacion-lateral'] })
+  })
 })
 
 function detail(id: string, name: string, weightKg: number) {

@@ -14,4 +14,10 @@ describe('health summary validation', () => {
   it('requires exercise summaries to identify the exercise and its log', () => {
     expect(healthSummarySchema.safeParse({ day, exercises: [day], syncedAt: day.rangeEnd }).success).toBe(false)
   })
+
+  it('rejects session and exercise windows outside the associated day', () => {
+    const outside = { ...day, rangeStart: '2026-08-02T00:00:00.000Z', rangeEnd: '2026-08-02T01:00:00.000Z' }
+    expect(healthSummarySchema.safeParse({ day, session: outside, syncedAt: '2026-08-02T02:00:00.000Z' }).success).toBe(false)
+    expect(healthSummarySchema.safeParse({ day, exercises: [{ ...outside, canonicalName: 'press', exerciseLogId: 'log', exerciseName: 'Press', routineExerciseId: 'exercise', setCount: 2 }], syncedAt: '2026-08-02T02:00:00.000Z' }).success).toBe(false)
+  })
 })

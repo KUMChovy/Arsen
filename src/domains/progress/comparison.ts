@@ -1,3 +1,5 @@
+import { canonicalName } from '../../shared/utils/normalize'
+
 type ComparisonInput = {
   exercises: Array<{ canonicalName?: string; exerciseName: string; sets: Array<{ dropSets: Array<{ reps: number; weightKg: number }>; reps: number; weightKg: number }> }>
   id: string
@@ -15,8 +17,8 @@ export type SessionComparison = {
 }
 
 export function compareSessions(left: ComparisonInput, right: ComparisonInput): SessionComparison {
-  const leftNames = new Set(left.exercises.map((exercise) => exercise.canonicalName ?? exercise.exerciseName.toLowerCase()))
-  const rightNames = new Set(right.exercises.map((exercise) => exercise.canonicalName ?? exercise.exerciseName.toLowerCase()))
+  const leftNames = new Set(left.exercises.map((exercise) => exercise.canonicalName ?? canonicalName(exercise.exerciseName)))
+  const rightNames = new Set(right.exercises.map((exercise) => exercise.canonicalName ?? canonicalName(exercise.exerciseName)))
   const sharedExercises = [...leftNames].filter((name) => rightNames.has(name)).sort()
   const leftVolumeKg = volume(left)
   const rightVolumeKg = volume(right)

@@ -18,6 +18,22 @@ describe('local integrity diagnosis', () => {
     expect(await diagnoseIntegrity()).toEqual([])
   })
 
+  it('reports a corrupted local revision without repairing it', async () => {
+    await db.localMetadata.put({ id: 'revision', value: -1 })
+    expect(await diagnoseIntegrity()).toEqual(expect.arrayContaining([
+      expect.objectContaining({ entity: 'localMetadata', id: 'revision', code: 'invalid-revision', severity: 'error' }),
+    ]))
+    expect((await db.localMetadata.get('revision'))?.value).toBe(-1)
+  })
+
+  it('reports a missing revision without changing stored data', async () => {
+    await db.localMetadata.delete('revision')
+    expect(await diagnoseIntegrity()).toEqual(expect.arrayContaining([
+      expect.objectContaining({ entity: 'localMetadata', id: 'revision', code: 'missing-revision', severity: 'error' }),
+    ]))
+    expect(await db.routines.count()).toBeGreaterThan(0)
+  })
+
   it('validates the persistent entities created by a new installation', async () => {
     for (const item of await db.settings.toArray()) expect(settingsEntitySchema.safeParse(item).success).toBe(true)
     for (const item of await db.routines.toArray()) expect(routineEntitySchema.safeParse(item).success).toBe(true)

@@ -20,6 +20,7 @@ import {
   startDeloadNow,
   updateAvailablePlateWeights,
   updateDeloadReductionSettings,
+  updatePreferredUnit,
 } from './services'
 import type { Routine, RoutineDay, RoutineExercise } from '../routine/types'
 import type { DropSetLog, ExerciseLog, SetLog, WorkoutSession } from '../workout/types'
@@ -91,6 +92,37 @@ describe('settings export services', () => {
     expect((await buildProgressExport()).timeline[0]).toMatchObject({ routineName: 'Antes', dayName: 'Día anterior' })
   })
 
+  it('exports progress from one snapshot during a concurrent change', async () => {
+    await seedProgressData({ dayName: 'Antes', exerciseName: 'Press', routineName: 'Antes' })
+    const original = db.routineDays.toArray.bind(db.routineDays)
+    const originalRoutines = db.routines.toArray.bind(db.routines)
+    let pendingWrite: Promise<unknown> | undefined
+    let signalWrite!: () => void
+    const writeStarted = new Promise<void>((resolve) => { signalWrite = resolve })
+    const routineSpy = vi.spyOn(db.routines, 'toArray').mockImplementation((() => Dexie.Promise.resolve((async () => {
+      await (Dexie.currentTransaction ? Dexie.waitFor(writeStarted) : writeStarted)
+      const race = Promise.race([pendingWrite!, new Promise<void>((resolve) => setTimeout(resolve, 40))])
+      await (Dexie.currentTransaction ? Dexie.waitFor(race) : race)
+      return originalRoutines()
+    })())) as typeof db.routines.toArray)
+    const spy = vi.spyOn(db.routineDays, 'toArray').mockImplementation((() => Dexie.Promise.resolve((async () => {
+      const days = await original()
+      pendingWrite = Dexie.ignoreTransaction(() => db.transaction('rw', [db.routines, db.routineDays], async () => {
+        await db.routines.update('routine-1', { name: 'Después' })
+        await db.routineDays.update('day-1', { name: 'Después' })
+      }))
+      signalWrite()
+      const race = Promise.race([pendingWrite, new Promise<void>((resolve) => setTimeout(resolve, 40))])
+      await (Dexie.currentTransaction ? Dexie.waitFor(race) : race)
+      return days
+    })())) as typeof db.routineDays.toArray)
+    try {
+      const result = await buildProgressExport()
+      await pendingWrite
+      expect(result.timeline[0]?.routineName).toBe(result.timeline[0]?.dayName)
+    } finally { spy.mockRestore(); routineSpy.mockRestore() }
+  })
+
   it('restores session-local exercise plans and manual completion from a full backup', async () => {
     await seedProgressData({ dayName: 'Día', exerciseName: 'Press', routineName: 'Rutina' })
     const exercise = (await db.routineExercises.get('exercise-1'))!
@@ -101,6 +133,16 @@ describe('settings export services', () => {
     await db.workoutSessions.clear()
     await importFullBackup({ text: async () => JSON.stringify(data) } as File, 'replace')
     expect(await db.workoutSessions.get('session-1')).toMatchObject({ manuallyCompleted: true, routineName: 'Nombre original', dayName: 'Día original', sessionExercises: [{ id: 'session-extra', name: 'Remo' }] })
+  })
+
+  it('rejects a complete backup with an orphan day before replacing local data', async () => {
+    await seedProgressData({ dayName: 'Día', exerciseName: 'Press', routineName: 'Rutina' })
+    await exportFullBackup()
+    const data = structuredClone(vi.mocked(downloadJson).mock.calls.at(-1)![1]) as { tables: { routineDays: Array<{ routineId: string }> } }
+    data.tables.routineDays[0]!.routineId = 'missing'
+    const before = await db.routineDays.toArray()
+    await expect(importFullBackup({ text: async () => JSON.stringify(data) } as File, 'replace')).rejects.toThrow()
+    expect(await db.routineDays.toArray()).toEqual(before)
   })
 
   it('exports a consistent snapshot when a routine and its day change during export', async () => {
@@ -129,6 +171,23 @@ describe('settings export services', () => {
     }
   })
 
+  it('does not export the device-local backup marker', async () => {
+    await db.settings.put({ ...appSettings(), activeRoutineId: null, lastContractBackupSha256: 'a'.repeat(64) })
+    await exportFullBackup()
+    const backup = vi.mocked(downloadJson).mock.calls.at(-1)?.[1] as { tables: { settings: Array<Record<string, unknown>> } }
+    expect(backup.tables.settings[0]).not.toHaveProperty('lastContractBackupSha256')
+  })
+
+  it('rejects a backup that tries to import the device-local backup marker', async () => {
+    await seedProgressData({ dayName: 'Día', exerciseName: 'Press', routineName: 'Rutina' })
+    await exportFullBackup()
+    const backup = structuredClone(vi.mocked(downloadJson).mock.calls.at(-1)![1]) as { tables: { settings: Array<Record<string, unknown>> } }
+    backup.tables.settings[0]!.lastContractBackupSha256 = 'a'.repeat(64)
+    const before = await db.settings.get('app')
+    await expect(importFullBackup({ text: async () => JSON.stringify(backup) } as File, 'replace')).rejects.toThrow()
+    expect(await db.settings.get('app')).toEqual(before)
+  })
+
 
   it('resolves default plate weights when settings do not have an inventory', () => {
     expect(resolveAvailablePlateWeightsKg(null)).toEqual(DEFAULT_AVAILABLE_PLATES_KG)
@@ -145,11 +204,20 @@ describe('settings export services', () => {
     })
   })
 
+  it('rejects an invalid weight unit without changing saved settings', async () => {
+    await db.settings.put(appSettings())
+    const before = await db.settings.get('app')
+    await expect(updatePreferredUnit('stone' as 'kg')).rejects.toThrow()
+    expect(await db.settings.get('app')).toEqual(before)
+  })
+
   it('rejects invalid plate weights without replacing the saved inventory', async () => {
     await db.settings.put(appSettings())
     const before = await db.settings.get('app')
     await expect(updateAvailablePlateWeights([20, -1])).rejects.toThrow()
     await expect(updateAvailablePlateWeights([Infinity])).rejects.toThrow()
+    await expect(updateAvailablePlateWeights([0.001, 20])).rejects.toThrow()
+    await expect(updateAvailablePlateWeights([Number.MAX_VALUE])).rejects.toThrow()
     expect(await db.settings.get('app')).toEqual(before)
   })
   it('exports user-readable progress CSV with BOM and drop-set rows', async () => {
@@ -352,7 +420,7 @@ function appSettings(): AppSettings {
     lastDeloadNotificationDate: null,
     notificationPermission: 'default',
     preferredUnit: 'kg',
-    schemaVersion: 6,
+    schemaVersion: 8,
     storagePersisted: null,
     updatedAt: now,
   }
@@ -457,6 +525,7 @@ async function seedProgressData(input: { dayName: string; exerciseName: string; 
   }
 
   await db.routines.put(routine)
+  await db.settings.put(appSettings())
   await db.routineDays.put(day)
   await db.routineExercises.put(exercise)
   await db.workoutSessions.put(session)

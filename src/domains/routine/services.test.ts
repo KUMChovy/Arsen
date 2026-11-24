@@ -2,7 +2,10 @@ import 'fake-indexeddb/auto'
 import Dexie from 'dexie'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { db } from '../../db/schema'
-import { addCatalogExerciseToDay, createCatalogExercise, createDay, createExercise, createExerciseAsset, createRoutine, deleteDay, deleteRoutine, duplicateExercise, duplicateRoutine, moveExerciseToDay, renameRoutine, reorderDays, reorderExercises, setActiveRoutine, updateCatalogExercise, updateExercise } from './services'
+import { addCatalogExerciseToDay, createCatalogExercise, createDay, createExercise, createExerciseAsset, createRoutine, deleteDay, deleteRoutine, duplicateDay, duplicateExercise, duplicateRoutine, moveDay, moveExercise, moveExerciseToDay, renameRoutine, reorderDays, reorderExercises, setActiveRoutine, updateCatalogExercise, updateDay, updateExercise } from './services'
+import { applyRemoteCatalog } from './remoteCatalogCache'
+import { registerMainSetForExercise } from '../workout/services'
+import { getSessionDetail } from '../progress/repository'
 
 async function resetDb() {
   db.close()
@@ -18,9 +21,93 @@ describe('routine services Sinful Shell catalog', () => {
     await db.delete()
   })
 
+  it('adds a published remote exercise and preserves its personal recipe after it is archived', async () => {
+    const exercise = {
+      id: 'sinful-shell-nuevo', name: 'Ejercicio nuevo', canonicalName: 'ejercicio-nuevo', mainMuscle: 'Pecho',
+      aliases: ['nuevo'], technicalNotes: 'Controla el movimiento.',
+      image: { url: 'https://assets.example.test/a.png', sha256: 'a'.repeat(64), sizeBytes: 100, mimeType: 'image/png' },
+    }
+    await applyRemoteCatalog({ version: 5, exercises: [exercise] }, async () => true)
+    const id = await createCatalogExercise({ mode: 'create-from-sinful-shell', sinfulShellId: exercise.id, defaultTargetSets: 4 })
+    const reference = `global-image-v1:${'a'.repeat(64)}:100:png`
+    expect(await db.exerciseCatalog.get(id)).toMatchObject({ name: exercise.name, technicalNotes: exercise.technicalNotes, sinfulShellId: exercise.id, catalogVersion: 5, defaultTargetSets: 4, assetKind: reference })
+    const routineId = await createRoutine('Rutina')
+    const dayId = await createDay(routineId, 'Día')
+    const exerciseId = await addCatalogExerciseToDay(routineId, dayId, id)
+    const routineExercise = (await db.routineExercises.get(exerciseId))!
+    expect(routineExercise.assetKind).toBe(reference)
+    const recorded = await registerMainSetForExercise({ date: '2026-11-23', dayId, routineId, displayUnit: 'kg', exercise: routineExercise, weightKg: 10, reps: 8, rir: 1 })
+    expect((await db.exerciseLogs.toArray())[0]?.snapshot.assetKind).toBe(reference)
+    expect((await getSessionDetail(recorded.sessionId))?.exercises[0]?.assetKind).toBe(reference)
+    await applyRemoteCatalog({ version: 6, exercises: [] }, async () => true)
+    await updateCatalogExercise(id, { defaultTargetSets: 3 })
+    expect(await db.exerciseCatalog.get(id)).toMatchObject({ name: exercise.name, technicalNotes: exercise.technicalNotes, defaultTargetSets: 3 })
+    await expect(createCatalogExercise({ mode: 'create-from-sinful-shell', sinfulShellId: exercise.id })).rejects.toThrow()
+  })
+
+  it('does not reset a configured copy to the bundled name after a global rename', async () => {
+    const exercise = {
+      id: 'sinful-shell-press-inclinado', name: 'Press renombrado', canonicalName: 'press-renombrado', mainMuscle: 'Pecho',
+      aliases: [], technicalNotes: 'Notas remotas.',
+      image: { url: 'https://assets.example.test/a.png', sha256: 'a'.repeat(64), sizeBytes: 100, mimeType: 'image/png' },
+    }
+    await applyRemoteCatalog({ version: 4, exercises: [exercise] }, async () => true)
+    const id = await createCatalogExercise({ mode: 'create-from-sinful-shell', sinfulShellId: exercise.id, defaultTargetSets: 4 })
+    await applyRemoteCatalog({ version: 5, exercises: [{ ...exercise, name: 'Nombre posterior', canonicalName: 'nombre-posterior' }] }, async () => true)
+    await updateCatalogExercise(id, { defaultTargetSets: 5 })
+    expect(await db.exerciseCatalog.get(id)).toMatchObject({ name: 'Press renombrado', technicalNotes: 'Notas remotas.', defaultTargetSets: 5 })
+  })
+
+  it('rejects saving an exercise selected from an outdated catalog version', async () => {
+    const exercise = {
+      id: 'sinful-shell-nuevo', name: 'Ejercicio nuevo', canonicalName: 'ejercicio-nuevo', mainMuscle: 'Pecho',
+      aliases: [], technicalNotes: 'Notas originales.',
+      image: { url: 'https://assets.example.test/a.png', sha256: 'a'.repeat(64), sizeBytes: 100, mimeType: 'image/png' },
+    }
+    await applyRemoteCatalog({ version: 5, exercises: [exercise] }, async () => true)
+    await applyRemoteCatalog({ version: 6, exercises: [{ ...exercise, technicalNotes: 'Notas cambiadas.' }] }, async () => true)
+    await expect(createCatalogExercise({ mode: 'create-from-sinful-shell', sinfulShellId: exercise.id, globalCatalogVersion: 5 })).rejects.toThrow()
+    expect(await db.exerciseCatalog.count()).toBe(0)
+  })
+
   it('rejects a day whose routine does not exist', async () => {
     await expect(createDay('missing', 'Día')).rejects.toThrow()
     expect(await db.routineDays.count()).toBe(0)
+  })
+
+  it('rejects an invalid weekday without modifying the day', async () => {
+    const routine = await createRoutine('Rutina')
+    const day = await createDay(routine, 'Día')
+    const before = await db.routineDays.get(day)
+    await expect(updateDay(day, { name: 'Cambio', description: '', weekday: 7 as 0 })).rejects.toThrow()
+    expect(await db.routineDays.get(day)).toEqual(before)
+  })
+
+  it('keeps distinct day orders when two moves occur concurrently', async () => {
+    const routine = await createRoutine('Rutina')
+    await createDay(routine, 'A')
+    const second = await createDay(routine, 'B')
+    const third = await createDay(routine, 'C')
+    await Promise.all([moveDay(second, 'up'), moveDay(third, 'up')])
+    expect((await db.routineDays.where('routineId').equals(routine).toArray()).map((item) => item.order).sort()).toEqual([0, 1, 2])
+  })
+
+  it('keeps distinct exercise orders when two moves occur concurrently', async () => {
+    const routine = await createRoutine('Rutina')
+    const day = await createDay(routine, 'Día')
+    await createExercise(routine, day, { name: 'A', mainMuscle: 'Pecho' })
+    const second = await createExercise(routine, day, { name: 'B', mainMuscle: 'Pecho' })
+    const third = await createExercise(routine, day, { name: 'C', mainMuscle: 'Pecho' })
+    await Promise.all([moveExercise(second, 'up'), moveExercise(third, 'up')])
+    expect((await db.routineExercises.where('dayId').equals(day).toArray()).map((item) => item.order).sort()).toEqual([0, 1, 2])
+  })
+
+  it('never leaves a copied day without a routine when duplication and deletion overlap', async () => {
+    const routine = await createRoutine('Rutina')
+    const day = await createDay(routine, 'Día')
+    await Promise.allSettled([duplicateDay(day), deleteRoutine(routine)])
+    const routineIds = new Set((await db.routines.toArray()).map((item) => item.id))
+    expect((await db.routineDays.toArray()).every((item) => routineIds.has(item.routineId))).toBe(true)
   })
 
   it('does not deactivate routines when the requested active routine is missing', async () => {

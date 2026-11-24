@@ -1,5 +1,6 @@
 import { getBundledExerciseAsset } from '../../../shared/assets/exerciseImages'
 import type { MuscleGroup } from '../types'
+import type { PublishedCatalog } from '../../../shared/validation/remoteCatalog'
 import { muscleGroups, normalizeMuscleGroup } from '../utils/muscles'
 
 export type SinfulShellExercise = {
@@ -9,7 +10,9 @@ export type SinfulShellExercise = {
   mainMuscle: MuscleGroup
   aliases: string[]
   technicalNotes: string
-  bundledAssetId: string
+  bundledAssetId: string | null
+  remoteImage?: PublishedCatalog['exercises'][number]['image']
+  globalCatalogVersion?: number
 }
 
 export const SINFUL_SHELL_SCHEMA_VERSION = 1
@@ -921,13 +924,15 @@ export function isSinfulShellTechnicalNotes(value: string) {
 export function searchSinfulShellExercises({
   muscle = 'Todos',
   query = '',
+  exercises = sinfulShellCatalog,
 }: {
   muscle?: MuscleGroup | 'Todos' | null
   query?: string
+  exercises?: readonly SinfulShellExercise[]
 } = {}) {
   const normalizedQuery = query.trim().toLocaleLowerCase('es-MX')
 
-  return sinfulShellCatalog.filter((exercise) => {
+  return exercises.filter((exercise) => {
     const matchesMuscle = !muscle || muscle === 'Todos' || exercise.mainMuscle === normalizeMuscleGroup(muscle)
     if (!matchesMuscle) return false
     if (!normalizedQuery) return true
@@ -963,8 +968,8 @@ export function validateSinfulShellCatalog() {
     if (canonicalNames.has(exercise.canonicalName)) errors.push(`canonicalName duplicado: ${exercise.canonicalName}`)
     canonicalNames.add(exercise.canonicalName)
 
-    if (bundledAssetIds.has(exercise.bundledAssetId)) errors.push(`bundledAssetId duplicado: ${exercise.bundledAssetId}`)
-    bundledAssetIds.add(exercise.bundledAssetId)
+    if (exercise.bundledAssetId && bundledAssetIds.has(exercise.bundledAssetId)) errors.push(`bundledAssetId duplicado: ${exercise.bundledAssetId}`)
+    if (exercise.bundledAssetId) bundledAssetIds.add(exercise.bundledAssetId)
 
     if (!muscleGroups.includes(exercise.mainMuscle)) errors.push(`musculo invalido en ${exercise.id}: ${exercise.mainMuscle}`)
     if (!isSinfulShellTechnicalNotes(exercise.technicalNotes)) errors.push(`technicalNotes sin prefijo obligatorio: ${exercise.id}`)

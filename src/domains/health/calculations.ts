@@ -1,3 +1,5 @@
+import { trainingDateSchema } from '../../shared/validation/dataContract'
+
 export type HealthDayRange = {
   rangeStart: string
   rangeEnd: string
@@ -30,6 +32,7 @@ export type HealthWindows = {
 
 // Limita la lectura al día local de la sesión y nunca permite consultar el futuro.
 export function resolveHealthDayWindow(date: string, syncTime = new Date()): HealthDayRange {
+  if (!trainingDateSchema.safeParse(date).success) throw new Error('Fecha de sesión inválida')
   const dayStart = new Date(`${date}T00:00:00`)
   if (Number.isNaN(dayStart.getTime())) throw new Error('Fecha de sesión inválida')
 
@@ -52,9 +55,13 @@ export function resolveHealthWindows(
   syncTime = new Date(),
 ): HealthWindows {
   const day = resolveHealthDayWindow(session.date, syncTime)
+  const parseInDay = (value: string | null | undefined) => {
+    const parsed = parseIso(value)
+    return parsed && parsed.getTime() >= Date.parse(day.rangeStart) && parsed.getTime() <= Date.parse(day.rangeEnd) ? parsed : null
+  }
   const syncIso = new Date(Math.min(syncTime.getTime(), new Date(day.rangeEnd).getTime())).toISOString()
   const recordedSetTimes = exercises
-    .flatMap((exercise) => exercise.setTimes.map(parseIso).filter((value): value is Date => value !== null))
+    .flatMap((exercise) => exercise.setTimes.map(parseInDay).filter((value): value is Date => value !== null))
     .sort((a, b) => a.getTime() - b.getTime())
   const firstRecordedSet = recordedSetTimes[0]
   const lastRecordedSet = recordedSetTimes.at(-1)
@@ -62,7 +69,7 @@ export function resolveHealthWindows(
   const exerciseWindows = exercises
     .map((exercise) => {
       const setTimes = exercise.setTimes
-        .map(parseIso)
+        .map(parseInDay)
         .filter((value): value is Date => value !== null)
         .sort((a, b) => a.getTime() - b.getTime())
       const firstSet = setTimes[0]
@@ -92,12 +99,12 @@ export function resolveHealthWindows(
     ? firstRecordedSet
     : hasRecordedSets
       ? null
-      : parseIso(session.startedAt) ?? parseIso(earliestExercise)
+      : parseInDay(session.startedAt) ?? parseInDay(earliestExercise)
   if (!sessionStart) {
     return { exercises: exerciseWindows, session: null, sessionEndSource: 'sync-time' }
   }
 
-  const completedAt = parseIso(session.completedAt)
+  const completedAt = parseInDay(session.completedAt)
   const sessionEndSource = hasRecordedSessionRange
     ? 'last-exercise'
     : completedAt
@@ -108,7 +115,7 @@ export function resolveHealthWindows(
   const requestedEnd = hasRecordedSessionRange
     ? recordedSessionEnd
     : completedAt
-      ?? (sessionEndSource === 'last-exercise' ? parseIso(session.lastExerciseAt) ?? parseIso(exerciseWindows.at(-1)?.rangeEnd) : new Date(syncIso))
+      ?? (sessionEndSource === 'last-exercise' ? parseInDay(session.lastExerciseAt) ?? parseInDay(exerciseWindows.at(-1)?.rangeEnd) : new Date(syncIso))
       ?? new Date(syncIso)
   const sessionEnd = new Date(Math.max(sessionStart.getTime(), Math.min(requestedEnd.getTime(), new Date(day.rangeEnd).getTime())))
 

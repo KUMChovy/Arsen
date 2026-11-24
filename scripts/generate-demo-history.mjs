@@ -48,13 +48,19 @@ function buildBackup(demoRoutineSource, { endDate, startDate }) {
   const routineExercises = demoRoutineSource.routine.map((exercise, index) => {
     const day = dayByName.get(exercise.day)
     if (!day) throw new Error(`Dia faltante en demo: ${exercise.day}`)
+    const equipment = inferEquipment(exercise.name)
 
     return {
+      assetKind: null,
+      bundledAssetId: null,
+      customAssetId: null,
+      barWeightKg: equipment === 'Barra' ? 20 : 0,
+      loadMode: equipment === 'Barra' ? 'split' : 'single',
       canonicalName: canonicalName(exercise.name),
       createdAt: now,
       currentWeightKg: exercise.currentWeight,
       dayId: day.id,
-      equipment: inferEquipment(exercise.name),
+      equipment,
       id: exercise.id,
       mainMuscle: exercise.mainMuscle,
       name: exercise.name,
@@ -80,6 +86,10 @@ function buildBackup(demoRoutineSource, { endDate, startDate }) {
       {
         aliases: [],
         assetKind: assetKindForExercise(exercise.canonicalName),
+        bundledAssetId: null,
+        customAssetId: null,
+        barWeightKg: exercise.barWeightKg,
+        loadMode: exercise.loadMode,
         canonicalName: exercise.canonicalName,
         createdAt: now,
         defaultRecommendedRir: exercise.recommendedRir,
@@ -91,6 +101,8 @@ function buildBackup(demoRoutineSource, { endDate, startDate }) {
         id: `catalog-${exercise.canonicalName}`,
         mainMuscle: exercise.mainMuscle,
         name: exercise.name,
+        technicalNotes: exercise.technicalNotes,
+        warmupProtocol: exercise.warmupProtocol,
         updatedAt: now,
       },
     ]),
@@ -196,9 +208,11 @@ function buildBackup(demoRoutineSource, { endDate, startDate }) {
 
   return {
     exportedAt: now,
-    schemaVersion: 3,
+    schemaVersion: 8,
     tables: {
+      deloadCycles: [],
       dropSetLogs,
+      exerciseAssets: [],
       exerciseCatalog: [...catalogByName.values()],
       exerciseLogs,
       routineDays: days,
@@ -222,7 +236,7 @@ function buildBackup(demoRoutineSource, { endDate, startDate }) {
           lastDeloadNotificationDate: null,
           notificationPermission: 'default',
           preferredUnit: 'kg',
-          schemaVersion: 3,
+          schemaVersion: 8,
           storagePersisted: null,
           updatedAt: now,
         },
@@ -268,7 +282,7 @@ function inferEquipment(name) {
   const value = canonicalName(name)
   if (value.includes('mancuerna')) return 'Mancuerna'
   if (value.includes('maquina') || value.includes('hack') || value.includes('prensa') || value.includes('pec-deck')) return 'Maquina'
-  if (value.includes('polea') || value.includes('jalon') || value.includes('pullover')) return 'Polea'
+  if (value.includes('polea') || value.includes('jalon') || value.includes('pullover')) return 'Maquina de polea'
   if (value.includes('barra') || value.includes('press') || value.includes('remo-t') || value.includes('rompecraneos')) return 'Barra'
 
   return 'Otro'

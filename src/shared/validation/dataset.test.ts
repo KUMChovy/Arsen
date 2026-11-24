@@ -39,6 +39,20 @@ describe('dataset validation', () => {
     expect(datasetSchema.safeParse(data).success).toBe(false)
   })
 
+  it('rejects an image whose data does not match its MIME type', async () => {
+    const data = await tables()
+    const now = '2026-08-01T00:00:00.000Z'
+    data.exerciseAssets.push({ id: 'image', name: 'Imagen', mimeType: 'image/png', dataUrl: 'data:image/jpeg;base64,AQID', createdAt: now, updatedAt: now })
+    expect(datasetSchema.safeParse(data).success).toBe(false)
+  })
+
+  it('rejects image bytes that are not encoded as canonical base64', async () => {
+    const data = await tables()
+    const now = '2026-08-01T00:00:00.000Z'
+    data.exerciseAssets.push({ id: 'image', name: 'Imagen', mimeType: 'image/png', dataUrl: 'data:image/png;base64,AB==', createdAt: now, updatedAt: now })
+    expect(datasetSchema.safeParse(data).success).toBe(false)
+  })
+
   it('preserves completed history whose routine and exercise were removed', async () => {
     const data = await tables()
     const exercise = data.routineExercises[0]!
@@ -46,6 +60,14 @@ describe('dataset validation', () => {
     data.workoutSessions.push({ id: 'old', routineId: 'deleted', dayId: 'deleted', routineName: 'Anterior', dayName: 'Día', date: '2026-08-01', notes: '', displayUnit: 'kg', status: 'completed', createdAt: now, updatedAt: now })
     data.exerciseLogs.push({ id: 'log', sessionId: 'old', routineExerciseId: 'deleted-exercise', state: 'done', notes: '', snapshot: { name: exercise.name, canonicalName: exercise.canonicalName, mainMuscle: exercise.mainMuscle, equipment: exercise.equipment, targetSets: exercise.targetSets, repsMin: exercise.repsMin, repsMax: exercise.repsMax, recommendedRir: exercise.recommendedRir, restSeconds: exercise.restSeconds }, createdAt: now, updatedAt: now })
     expect(datasetSchema.safeParse(data).success).toBe(true)
+  })
+
+  it('rejects duplicate exercises inside a saved session plan', async () => {
+    const data = await tables()
+    const exercise = data.routineExercises[0]!
+    const now = '2026-08-01T00:00:00.000Z'
+    data.workoutSessions.push({ id: 'session', routineId: exercise.routineId, dayId: exercise.dayId, date: '2026-08-01', notes: '', displayUnit: 'kg', status: 'draft', createdAt: now, updatedAt: now, sessionExercises: [exercise, exercise] })
+    expect(datasetSchema.safeParse(data).success).toBe(false)
   })
 
   it('rejects a deload cycle that ends before it starts', async () => {

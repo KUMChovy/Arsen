@@ -2,7 +2,8 @@
   "compilerOptions": {
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.node.tsbuildinfo",
     "target": "ES2023",
-    "lib": ["ES2023"],
+    "lib": ["ES2023", "DOM"],
+    "types": ["node", "vite/client"],
     "module": "ESNext",
     "moduleDetection": "force",
     "skipLibCheck": true,
@@ -11,5 +12,5 @@
     "strict": true,
     "noEmit": true
   },
-  "include": ["vite.config.ts"]
+  "include": ["vite.config.ts", "admin/vite.config.ts", "server/**/*.ts", "api/**/*.ts"]
 }

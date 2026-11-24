@@ -36,6 +36,13 @@ describe('progress calculations', () => {
     }).estimatedOneRmKg).toBeCloseTo(93.33333333333333)
   })
 
+  it('counts bodyweight sets while leaving the estimated one-rep max unavailable', () => {
+    expect(aggregateExerciseSession({
+      date: '2026-08-10', sessionId: 'bodyweight',
+      sets: [{ kind: 'main', reps: 12, weightKg: 0 }], dropSets: [],
+    })).toMatchObject({ mainSetCount: 1, maxReps: 12, maxWeightKg: 0, volumeKg: 0, estimatedOneRmKg: null })
+  })
+
   it('builds equal-length period bounds from the latest visible date', () => {
     expect(getPeriodBounds(['2026-08-01', '2026-08-20', '2026-09-10'], '4w')).toEqual({
       current: { end: '2026-09-10', start: '2026-08-14' },
@@ -45,6 +52,23 @@ describe('progress calculations', () => {
       current: { end: '2026-08-20', start: '2026-08-01' },
       previous: null,
     })
+  })
+
+  it('ignores impossible calendar dates when selecting progress periods', () => {
+    expect(getPeriodBounds(['2026-02-20', '2026-02-30'], 'all')).toEqual({
+      current: { start: '2026-02-20', end: '2026-02-20' }, previous: null,
+    })
+  })
+
+  it('keeps period dates local in time zones east of UTC', () => {
+    const previousTimezone = process.env.TZ
+    try {
+      process.env.TZ = 'Pacific/Kiritimati'
+      expect(getPeriodBounds(['2026-08-20'], '4w').current).toEqual({ start: '2026-07-24', end: '2026-08-20' })
+    } finally {
+      if (previousTimezone === undefined) delete process.env.TZ
+      else process.env.TZ = previousTimezone
+    }
   })
 
   it('groups session volume into local calendar weeks without inventing empty weeks', () => {

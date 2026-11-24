@@ -3,11 +3,15 @@ import { db } from '../../db/schema'
 import { loadSettingsForEquipment } from '../../shared/calculations/equipmentLoad'
 import { normalizeWarmupProtocol } from '../../shared/calculations/warmups'
 import { createId } from '../../shared/utils/id'
+import { nextOrder } from '../../shared/utils/order'
 import { canonicalName } from '../../shared/utils/normalize'
 import { imageAssetInputSchema } from '../../shared/validation/dataContract'
-import { catalogEntitySchema, routineExerciseEntitySchema } from '../../shared/validation/entities'
+import { catalogEntitySchema, routineDayEntitySchema, routineExerciseEntitySchema } from '../../shared/validation/entities'
 import { getSinfulShellExerciseById, SINFUL_SHELL_SCHEMA_VERSION } from './data/sinfulShellCatalog'
+import { readRemoteCatalog } from './remoteCatalogCache'
+import { remoteCatalogExercises } from './remoteCatalogSource'
 import { normalizeMuscleGroup } from './utils/muscles'
+import { catalogImageReference } from '../../shared/assets/catalogImageReference'
 
 export type ExerciseInput = {
   assetKind?: string | null
@@ -47,6 +51,7 @@ export type CatalogExerciseInput = {
   name?: string
   customAssetId?: string | null
   sinfulShellId?: string | null
+  globalCatalogVersion?: number
   technicalNotes?: string
   warmupProtocol?: string
 }
@@ -209,7 +214,7 @@ export async function createDay(routineId: string, name: string) {
   return db.transaction('rw', [db.routines, db.routineDays], async () => {
     if (!(await db.routines.get(routineId))) throw new Error('Rutina no encontrada')
     const now = new Date().toISOString()
-    const order = (await db.routineDays.where('routineId').equals(routineId).toArray()).reduce((max, day) => Math.max(max, day.order), -1) + 1
+    const order = nextOrder(await db.routineDays.where('routineId').equals(routineId).toArray())
     const day: RoutineDay = {
       id: createId('day'),
       routineId,
@@ -252,6 +257,7 @@ export async function updateDay(
     weekday: RoutineDay['weekday']
   },
 ) {
+  if (!routineDayEntitySchema.shape.weekday.safeParse(input.weekday).success) throw new Error('El día de la semana no es válido')
   await db.transaction('rw', [db.routineDays, db.workoutSessions], async () => {
     await preserveDayName(dayId)
     await db.routineDays.update(dayId, {
@@ -264,15 +270,14 @@ export async function updateDay(
 }
 
 export async function duplicateDay(dayId: string) {
-  const day = await db.routineDays.get(dayId)
-  if (!day) throw new Error('Día no encontrado')
-
-  const exercises = await db.routineExercises.where('dayId').equals(dayId).sortBy('order')
-  const now = new Date().toISOString()
-  const nextDayId = createId('day')
-
-  await db.transaction('rw', [db.routineDays, db.routineExercises], async () => {
+  return db.transaction('rw', [db.routines, db.routineDays, db.routineExercises], async () => {
+    const day = await db.routineDays.get(dayId)
+    if (!day || !(await db.routines.get(day.routineId))) throw new Error('Día no encontrado')
+    const exercises = await db.routineExercises.where('dayId').equals(dayId).sortBy('order')
+    const now = new Date().toISOString()
+    const nextDayId = createId('day')
     const following = await db.routineDays.where('routineId').equals(day.routineId).filter((item) => item.order > day.order).toArray()
+    nextOrder([day, ...following])
     await Promise.all(following.map((item) => db.routineDays.update(item.id, { order: item.order + 1, updatedAt: now })))
     await db.routineDays.add({
       ...day,
@@ -292,9 +297,8 @@ export async function duplicateDay(dayId: string) {
         updatedAt: now,
       })),
     )
+    return nextDayId
   })
-
-  return nextDayId
 }
 
 export async function deleteDay(dayId: string) {
@@ -306,17 +310,14 @@ export async function deleteDay(dayId: string) {
 }
 
 export async function moveDay(dayId: string, direction: 'up' | 'down') {
-  const day = await db.routineDays.get(dayId)
-  if (!day) throw new Error('Día no encontrado')
-
-  const days = await db.routineDays.where('routineId').equals(day.routineId).sortBy('order')
-  const index = days.findIndex((candidate) => candidate.id === dayId)
-  const swapIndex = direction === 'up' ? index - 1 : index + 1
-  const swapDay = days[swapIndex]
-  if (index < 0 || !swapDay) return
-
-  const now = new Date().toISOString()
   await db.transaction('rw', db.routineDays, async () => {
+    const day = await db.routineDays.get(dayId)
+    if (!day) throw new Error('Día no encontrado')
+    const days = await db.routineDays.where('routineId').equals(day.routineId).sortBy('order')
+    const index = days.findIndex((candidate) => candidate.id === dayId)
+    const swapDay = days[direction === 'up' ? index - 1 : index + 1]
+    if (index < 0 || !swapDay) return
+    const now = new Date().toISOString()
     await Promise.all([
       db.routineDays.update(day.id, { order: swapDay.order, updatedAt: now }),
       db.routineDays.update(swapDay.id, { order: day.order, updatedAt: now }),
@@ -349,7 +350,7 @@ export async function createExercise(routineId: string, dayId: string, input: Ex
     if (!(await db.routines.get(routineId)) || !day || day.routineId !== routineId) throw new Error('El día no pertenece a la rutina')
     if (input.customAssetId && !(await db.exerciseAssets.get(input.customAssetId))) throw new Error('Imagen personalizada no encontrada')
     const now = new Date().toISOString()
-    const order = (await db.routineExercises.where('dayId').equals(dayId).toArray()).reduce((max, exercise) => Math.max(max, exercise.order), -1) + 1
+    const order = nextOrder(await db.routineExercises.where('dayId').equals(dayId).toArray())
     const name = input.name.trim() || 'Ejercicio nuevo'
     const reps = normalizeReps(input.repsMin, input.repsMax)
     const recommendedRir = normalizeRir(input.recommendedRir)
@@ -404,7 +405,7 @@ export async function addCatalogExerciseToDay(routineId: string, dayId: string, 
     if (catalogItem.customAssetId && !(await db.exerciseAssets.get(catalogItem.customAssetId))) throw new Error('Imagen personalizada no encontrada')
 
     const now = new Date().toISOString()
-    const order = (await db.routineExercises.where('dayId').equals(dayId).toArray()).reduce((max, exercise) => Math.max(max, exercise.order), -1) + 1
+    const order = nextOrder(await db.routineExercises.where('dayId').equals(dayId).toArray())
     const reps = normalizeReps(input.repsMin ?? catalogItem.defaultRepsMin, input.repsMax ?? catalogItem.defaultRepsMax)
     const recommendedRir = normalizeRir(input.recommendedRir ?? catalogItem.defaultRecommendedRir)
     const loadSettings = loadSettingsForEquipment({
@@ -497,6 +498,7 @@ export async function duplicateExercise(exerciseId: string) {
     const now = new Date().toISOString()
     const nextId = createId('exercise')
     const following = await db.routineExercises.where('dayId').equals(exercise.dayId).filter((item) => item.order > exercise.order).toArray()
+    nextOrder([exercise, ...following])
     await Promise.all(following.map((item) => db.routineExercises.update(item.id, { order: item.order + 1, updatedAt: now })))
     await db.routineExercises.add({
       ...exercise,
@@ -515,17 +517,14 @@ export async function deleteExercise(exerciseId: string) {
 }
 
 export async function moveExercise(exerciseId: string, direction: 'up' | 'down') {
-  const exercise = await db.routineExercises.get(exerciseId)
-  if (!exercise) throw new Error('Ejercicio no encontrado')
-
-  const exercises = await db.routineExercises.where('dayId').equals(exercise.dayId).sortBy('order')
-  const index = exercises.findIndex((candidate) => candidate.id === exerciseId)
-  const swapIndex = direction === 'up' ? index - 1 : index + 1
-  const swapExercise = exercises[swapIndex]
-  if (index < 0 || !swapExercise) return
-
-  const now = new Date().toISOString()
   await db.transaction('rw', db.routineExercises, async () => {
+    const exercise = await db.routineExercises.get(exerciseId)
+    if (!exercise) throw new Error('Ejercicio no encontrado')
+    const exercises = await db.routineExercises.where('dayId').equals(exercise.dayId).sortBy('order')
+    const index = exercises.findIndex((candidate) => candidate.id === exerciseId)
+    const swapExercise = exercises[direction === 'up' ? index - 1 : index + 1]
+    if (index < 0 || !swapExercise) return
+    const now = new Date().toISOString()
     await Promise.all([
       db.routineExercises.update(exercise.id, { order: swapExercise.order, updatedAt: now }),
       db.routineExercises.update(swapExercise.id, { order: exercise.order, updatedAt: now }),
@@ -560,21 +559,23 @@ export async function moveExerciseToDay(exerciseId: string, dayId: string) {
     if (!exercise || !destination || destination.routineId !== exercise.routineId) throw new Error('Destino de ejercicio no válido')
     if (exercise.dayId === dayId) return
     const destinationExercises = await db.routineExercises.where('dayId').equals(dayId).toArray()
-    const order = destinationExercises.reduce((max, item) => Math.max(max, item.order), -1) + 1
+    const order = nextOrder(destinationExercises)
     await db.routineExercises.update(exerciseId, { dayId, order, updatedAt: new Date().toISOString() })
   })
 }
 
 export async function createCatalogExercise(input: CatalogExerciseInput) {
   validateBarWeight(input.barWeightKg)
-  return db.transaction('rw', [db.exerciseCatalog, db.exerciseAssets], async () => {
+  return db.transaction('rw', [db.exerciseCatalog, db.exerciseAssets, db.localMetadata], async () => {
     const now = new Date().toISOString()
 
     if (input.mode === 'create-from-sinful-shell') {
       const sinfulShellId = input.sinfulShellId?.trim()
       if (!sinfulShellId) throw new Error('Ejercicio de Sinful Shell requerido')
 
-      const source = getSinfulShellExerciseById(sinfulShellId)
+      const remote = await readRemoteCatalog()
+      if (input.globalCatalogVersion !== undefined && input.globalCatalogVersion !== (remote?.version ?? 0)) throw new Error('El catálogo cambió. Selecciona el ejercicio nuevamente.')
+      const source = remote ? remoteCatalogExercises(remote).find((exercise) => exercise.id === sinfulShellId) : getSinfulShellExerciseById(sinfulShellId)
       if (!source) throw new Error('Ejercicio de Sinful Shell no encontrado')
 
       const existing = await findExistingSinfulShellCopy(sinfulShellId)
@@ -588,7 +589,7 @@ export async function createCatalogExercise(input: CatalogExerciseInput) {
       })
       const catalogItem: ExerciseCatalogItem = {
         aliases: input.aliases ?? source.aliases,
-        assetKind: null,
+        assetKind: source.remoteImage ? catalogImageReference(source.remoteImage) : null,
         bundledAssetId: source.bundledAssetId,
         canonicalName: source.canonicalName,
         createdAt: now,
@@ -607,7 +608,7 @@ export async function createCatalogExercise(input: CatalogExerciseInput) {
         origin: 'sinful-shell',
         sinfulShellContentLocked: true,
         sinfulShellId: source.id,
-        catalogVersion: SINFUL_SHELL_SCHEMA_VERSION,
+        catalogVersion: remote?.version ?? SINFUL_SHELL_SCHEMA_VERSION,
         catalogStatus: 'active',
         technicalNotes: source.technicalNotes,
         warmupProtocol: normalizeWarmupProtocol(input.warmupProtocol),
@@ -669,11 +670,10 @@ export async function updateCatalogExercise(catalogItemId: string, input: Catalo
     if (!existing) throw new Error('Ejercicio de catalogo no encontrado')
 
     const origin = normalizeCatalogOrigin(existing)
-    const lockedSource = origin.sinfulShellContentLocked && origin.sinfulShellId ? getSinfulShellExerciseById(origin.sinfulShellId) : null
     const isLocked = origin.sinfulShellContentLocked
     if (!isLocked && input.customAssetId && !(await db.exerciseAssets.get(input.customAssetId))) throw new Error('Imagen personalizada no encontrada')
-    const name = isLocked ? lockedSource?.name ?? existing.name : input.name?.trim() || 'Ejercicio sin nombre'
-    const mainMuscle = isLocked ? lockedSource?.mainMuscle ?? existing.mainMuscle : normalizeMuscleGroup(input.mainMuscle)
+    const name = isLocked ? existing.name : input.name?.trim() || 'Ejercicio sin nombre'
+    const mainMuscle = isLocked ? existing.mainMuscle : normalizeMuscleGroup(input.mainMuscle)
     const reps = normalizeReps(input.defaultRepsMin ?? existing.defaultRepsMin, input.defaultRepsMax ?? existing.defaultRepsMax)
     const loadSettings = loadSettingsForEquipment({
       barWeightKg: input.barWeightKg ?? existing.barWeightKg,
@@ -685,7 +685,7 @@ export async function updateCatalogExercise(catalogItemId: string, input: Catalo
       aliases: input.aliases ?? [],
       assetKind: isLocked ? existing.assetKind ?? null : input.assetKind === undefined ? existing.assetKind ?? null : input.assetKind,
       bundledAssetId: isLocked
-        ? lockedSource?.bundledAssetId ?? existing.bundledAssetId
+        ? existing.bundledAssetId
         : input.bundledAssetId === undefined
           ? existing.bundledAssetId ?? null
           : input.bundledAssetId,
@@ -704,7 +704,7 @@ export async function updateCatalogExercise(catalogItemId: string, input: Catalo
       origin: origin.origin,
       sinfulShellContentLocked: origin.sinfulShellContentLocked,
       sinfulShellId: origin.sinfulShellId,
-      technicalNotes: isLocked ? lockedSource?.technicalNotes ?? existing.technicalNotes : input.technicalNotes?.trim() ?? '',
+      technicalNotes: isLocked ? existing.technicalNotes : input.technicalNotes?.trim() ?? '',
       warmupProtocol: normalizeWarmupProtocol(input.warmupProtocol),
       updatedAt: new Date().toISOString(),
     }

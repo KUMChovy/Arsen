@@ -30,6 +30,13 @@ class BackupWorkerEngineTest {
         assertEquals(0, source.calls)
     }
 
+    @Test fun `periodic worker keeps a snapshot prepared today for a later day`() = runBlocking {
+        val store = store(); store.write("user_abc", 1, byteArrayOf(1))
+        val engine = BackupWorkerEngine(store, NativeSessionProvider(Source()))
+        assertEquals(BackupWorkOutcome.NOTHING_PENDING, engine.run(automatic = true) { _, _ -> fail("unexpected upload"); BackupTransportResult.CONFIRMED })
+        assertEquals(1L, store.read()!!.revision)
+    }
+
     @Test fun `keeps data when signed out or another account is active`() = runBlocking {
         val store = store(); store.write("user_abc", 1, byteArrayOf(1))
         val source = Source().apply { identity = null }
@@ -71,7 +78,7 @@ class BackupWorkerEngineTest {
         val engine = BackupWorkerEngine(store, NativeSessionProvider(Source()))
         assertThrows(CancellationException::class.java) { runBlocking { engine.run { _, _ -> throw CancellationException() } } }
         assertNotNull(store.read())
-        val file = temp.root.resolve("pending.snapshot")
+        val file = temp.root.resolve("inflight.snapshot")
         val bytes = file.readBytes(); bytes[bytes.lastIndex] = (bytes.last().toInt() xor 1).toByte(); file.writeBytes(bytes)
         assertEquals(BackupWorkOutcome.STORAGE_ERROR, engine.run { _, _ -> fail("unexpected upload"); BackupTransportResult.CONFIRMED })
         assertTrue(file.exists())

@@ -3,7 +3,7 @@ import { applyRestorePreview, prepareRestorePreview } from './restoreService'
 import { nativeBackup, isNativeAccount } from './native'
 import { getLocalRevision, restoreRemoteContractBackup } from '../../db/contractBackup'
 
-vi.mock('./native', () => ({ isNativeAccount: vi.fn(), nativeBackup: { prepareContext: vi.fn(), getPending: vi.fn(), download: vi.fn() } }))
+vi.mock('./native', () => ({ isNativeAccount: vi.fn(), nativeBackup: { prepareContext: vi.fn(), getPending: vi.fn(), download: vi.fn(), listVersions: vi.fn() } }))
 vi.mock('../../db/contractBackup', () => ({ getLocalRevision: vi.fn(), restoreRemoteContractBackup: vi.fn() }))
 
 const id = '8166d21c-bac3-497b-9d22-8492474c982b'
@@ -40,5 +40,15 @@ describe('restore preview', () => {
     await expect(prepareRestorePreview()).rejects.toThrow()
     vi.mocked(nativeBackup.prepareContext).mockResolvedValueOnce({ ...context, summary: { ...context.summary, contractVersion: 2 } })
     await expect(prepareRestorePreview()).rejects.toThrow()
+  })
+
+  it('previews a selected older version and refuses replacement if it disappears', async () => {
+    const older = { ...context.summary, id: '0d788ece-c86a-4af8-9c99-38efb1662f0a', localRevision: 2 }
+    vi.mocked(nativeBackup.listVersions).mockResolvedValue({ owner: context.owner, backups: [context.summary, older] })
+    const preview = await prepareRestorePreview(older.id)
+    expect(preview.summary.id).toBe(older.id)
+    vi.mocked(nativeBackup.listVersions).mockResolvedValue({ owner: context.owner, backups: [context.summary] })
+    await expect(applyRestorePreview(preview)).rejects.toThrow()
+    expect(restoreRemoteContractBackup).not.toHaveBeenCalled()
   })
 })

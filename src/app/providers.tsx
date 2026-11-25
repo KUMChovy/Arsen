@@ -2,6 +2,7 @@ import type { PropsWithChildren } from 'react'
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import { ensureDemoData } from '../db/seedDemoRoutine'
 import { notifyDeloadIfNeeded } from '../domains/settings/notifications'
+import { watchAutomaticBackup } from '../domains/account/automaticBackup'
 
 type DatabaseStatus = 'loading' | 'ready' | 'error'
 
@@ -35,6 +36,8 @@ export function AppProviders({ children }: PropsWithChildren) {
       cancelled = true
     }
   }, [])
+
+  useEffect(() => databaseStatus === 'ready' ? watchAutomaticBackup() : undefined, [databaseStatus])
 
   const value = useMemo(() => ({ databaseError, databaseStatus }), [databaseError, databaseStatus])
 

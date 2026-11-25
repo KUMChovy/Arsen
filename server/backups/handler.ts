@@ -6,6 +6,7 @@ type Operations = {
   list: (request: Request) => Promise<Result>
   prepare: (request: Request) => Promise<Result>
   manifestUpload: Operation; reserve: Operation; assetUpload: Operation; confirm: Operation; download: Operation
+  reconfirm?: Operation
 }
 
 export function createBackupHandler(operations: Operations, allowedOrigins: string[], onError?: (error: unknown) => void) {
@@ -29,6 +30,7 @@ export function createBackupHandler(operations: Operations, allowedOrigins: stri
       '/api/v1/backups/asset-upload': operations.assetUpload,
       '/api/v1/backups/confirm': operations.confirm,
       '/api/v1/backups/download': operations.download,
+      ...(operations.reconfirm ? { '/api/v1/backups/reconfirm': operations.reconfirm } : {}),
     }
     try {
       let result: Result

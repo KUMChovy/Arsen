@@ -16,7 +16,7 @@ class PendingBackupStager(
     suspend fun stage(revision: Long, payload: ByteArray, expectedOwner: String? = null): BackupStageResult {
         if (revision !in 0..9007199254740991L || payload.isEmpty() || payload.size > maxBytes) return BackupStageResult.INVALID
         try {
-            val session = sessions.get()
+            val session = sessions.getLocal()
             if (session.result == SessionResult.SIGNED_OUT) return BackupStageResult.SIGN_IN_REQUIRED
             if (session.result != SessionResult.READY || session.owner == null) return BackupStageResult.UNAVAILABLE
             if (expectedOwner != null && session.owner != expectedOwner) return BackupStageResult.OTHER_ACCOUNT
@@ -25,7 +25,7 @@ class PendingBackupStager(
             val copy = payload.copyOf()
             val digest = MessageDigest.getInstance("SHA-256").digest(copy).joinToString("") { "%02x".format(it.toInt() and 255) }
             try { validate(PendingSnapshot(session.owner, revision, copy, digest), maxBytes) } catch (_: Exception) { return BackupStageResult.INVALID }
-            val current = sessions.get()
+            val current = sessions.getLocal()
             if (current.result == SessionResult.SIGNED_OUT) return BackupStageResult.SIGN_IN_REQUIRED
             if (current.result != SessionResult.READY) return BackupStageResult.UNAVAILABLE
             if (current.owner != session.owner) return BackupStageResult.OTHER_ACCOUNT

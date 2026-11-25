@@ -16,6 +16,17 @@ interface NativeSessionSource {
 }
 
 class NativeSessionProvider(private val source: NativeSessionSource) {
+    suspend fun getLocal(): NativeSession = try {
+        if (!source.waitUntilReady()) NativeSession(SessionResult.UNAVAILABLE)
+        else {
+            val identity = source.currentIdentity()
+            if (identity == null) NativeSession(SessionResult.SIGNED_OUT)
+            else if (!Regex("^user_[A-Za-z0-9]{1,123}$").matches(identity.owner) || identity.sessionId.isBlank() || identity != source.currentIdentity()) NativeSession(SessionResult.UNAVAILABLE)
+            else NativeSession(SessionResult.READY, identity.owner)
+        }
+    } catch (cancelled: CancellationException) { throw cancelled }
+    catch (_: Exception) { NativeSession(SessionResult.UNAVAILABLE) }
+
     suspend fun get(): NativeSession = try {
         if (!source.waitUntilReady()) NativeSession(SessionResult.UNAVAILABLE)
         else {

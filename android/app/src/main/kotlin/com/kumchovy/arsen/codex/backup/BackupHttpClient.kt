@@ -12,9 +12,9 @@ fun backupApiOrigin(value: String): String {
     return "https://${uri.host}${if (uri.port == -1) "" else ":${uri.port}"}"
 }
 
-fun isBackupApiPath(path: String) = path in setOf("/api/v1/backups", "/api/v1/backups/manifest-upload", "/api/v1/backups/reserve", "/api/v1/backups/asset-upload", "/api/v1/backups/confirm", "/api/v1/backups/download")
+fun isBackupApiPath(path: String) = path in setOf("/api/v1/backups", "/api/v1/backups/manifest-upload", "/api/v1/backups/reserve", "/api/v1/backups/asset-upload", "/api/v1/backups/confirm", "/api/v1/backups/download", "/api/v1/backups/reconfirm")
 fun isBackupContextPostPath(path: String) = path == "/api/v1/account/devices"
-fun isBackupContextGetPath(path: String) = path == "/api/v1/backups/latest"
+fun isBackupContextGetPath(path: String) = path in setOf("/api/v1/backups/latest", "/api/v1/backups")
 
 class BackupHttpClient(origin: String, private val privateOrigin: String = "") : BackupHttp, BackupContextApi, BackupDownloadHttp {
     private val base = backupApiOrigin(origin)
@@ -29,6 +29,12 @@ class BackupHttpClient(origin: String, private val privateOrigin: String = "") :
 
     override suspend fun latest(token: String): BackupHttpResponse = withContext(Dispatchers.IO) {
         val path = "/api/v1/backups/latest"
+        require(isBackupContextGetPath(path))
+        request(path, token, "GET", null)
+    }
+
+    suspend fun list(token: String): BackupHttpResponse = withContext(Dispatchers.IO) {
+        val path = "/api/v1/backups"
         require(isBackupContextGetPath(path))
         request(path, token, "GET", null)
     }

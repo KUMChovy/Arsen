@@ -10,6 +10,7 @@ import { createBackupHandler } from './handler'
 import { readBoundedJson } from '../http/readBoundedJson'
 import { listBackups } from './list'
 import { prepareBackup } from './prepare'
+import { reconfirmBackup } from './reconfirm'
 import { reserveBackupComponents } from './reserveComponents'
 import { signPrivateBackupDownload } from './signDownload'
 import { signPrivateBackupUpload } from './signUpload'
@@ -58,6 +59,7 @@ export async function serveBackups(request: Request): Promise<Response> {
           if (!parsed.success) return Promise.resolve({ status: 400 })
           return confirmBackup(req, parsed.data.backupId, { auth, transaction, verifyObjects: (backup) => backup.sizeBytes <= maxBackupBytes ? verifyArchive(backup, createVercelBackupReader(backup.userId, backup.id)) : Promise.resolve(false) })
         },
+        reconfirm: (req, input) => reconfirmBackup(req, input, { auth, transaction, verifyObjects: (backup) => backup.sizeBytes <= maxBackupBytes ? verifyArchive(backup, createVercelBackupReader(backup.userId, backup.id)) : Promise.resolve(false) }),
         download: (req, input) => authorizeBackupDownload(req, input, { auth, transaction, sign: signPrivateBackupDownload }),
       }, origins, (error) => safeBackupFailure('request', error))
       return await handler(request)

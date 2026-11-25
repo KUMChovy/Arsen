@@ -29,7 +29,7 @@ export class ArsenDatabase extends Dexie {
   setLogs!: Table<SetLog, string>
   dropSetLogs!: Table<DropSetLog, string>
   skipLogs!: Table<SkipLog, string>
-  localMetadata!: Table<{ id: 'revision'; value: number } | { id: 'globalCatalog'; value: PublishedCatalog }, string>
+  localMetadata!: Table<{ id: 'revision'; value: number } | { id: 'globalCatalog'; value: PublishedCatalog } | { id: 'automaticBackup'; value: { owner: string; deviceId: string; baseBackupId: string | null; baselineConfirmedId: string | null; baselineEquivalentRevision?: number | null; equivalentRevision?: number; equivalentBackupId?: string } }, string>
 
   constructor(name = 'arsen', options?: DexieOptions) {
     super(name, options)

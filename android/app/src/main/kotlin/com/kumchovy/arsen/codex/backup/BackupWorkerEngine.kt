@@ -8,7 +8,7 @@ enum class BackupWorkOutcome { NOTHING_PENDING, AUTH_REQUIRED, ACCESS_DENIED, AC
 enum class BackupTransportResult { CONFIRMED, RETRY, AUTH_REQUIRED, ACCESS_DENIED, CONFLICT, INVALID }
 
 class BackupWorkerEngine(private val store: PendingSnapshotStore, private val sessions: NativeSessionProvider) {
-    suspend fun run(submit: suspend (PendingSnapshot, suspend () -> String) -> BackupTransportResult): BackupWorkOutcome {
+    suspend fun run(automatic: Boolean = false, submit: suspend (PendingSnapshot, suspend () -> String) -> BackupTransportResult): BackupWorkOutcome {
         val pending = try { store.read() } catch (_: Exception) { return BackupWorkOutcome.STORAGE_ERROR }
         if (pending == null) return BackupWorkOutcome.NOTHING_PENDING
         val session = sessions.get()
@@ -17,7 +17,7 @@ class BackupWorkerEngine(private val store: PendingSnapshotStore, private val se
         if (session.owner != pending.owner) return BackupWorkOutcome.ACCOUNT_MISMATCH
         return try {
             var unsuccessful = BackupWorkOutcome.RETRY
-            when (PendingBackupSubmission(store).run(session.owner) { snapshot ->
+            when (PendingBackupSubmission(store).run(session.owner, automatic) { snapshot ->
                 val result = submit(snapshot) {
                     val fresh = sessions.get()
                     check(fresh.result == SessionResult.READY && fresh.owner == snapshot.owner && fresh.token != null) { "Sesión no disponible para esta copia" }

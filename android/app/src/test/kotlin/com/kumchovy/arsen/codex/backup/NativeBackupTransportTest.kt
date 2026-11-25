@@ -21,6 +21,8 @@ class NativeBackupTransportTest {
         val tokens = mutableListOf<String>()
         val payloads = mutableListOf<ByteArray>()
         var prepareState = "pending"
+        var returnedId = backupId
+        var returnedRevision = 8L
         var uploadStatus = 200
         var reserveStatus = 200
         var confirmationStatus = 200
@@ -35,7 +37,7 @@ class NativeBackupTransportTest {
             forcedStatus?.let { return BackupHttpResponse(it, "") }
             val root = "backups/${sha(owner)}/$backupId"
             return when (path) {
-                "/api/v1/backups" -> BackupHttpResponse(201, """{"id":"$backupId","state":"$prepareState","localRevision":8,"deviceId":"$deviceId"}""")
+                "/api/v1/backups" -> BackupHttpResponse(201, """{"id":"$returnedId","state":"$prepareState","localRevision":$returnedRevision,"deviceId":"$deviceId"}""")
                 "/api/v1/backups/manifest-upload" -> BackupHttpResponse(200, buildJsonObject { put("url", signed("$root/manifest")) }.toString())
                 "/api/v1/backups/reserve" -> BackupHttpResponse(reserveStatus, "{}")
                 "/api/v1/backups/asset-upload" -> BackupHttpResponse(200, buildJsonObject { put("url", signed("$root/assets/${sha("image")}")) }.toString())
@@ -86,5 +88,21 @@ class NativeBackupTransportTest {
         assertEquals(listOf("/api/v1/backups"), http.calls)
         assertThrows(CancellationException::class.java) { runBlocking { NativeBackupTransport(http).submit(owner, envelope()) { throw CancellationException() } } }
         Unit
+    }
+
+    @Test fun `does not acknowledge a different confirmed revision as the submitted snapshot`() = runBlocking {
+        val http = FakeHttp().apply { prepareState = "confirmed"; returnedRevision = 7 }
+        assertEquals(BackupTransportResult.CONFLICT, NativeBackupTransport(http).submit(owner, envelope()) { "test.token" })
+        http.returnedRevision = 8
+        http.returnedId = "0d788ece-c86a-4af8-9c99-38efb1662f0a"
+        assertEquals(BackupTransportResult.CONFLICT, NativeBackupTransport(http).submit(owner, envelope()) { "test.token" })
+    }
+    @Test fun `routes an identical historical version to explicit reconfirmation`() = runBlocking {
+        val historical = "0d788ece-c86a-4af8-9c99-38efb1662f0a"
+        val http = FakeHttp().apply { prepareState = "confirmed"; returnedId = historical; returnedRevision = 2 }
+        var seen = ""
+        val result = NativeBackupTransport(http).submit(owner, envelope(), onHistorical = { id, _ -> seen = id; BackupTransportResult.CONFIRMED }) { "test.token" }
+        assertEquals(historical, seen)
+        assertEquals(BackupTransportResult.CONFIRMED, result)
     }
 }

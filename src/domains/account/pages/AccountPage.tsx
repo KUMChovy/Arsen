@@ -3,8 +3,9 @@ import { Link } from 'react-router-dom'
 import { ArrowLeft, ArrowRight, Cloud, LockKeyhole, ShieldCheck } from 'lucide-react'
 import type { AccountState } from '../native'
 import { completeVerification, getAccountState, signIn, signOut } from '../services'
-import { prepareManualBackup, queueManualBackup } from '../backupService'
-import { prepareRestorePreview, applyRestorePreview, type RestorePreview } from '../restoreService'
+import { prepareManualBackup, queueManualBackup, requestBackupNotifications, getBackupStatus } from '../backupService'
+import { prepareRestorePreview, applyRestorePreview, listRestoreVersions, type RestorePreview } from '../restoreService'
+import { enableAutomaticBackup, disableAutomaticBackup, isAutomaticBackupEnabled, getAutomaticBackupSchedule, observeAutomaticPreparation } from '../automaticBackup'
 
 export function AccountPage() {
   const [account, setAccount] = useState<AccountState | null>(null)
@@ -15,12 +16,31 @@ export function AccountPage() {
   const [backupContext, setBackupContext] = useState<Awaited<ReturnType<typeof prepareManualBackup>> | null>(null)
   const [backupMessage, setBackupMessage] = useState('')
   const [restorePreview, setRestorePreview] = useState<RestorePreview | null>(null)
+  const [versions, setVersions] = useState<Awaited<ReturnType<typeof listRestoreVersions>>['backups'] | null>(null)
+  const [syncStatus, setSyncStatus] = useState<Awaited<ReturnType<typeof getBackupStatus>> | 'error' | null>(null)
+  const [statusVersion, setStatusVersion] = useState(0)
+  const [automaticEnabled, setAutomaticEnabled] = useState(false)
+  const [schedule, setSchedule] = useState<Awaited<ReturnType<typeof getAutomaticBackupSchedule>>>(null)
+  const [preparation, setPreparation] = useState<'idle' | 'preparing' | 'error'>('idle')
+  const [confirmationAction, setConfirmationAction] = useState<'manual' | 'automatic'>('manual')
 
   useEffect(() => {
     let active = true
     void getAccountState().then((state) => { if (active) setAccount(state) }).catch(() => { if (active) setAccount({ status: 'unavailable' }) })
     return () => { active = false }
   }, [])
+
+  useEffect(() => observeAutomaticPreparation(setPreparation), [])
+
+  useEffect(() => {
+    if (account?.status !== 'signed-in') { setSyncStatus(null); setAutomaticEnabled(false); setSchedule(null); return }
+    let active = true
+    setSyncStatus(null)
+    void getBackupStatus().then((result) => { if (active) setSyncStatus(result) }).catch(() => { if (active) setSyncStatus('error') })
+    void isAutomaticBackupEnabled().then((enabled) => { if (active) setAutomaticEnabled(enabled) }).catch(() => { if (active) setAutomaticEnabled(false) })
+    void getAutomaticBackupSchedule().then((value) => { if (active) setSchedule(value) }).catch(() => { if (active) setSchedule(null) })
+    return () => { active = false }
+  }, [account, statusVersion])
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -40,19 +60,21 @@ export function AccountPage() {
 
   async function logout() {
     setBusy(true); setError('')
-    try { await signOut(); setAccount({ status: 'signed-out' }); setEmail(''); setBackupContext(null); setRestorePreview(null); setBackupMessage('') }
+    try { await signOut(); setAccount({ status: 'signed-out' }); setEmail(''); setBackupContext(null); setRestorePreview(null); setVersions(null); setBackupMessage('') }
     catch { setError('No se pudo cerrar la sesión. Inténtalo de nuevo.') }
     finally { setBusy(false) }
   }
 
   async function queueBackup(context: Awaited<ReturnType<typeof prepareManualBackup>>) {
-    await queueManualBackup(context)
+    const result = await queueManualBackup(context)
+    setStatusVersion((value) => value + 1)
     setBackupContext(null)
-    setBackupMessage('Copia preparada para envío. La confirmación depende de la conexión y del servidor.')
+    setBackupMessage(result === 'unchanged' ? 'Los datos coinciden con la última copia confirmada.' : 'Copia preparada para envío. La confirmación depende de la conexión y del servidor.')
   }
 
   async function startBackup() {
     setBusy(true); setError(''); setBackupMessage(''); setBackupContext(null); setRestorePreview(null)
+    setConfirmationAction('manual')
     try {
       const context = await prepareManualBackup()
       if (context.baseBackupId) setBackupContext(context)
@@ -61,9 +83,41 @@ export function AccountPage() {
     finally { setBusy(false) }
   }
 
-  async function previewRestore() {
+  async function startAutomaticBackup() {
     setBusy(true); setError(''); setBackupMessage(''); setBackupContext(null); setRestorePreview(null)
-    try { setRestorePreview(await prepareRestorePreview()) }
+    setConfirmationAction('automatic')
+    try {
+      const context = await prepareManualBackup()
+      if (context.baseBackupId) setBackupContext(context)
+      else { const result = await enableAutomaticBackup(context); setAutomaticEnabled(true); setStatusVersion((value) => value + 1); setBackupMessage(result === 'unchanged' ? 'Respaldo automático activado. Los datos coinciden con la última copia confirmada.' : 'Respaldo automático activado. La primera copia está pendiente de confirmación.') }
+    } catch { setError('No se pudo activar el respaldo automático. Comprueba tu cuenta y conexión.') }
+    finally { setBusy(false) }
+  }
+
+  async function stopAutomaticBackup() {
+    setBusy(true); setError(''); setBackupMessage('')
+    try { await disableAutomaticBackup(); setAutomaticEnabled(false); setSchedule(null); setBackupMessage('Respaldo automático desactivado. Las copias pendientes se conservan.') }
+    catch { setError('No se pudo desactivar el respaldo automático. Vuelve a intentarlo.') }
+    finally { setBusy(false) }
+  }
+
+  async function loadVersions() {
+    setBusy(true); setError(''); setVersions(null); setRestorePreview(null)
+    try { setVersions((await listRestoreVersions()).backups) }
+    catch { setError('No se pudieron consultar las versiones. Comprueba tu cuenta y conexión.') }
+    finally { setBusy(false) }
+  }
+
+  async function enableNotifications() {
+    setBusy(true); setError(''); setBackupMessage('')
+    try { setBackupMessage(await requestBackupNotifications() ? 'Notificaciones de respaldo activadas.' : 'Las notificaciones están desactivadas. Puedes habilitarlas en los ajustes de Android.') }
+    catch { setError('No se pudieron activar las notificaciones. Revisa los ajustes de Android.') }
+    finally { setBusy(false) }
+  }
+
+  async function previewRestore(id?: string) {
+    setBusy(true); setError(''); setBackupMessage(''); setBackupContext(null); setRestorePreview(null)
+    try { setRestorePreview(await prepareRestorePreview(id)) }
     catch { setError('No se pudo preparar la restauración. Comprueba tu conexión y espera a que termine cualquier respaldo pendiente.') }
     finally { setBusy(false) }
   }
@@ -71,7 +125,7 @@ export function AccountPage() {
   async function confirmRestore() {
     if (!restorePreview) return
     setBusy(true); setError('')
-    try { await applyRestorePreview(restorePreview); setRestorePreview(null); setBackupMessage('Datos restaurados en este dispositivo.') }
+    try { await applyRestorePreview(restorePreview); setRestorePreview(null); setBackupMessage('Datos restaurados en este dispositivo.'); setStatusVersion((value) => value + 1) }
     catch { setRestorePreview(null); setError('No se restauraron los datos. La cuenta, el respaldo o los datos locales pudieron cambiar; vuelve a intentarlo.') }
     finally { setBusy(false) }
   }
@@ -79,7 +133,12 @@ export function AccountPage() {
   async function confirmBackup() {
     if (!backupContext) return
     setBusy(true); setError('')
-    try { await queueBackup(backupContext) }
+    try {
+      if (confirmationAction === 'automatic') {
+        const result = await enableAutomaticBackup(backupContext); setAutomaticEnabled(true); setBackupContext(null); setStatusVersion((value) => value + 1)
+        setBackupMessage(result === 'unchanged' ? 'Respaldo automático activado. Los datos coinciden con la última copia confirmada.' : 'Respaldo automático activado. La primera copia está pendiente de confirmación.')
+      } else await queueBackup(backupContext)
+    }
     catch { setError('No se pudo preparar el respaldo. Comprueba tu cuenta y conexión e inténtalo de nuevo.') }
     finally { setBusy(false) }
   }
@@ -104,11 +163,18 @@ export function AccountPage() {
             <button type="submit" disabled={busy} className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-arsen-purple2 px-4 font-bold text-arsen-bg transition hover:brightness-110 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-arsen-purple2 disabled:opacity-50">{busy ? 'Conectando…' : 'Iniciar sesión'} <ArrowRight size={18} aria-hidden="true" /></button>
           </form>}
           {account?.status === 'verification-required' && <div className="space-y-4"><h2 className="text-xl font-bold">Un paso más</h2><p className="text-sm leading-6 text-arsen-muted">Tu cuenta necesita una verificación adicional. Complétala en la página segura de Clerk para continuar.</p><button disabled={busy} onClick={() => void verify()} className="min-h-12 w-full rounded-xl bg-arsen-purple2 px-4 font-bold text-arsen-bg disabled:opacity-50">{busy ? 'Abriendo…' : 'Completar verificación'}</button></div>}
-          {account?.status === 'signed-in' && <div className="space-y-4"><div className="flex items-center gap-3"><ShieldCheck className="text-arsen-acid" aria-hidden="true" /><div><h2 className="font-bold">Sesión iniciada</h2><p className="break-all text-sm text-arsen-muted">{account.email}</p></div></div><p className="text-sm leading-6 text-arsen-muted">El respaldo automático está pendiente de configuración. Tus entrenamientos siguen guardados en este dispositivo.</p>
+          {account?.status === 'signed-in' && <div className="space-y-4"><div className="flex items-center gap-3"><ShieldCheck className="text-arsen-acid" aria-hidden="true" /><div><h2 className="font-bold">Sesión iniciada</h2><p className="break-all text-sm text-arsen-muted">{account.email}</p></div></div><p className="text-sm leading-6 text-arsen-muted">{automaticEnabled ? 'Respaldo automático activado: comprobación aproximada cada tres días, preferentemente de madrugada.' : 'El respaldo automático está pendiente de configuración. Tus entrenamientos siguen guardados en este dispositivo.'}</p>
+            <section aria-label="Estado de respaldo" className="space-y-2 border-y border-white/10 py-4 text-sm leading-6"><p>Datos guardados en este dispositivo.</p>{syncStatus === null && <p role="status" className="text-arsen-muted">Consultando el estado…</p>}{syncStatus === 'error' && <p className="text-arsen-muted">No se pudo consultar el estado en la nube. Los datos locales permanecen en este dispositivo.</p>}{syncStatus && syncStatus !== 'error' && <><p className="text-arsen-muted">{syncStatus.unpreparedChanges === true ? 'Hay cambios locales que todavía no se han preparado.' : syncStatus.unpreparedChanges === false ? 'Los cambios locales se han preparado o confirmado.' : 'No se pudo determinar si hay cambios locales sin preparar.'}</p><p className="text-arsen-muted">{syncStatus.pending ? 'Hay una copia preparada pendiente de envío o confirmación.' : 'No hay copia preparada pendiente.'}</p><p className="text-arsen-muted">{syncStatus.confirmed ? `Última copia confirmada: ${new Intl.DateTimeFormat('es-MX', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(syncStatus.confirmed.confirmedAt))}.` : 'No hay copias confirmadas en la nube.'}</p></>}<button disabled={busy} onClick={() => setStatusVersion((value) => value + 1)} className="min-h-11 font-semibold text-arsen-purple2 disabled:opacity-50">Actualizar estado</button></section>
+            {automaticEnabled && <div className="space-y-2 text-sm leading-6 text-arsen-muted">{preparation === 'preparing' && <p role="status">Comprobando cambios para preparar la copia…</p>}{preparation === 'error' && <p role="alert">No se pudo preparar la copia automática. Los cambios locales siguen pendientes; ARSEN lo reintentará.</p>}<p>{schedule?.state === 'RUNNING' ? 'Comprobando copia preparada…' : schedule?.state === 'NOT_SCHEDULED' || schedule?.state === 'CANCELLED' ? 'La comprobación aún no está programada; abre la app para reintentarlo.' : schedule?.nextCheckAt && schedule.nextCheckAt > Date.now() ? `Próxima comprobación estimada a partir de ${new Intl.DateTimeFormat('es-MX', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(schedule.nextCheckAt))}.` : 'La próxima comprobación depende de Android y de la conexión.'}</p><p>Los cambios que no se alcancen a preparar antes de cerrar la app se prepararán al volver a abrirla. Android puede retrasar la comprobación y no la ejecuta tras una detención forzada hasta que abras la app.</p></div>}
             <button disabled={busy} onClick={() => void startBackup()} className="min-h-12 w-full rounded-xl bg-arsen-purple2 px-4 font-bold text-arsen-bg disabled:opacity-50">{busy ? 'Preparando…' : 'Preparar respaldo'}</button>
+            {!automaticEnabled && <button disabled={busy} onClick={() => void startAutomaticBackup()} className="min-h-12 w-full rounded-xl border border-arsen-purple/50 px-4 font-semibold text-arsen-purple2 disabled:opacity-50">Activar respaldo automático</button>}
+            {automaticEnabled && <button disabled={busy} onClick={() => void stopAutomaticBackup()} className="min-h-12 w-full rounded-xl border border-white/20 px-4 font-semibold disabled:opacity-50">Desactivar respaldo automático</button>}
             <button disabled={busy} onClick={() => void previewRestore()} className="min-h-12 w-full rounded-xl border border-arsen-purple/50 px-4 font-semibold text-arsen-purple2 disabled:opacity-50">Ver respaldo para restaurar</button>
+            <button disabled={busy} onClick={() => void loadVersions()} className="min-h-12 w-full rounded-xl border border-white/20 px-4 font-semibold disabled:opacity-50">Consultar versiones</button>
+            <button disabled={busy} onClick={() => void enableNotifications()} className="min-h-12 w-full rounded-xl border border-white/20 px-4 font-semibold disabled:opacity-50">Activar notificaciones de respaldo</button>
+            {versions && <div className="space-y-2"><h3 className="font-bold">Versiones confirmadas</h3>{versions.length === 0 && <p className="text-sm text-arsen-muted">No hay copias confirmadas.</p>}{versions.map((version) => <div key={version.id} className="flex items-center justify-between gap-3 border-b border-white/10 py-2"><p className="text-sm text-arsen-muted">Confirmada o reconfirmada: {new Intl.DateTimeFormat('es-MX', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(version.confirmedAt))} · {(version.sizeBytes / 1024).toFixed(1)} KB</p><button disabled={busy} onClick={() => void previewRestore(version.id)} className="min-h-11 shrink-0 text-sm font-semibold text-arsen-purple2 disabled:opacity-50" aria-label={`Seleccionar copia confirmada el ${new Intl.DateTimeFormat('es-MX', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(version.confirmedAt))}`}>Seleccionar</button></div>)}</div>}
             {backupContext && <div className="space-y-3 rounded-xl border border-arsen-purple/40 p-4"><p className="text-sm leading-6">Ya existe un respaldo en tu cuenta. Al continuar, prepararás una nueva versión con los datos de este dispositivo.</p><button disabled={busy} onClick={() => void confirmBackup()} className="min-h-12 w-full rounded-xl bg-arsen-purple2 px-4 font-bold text-arsen-bg disabled:opacity-50">Continuar con este dispositivo</button><button disabled={busy} onClick={() => setBackupContext(null)} className="min-h-11 w-full text-sm font-semibold text-arsen-muted">Cancelar</button></div>}
-            {restorePreview && <div className="space-y-3 rounded-xl border border-arsen-purple/40 p-4"><h3 className="font-bold">Restaurar respaldo</h3><p className="text-sm leading-6 text-arsen-muted">{new Intl.DateTimeFormat('es-MX', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(restorePreview.summary.confirmedAt))} · {(restorePreview.summary.sizeBytes / 1024).toFixed(1)} KB · versión {restorePreview.summary.contractVersion}{restorePreview.summary.includesHealth ? ' · incluye datos de salud' : ''}</p><p className="text-sm leading-6">Esta acción reemplazará los datos locales de este dispositivo con los de la copia.</p><button disabled={busy} onClick={() => void confirmRestore()} className="min-h-12 w-full rounded-xl bg-arsen-purple2 px-4 font-bold text-arsen-bg disabled:opacity-50">Reemplazar datos locales</button><button disabled={busy} onClick={() => setRestorePreview(null)} className="min-h-11 w-full text-sm font-semibold text-arsen-muted">Cancelar</button></div>}
+            {restorePreview && <div className="space-y-3 rounded-xl border border-arsen-purple/40 p-4"><h3 className="font-bold">Restaurar respaldo</h3><p className="text-sm leading-6 text-arsen-muted">Confirmada o reconfirmada: {new Intl.DateTimeFormat('es-MX', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(restorePreview.summary.confirmedAt))} · {(restorePreview.summary.sizeBytes / 1024).toFixed(1)} KB · versión {restorePreview.summary.contractVersion}{restorePreview.summary.includesHealth ? ' · incluye datos de salud' : ''}</p><p className="text-sm leading-6">Esta acción reemplazará los datos locales de este dispositivo con los de la copia.</p><button disabled={busy} onClick={() => void confirmRestore()} className="min-h-12 w-full rounded-xl bg-arsen-purple2 px-4 font-bold text-arsen-bg disabled:opacity-50">Reemplazar datos locales</button><button disabled={busy} onClick={() => setRestorePreview(null)} className="min-h-11 w-full text-sm font-semibold text-arsen-muted">Cancelar</button></div>}
             {backupMessage && <p role="status" className="text-sm leading-6 text-arsen-ink">{backupMessage}</p>}
             <button disabled={busy} onClick={() => void logout()} className="min-h-12 w-full rounded-xl border border-white/20 px-4 font-semibold disabled:opacity-50">Cerrar sesión</button></div>}
           {error && <p role="alert" className="text-sm leading-6 text-arsen-purple2">{error}</p>}

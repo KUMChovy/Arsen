@@ -27,7 +27,7 @@ internal fun validBackupBlobUrl(value: String, path: String): Boolean = try {
 } catch (_: Exception) { false }
 
 class NativeBackupTransport(private val http: BackupHttp) {
-    suspend fun submit(owner: String, envelope: PendingEnvelope, token: suspend () -> String): BackupTransportResult {
+    suspend fun submit(owner: String, envelope: PendingEnvelope, onHistorical: suspend (String, PendingEnvelope) -> BackupTransportResult = { _, _ -> BackupTransportResult.CONFLICT }, token: suspend () -> String): BackupTransportResult {
         try {
             suspend fun post(path: String, body: JsonObject): BackupHttpResponse {
                 val credential = token()
@@ -56,8 +56,12 @@ class NativeBackupTransport(private val http: BackupHttp) {
             val id = metadata["id"]?.jsonPrimitive?.content ?: return BackupTransportResult.INVALID
             val state = metadata["state"]?.jsonPrimitive?.content
             if (!backupUuid.matches(id)) return BackupTransportResult.INVALID
+            if (id != envelope.backupId || metadata["deviceId"]?.jsonPrimitive?.content != envelope.deviceId || metadata["localRevision"]?.jsonPrimitive?.longOrNull != envelope.revision) {
+                if (state != "confirmed" || !backupUuid.matches(metadata["deviceId"]?.jsonPrimitive?.content.orEmpty()) || metadata["localRevision"]?.jsonPrimitive?.longOrNull?.let { it in 0..9007199254740991L } != true) return BackupTransportResult.CONFLICT
+                return onHistorical(id, envelope)
+            }
             if (state == "confirmed") return BackupTransportResult.CONFIRMED
-            if (state != "pending" || metadata["deviceId"]?.jsonPrimitive?.content != envelope.deviceId || metadata["localRevision"]?.jsonPrimitive?.longOrNull == null) return BackupTransportResult.INVALID
+            if (state != "pending") return BackupTransportResult.INVALID
             val root = "backups/${hash(owner)}/${id.lowercase()}"
             suspend fun confirm(): BackupTransportResult {
                 val response = post("/api/v1/backups/confirm", buildJsonObject { put("backupId", id) })

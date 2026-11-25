@@ -5,6 +5,11 @@ import com.getcapacitor.Plugin
 import com.getcapacitor.PluginCall
 import com.getcapacitor.PluginMethod
 import com.getcapacitor.annotation.CapacitorPlugin
+import com.getcapacitor.annotation.Permission
+import com.getcapacitor.annotation.PermissionCallback
+import android.Manifest
+import android.os.Build
+import androidx.core.app.NotificationManagerCompat
 import com.kumchovy.arsen.codex.BuildConfig
 import com.kumchovy.arsen.codex.account.ClerkSessionSource
 import com.kumchovy.arsen.codex.account.NativeSessionProvider
@@ -20,10 +25,21 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.first
 
-@CapacitorPlugin(name = "ArsenBackup")
+@CapacitorPlugin(name = "ArsenBackup", permissions = [Permission(alias = "notifications", strings = [Manifest.permission.POST_NOTIFICATIONS])])
 class ArsenBackupPlugin : Plugin() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+
+    @PluginMethod fun requestBackupNotifications(call: PluginCall) {
+        if (Build.VERSION.SDK_INT >= 33 && getPermissionState("notifications") != com.getcapacitor.PermissionState.GRANTED) {
+            requestPermissionForAlias("notifications", call, "backupNotificationPermissionResult")
+        } else backupNotificationPermissionResult(call)
+    }
+
+    @PermissionCallback fun backupNotificationPermissionResult(call: PluginCall) {
+        call.resolve(JSObject().put("enabled", NotificationManagerCompat.from(context).areNotificationsEnabled()))
+    }
 
     @PluginMethod fun prepareContext(call: PluginCall) {
         if (BuildConfig.ARSEN_BACKUP_API_ORIGIN.isEmpty()) { call.reject("Respaldo no configurado"); return }
@@ -68,8 +84,10 @@ class ArsenBackupPlugin : Plugin() {
                     PendingBackupStager(store, NativeSessionProvider(ClerkSessionSource()), MAX_PENDING_BACKUP_BYTES).stage(revision, payload.toByteArray(Charsets.UTF_8), expectedOwner)
                 }
                 if (result == BackupStageResult.STORED) {
-                    BackupScheduler.enqueue(context)
-                    if (periodic) BackupScheduler.schedulePeriodic(context)
+                    when (backupScheduleForStage(periodic)) {
+                        BackupSchedule.IMMEDIATE -> BackupScheduler.enqueue(context)
+                        BackupSchedule.PERIODIC -> BackupScheduler.schedulePeriodic(context)
+                    }
                 }
                 call.resolve(JSObject().put("status", result.name))
             } catch (cancelled: CancellationException) { throw cancelled }
@@ -112,6 +130,102 @@ class ArsenBackupPlugin : Plugin() {
                 call.resolve(JSObject().put("pending", exists))
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (_: Exception) { call.reject("No se pudo comprobar el respaldo pendiente") }
+        }
+    }
+
+    @PluginMethod fun getAutomaticState(call: PluginCall) {
+        scope.launch {
+            try {
+                val result = withContext(Dispatchers.IO) {
+                    val sessions = NativeSessionProvider(ClerkSessionSource())
+                    val session = sessions.getLocal()
+                    check(session.result == SessionResult.READY && session.owner != null)
+                    val store = PendingSnapshotStore(File(context.noBackupFilesDir, "arsen-backup"), AndroidBackupKey.getOrCreate(), MAX_PENDING_BACKUP_BYTES)
+                    val pending = store.readAllPending()
+                    check(pending.all { it.owner == session.owner })
+                    val devices = pending.map { decodePendingEnvelope(it, MAX_PENDING_BACKUP_BYTES).deviceId }.distinct()
+                    check(devices.size <= 1)
+                    val confirmed = store.readConfirmed()?.takeIf { it.owner == session.owner }
+                    val envelope = confirmed?.let { decodePendingEnvelope(it, MAX_PENDING_BACKUP_BYTES) }
+                    val equivalent = store.readEquivalent()?.takeIf { it.owner == session.owner }
+                    val equivalentEnvelope = equivalent?.let { decodePendingEnvelope(it, MAX_PENDING_BACKUP_BYTES) }
+                    check(equivalentEnvelope == null || equivalentEnvelope.baseBackupId != null)
+                    val current = sessions.getLocal()
+                    check(current.result == SessionResult.READY && current.owner == session.owner)
+                    JSObject().put("owner", session.owner)
+                        .put("preparedRevision", pending.maxOfOrNull { it.revision } ?: org.json.JSONObject.NULL)
+                        .put("preparedDeviceId", devices.singleOrNull() ?: org.json.JSONObject.NULL)
+                        .put("confirmedRevision", confirmed?.revision ?: org.json.JSONObject.NULL)
+                        .put("confirmedBackupId", envelope?.backupId ?: org.json.JSONObject.NULL)
+                        .put("confirmedDeviceId", envelope?.deviceId ?: org.json.JSONObject.NULL)
+                        .put("confirmedManifestSha256", envelope?.manifestSha256 ?: org.json.JSONObject.NULL)
+                        .put("equivalentRevision", equivalent?.revision ?: org.json.JSONObject.NULL)
+                        .put("equivalentBackupId", equivalentEnvelope?.backupId ?: org.json.JSONObject.NULL)
+                        .put("equivalentDeviceId", equivalentEnvelope?.deviceId ?: org.json.JSONObject.NULL)
+                }
+                call.resolve(result)
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { call.reject("No se pudo consultar la preparación local") }
+        }
+    }
+
+    @PluginMethod fun scheduleAutomatic(call: PluginCall) {
+        val owner = call.getString("owner")
+        if (owner.isNullOrEmpty() || BuildConfig.ARSEN_BACKUP_API_ORIGIN.isEmpty()) { call.reject("Respaldo no disponible"); return }
+        scope.launch {
+            try {
+                val session = withContext(Dispatchers.IO) { NativeSessionProvider(ClerkSessionSource()).getLocal() }
+                check(session.result == SessionResult.READY && session.owner == owner)
+                BackupScheduler.schedulePeriodic(context)
+                call.resolve(JSObject().put("status", "SCHEDULED"))
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { call.reject("No se pudo programar el respaldo") }
+        }
+    }
+
+    @PluginMethod fun getAutomaticSchedule(call: PluginCall) {
+        val owner = call.getString("owner")
+        if (owner.isNullOrEmpty()) { call.reject("Cuenta no disponible"); return }
+        scope.launch {
+            try {
+                val result = withContext(Dispatchers.IO) {
+                    val session = NativeSessionProvider(ClerkSessionSource()).getLocal()
+                    check(session.result == SessionResult.READY && session.owner == owner)
+                    val info = kotlinx.coroutines.withTimeout(5000) { androidx.work.WorkManager.getInstance(context).getWorkInfosForUniqueWorkFlow("arsen-backup-periodic").first() }.firstOrNull()
+                    val next = info?.nextScheduleTimeMillis?.takeIf { it > 0 && it < Long.MAX_VALUE }
+                    JSObject().put("state", info?.state?.name ?: "NOT_SCHEDULED").put("nextCheckAt", next ?: org.json.JSONObject.NULL)
+                }
+                call.resolve(result)
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { call.reject("No se pudo consultar la programación") }
+        }
+    }
+
+    @PluginMethod fun cancelAutomatic(call: PluginCall) {
+        val owner = call.getString("owner")
+        if (owner.isNullOrEmpty()) { call.reject("Cuenta no disponible"); return }
+        scope.launch {
+            try {
+                val session = withContext(Dispatchers.IO) { NativeSessionProvider(ClerkSessionSource()).getLocal() }
+                check(session.result == SessionResult.READY && session.owner == owner)
+                androidx.work.WorkManager.getInstance(context).cancelUniqueWork("arsen-backup-periodic")
+                call.resolve(JSObject().put("status", "CANCELLED"))
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { call.reject("No se pudo desactivar el respaldo automático") }
+        }
+    }
+
+    @PluginMethod fun listVersions(call: PluginCall) {
+        if (BuildConfig.ARSEN_BACKUP_API_ORIGIN.isEmpty()) { call.reject("Respaldo no disponible"); return }
+        scope.launch {
+            try {
+                val result = withContext(Dispatchers.IO) {
+                    val client = BackupHttpClient(BuildConfig.ARSEN_BACKUP_API_ORIGIN)
+                    BackupVersionList(NativeSessionProvider(ClerkSessionSource())) { client.list(it) }.load()
+                }
+                call.resolve(JSObject().put("owner", result.owner).put("backups", com.getcapacitor.JSArray(result.backups.toString())))
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { call.reject("No se pudieron consultar las versiones") }
         }
     }
 

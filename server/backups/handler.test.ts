@@ -12,6 +12,14 @@ describe('private backup HTTP transport', () => {
     expect(response.headers.get('access-control-allow-origin')).toBe('https://app.example.test')
     expect((await handler(new Request('https://api.example.test/api/v1/unknown'))).status).toBe(404)
   })
+  it('dispatches reconfirmation through the private no-store transport', async () => {
+    const reconfirm = vi.fn(async () => ({ status: 200, id: 'ok' }))
+    const subject = createBackupHandler({ ...operations, reconfirm }, [])
+    const response = await subject(new Request('https://api.example.test/api/v1/backups/reconfirm', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' }))
+    expect(response.status).toBe(200)
+    expect(response.headers.get('cache-control')).toBe('no-store')
+    expect(reconfirm).toHaveBeenCalledTimes(1)
+  })
   it('rejects unknown origins and oversized JSON before invoking operations', async () => {
     call.mockClear()
     expect((await handler(new Request('https://api.example.test/api/v1/backups', { headers: { origin: 'https://evil.example.test' } }))).status).toBe(403)

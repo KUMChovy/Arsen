@@ -66,4 +66,21 @@ class PendingSnapshotStoreTest {
         assertThrows(IllegalStateException::class.java) { store.write("user_abc", 8, "different".toByteArray()) }
         assertEquals(original.sha256, store.read()!!.sha256)
     }
+
+    @Test fun `keeps yesterday snapshot when a new revision is prepared today`() {
+        val store = PendingSnapshotStore(temp.root, key(), 1024)
+        store.write("user_abc", 8, "yesterday".toByteArray())
+        val yesterday = java.time.LocalDate.now().minusDays(1).atTime(12, 0).atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
+        assertTrue(temp.root.resolve("pending.snapshot").setLastModified(yesterday))
+        store.write("user_abc", 9, "today".toByteArray())
+        assertEquals(8L, store.beginAutomaticSubmission()!!.revision)
+        assertEquals(9L, store.readPrepared()!!.revision)
+    }
+
+    @Test fun `automatic submission does not send a snapshot made today`() {
+        val store = PendingSnapshotStore(temp.root, key(), 1024)
+        store.write("user_abc", 8, "today".toByteArray())
+        assertNull(store.beginAutomaticSubmission())
+        assertEquals(8L, store.read()!!.revision)
+    }
 }

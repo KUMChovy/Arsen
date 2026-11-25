@@ -12,9 +12,10 @@ class PendingBackupStagerTest {
     @get:Rule val temp = TemporaryFolder()
     private class Source : NativeSessionSource {
         var identity: SessionIdentity? = SessionIdentity("user_abc", "session_a")
+        var online = true
         override suspend fun waitUntilReady() = true
         override fun currentIdentity() = identity
-        override suspend fun refreshToken() = "test.token"
+        override suspend fun refreshToken(): String? = if (online) "test.token" else null
     }
     private fun store() = PendingSnapshotStore(temp.root, KeyGenerator.getInstance("AES").apply { init(256) }.generateKey(), 4096)
 
@@ -41,5 +42,12 @@ class PendingBackupStagerTest {
         assertArrayEquals(byteArrayOf(7), store.read()!!.payload)
         source.identity = null
         assertEquals(BackupStageResult.SIGN_IN_REQUIRED, changed.stage(3, byteArrayOf(1)))
+    }
+
+    @Test fun `prepares an encrypted snapshot with a locally available session while offline`() = runBlocking {
+        val store = store(); val source = Source().apply { online = false }
+        val stager = PendingBackupStager(store, NativeSessionProvider(source), 4096) { _, _ -> }
+        assertEquals(BackupStageResult.STORED, stager.stage(3, byteArrayOf(1, 2), "user_abc"))
+        assertEquals(3L, store.read()!!.revision)
     }
 }

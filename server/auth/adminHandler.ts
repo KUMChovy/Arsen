@@ -4,6 +4,7 @@ export function createAdminHandler(issue: (request: Request, input: unknown) => 
   listAccounts: (request: Request, cursor: string | null) => Promise<{ status: number } & object>
   listBackups?: (request: Request, userId: string) => Promise<{ status: number } & object>
   overview?: (request: Request) => Promise<{ status: number } & object>
+  audit?: (request: Request) => Promise<{ status: number } & object>
 }) {
   return async (request: Request): Promise<Response> => {
     const headers = new Headers({ 'cache-control': 'no-store', vary: 'Origin' })
@@ -22,13 +23,15 @@ export function createAdminHandler(issue: (request: Request, input: unknown) => 
     const backupAccount = /^\/api\/v1\/admin\/accounts\/([^/]+)\/backups$/.exec(url.pathname)?.[1]
     const backups = !!backupAccount && !!operations?.listBackups
     const overview = url.pathname === '/api/v1/admin/overview' && !!operations?.overview
-    if (!invitations && !accounts && !backups && !overview) return new Response(null, { status: 404, headers })
-    if ((invitations && request.method !== 'POST') || ((accounts || backups || overview) && request.method !== 'GET')) return new Response(null, { status: 405, headers })
+    const audit = url.pathname === '/api/v1/admin/audit' && !!operations?.audit
+    if (!invitations && !accounts && !backups && !overview && !audit) return new Response(null, { status: 404, headers })
+    if ((invitations && request.method !== 'POST') || ((accounts || backups || overview || audit) && request.method !== 'GET')) return new Response(null, { status: 405, headers })
     try {
       let result: { status: number } & object
       if (accounts) result = await operations!.listAccounts(request, url.searchParams.get('cursor'))
       else if (backups) result = await operations!.listBackups!(request, backupAccount!)
       else if (overview) result = await operations!.overview!(request)
+      else if (audit) result = await operations!.audit!(request)
       else {
         let input: unknown
         try { input = await readBoundedJson(request, 4096) } catch { return new Response(null, { status: 400, headers }) }

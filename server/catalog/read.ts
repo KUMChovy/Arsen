@@ -1,6 +1,15 @@
-import { publishedCatalogSchema } from '../../src/shared/validation/remoteCatalog'
+import { catalogImageSchema, publishedCatalogSchema } from '../../src/shared/validation/remoteCatalog'
 
 type Query = (sql: string) => Promise<{ rows: Array<Record<string, unknown>> }>
+
+export async function readHistoricalImage(request: Request, hash: string, query: (sql: string, params: string[]) => Promise<{ rows: Array<Record<string, unknown>> }>): Promise<Response> {
+  if (request.method !== 'GET') return new Response(null, { status: 405, headers: { allow: 'GET' } })
+  if (!/^[a-f0-9]{64}$/.test(hash)) return new Response(null, { status: 400 })
+  const result = await query("SELECT payload->'image' AS image FROM arsen_catalog_changes WHERE action = 'publish' AND payload->'image'->>'sha256' = $1 ORDER BY version DESC LIMIT 1", [hash])
+  const image = catalogImageSchema.safeParse(result.rows[0]?.image)
+  if (!image.success) return new Response(null, { status: 404 })
+  return Response.json({ image: image.data }, { headers: { 'cache-control': 'public, max-age=300' } })
+}
 
 async function getVersion(query: Query): Promise<number | null> {
   const state = await query('SELECT version::text AS version FROM arsen_catalog_state WHERE singleton = true')

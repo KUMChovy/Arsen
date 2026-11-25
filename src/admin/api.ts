@@ -6,7 +6,7 @@ const count = z.number().int().nonnegative().safe()
 const id = z.string().regex(/^[a-z0-9][a-z0-9-]{0,127}$/)
 const userId = z.string().regex(/^user_[A-Za-z0-9]{1,123}$/)
 const overviewSchema = z.object({ accounts: count, devices: count, confirmedBackups: count, publishedExercises: count }).strict()
-const accountSchema = z.object({ userId, role: z.enum(['user', 'admin']), createdAt: z.string().datetime(), deviceCount: count, backupCount: count, lastBackupAt: z.string().datetime().nullable() }).strict()
+const accountSchema = z.object({ userId, email: z.string().email().max(254).nullable().optional(), role: z.enum(['user', 'admin']), createdAt: z.string().datetime(), deviceCount: count, backupCount: count, lastBackupAt: z.string().datetime().nullable() }).strict()
 const backupSchema = z.object({ id: z.string().uuid(), deviceId: z.string().uuid(), localRevision: count, contractVersion: count.positive(), sizeBytes: count.positive(), includesHealth: z.boolean(), confirmedAt: z.string().datetime() }).strict()
 const draftSchema = z.object({ id, draft: z.record(z.unknown()), published: z.record(z.unknown()).nullable(), archived: z.boolean(), updated_at: z.string() }).strict()
 const draftInput = z.object({ id, name: z.string().trim().min(1).max(200), mainMuscle: z.enum(['Pecho', 'Espalda', 'Hombros', 'Brazos', 'Abdomen', 'Piernas']).optional(), canonicalName: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/).max(200).optional(), aliases: z.array(z.string().trim().min(1).max(200)).max(100).optional(), technicalNotes: z.string().max(10000).optional(), image: z.unknown().optional() }).strict()
@@ -64,6 +64,7 @@ export function createAdminApi(origin: string, getToken: () => Promise<string | 
       if (timeout.signal.aborted) { await response.body?.cancel(); throw new Error('Operación cancelada') }
       if (!response.ok) {
         await response.body?.cancel()
+        if (response.status === 429 || (response.status === 403 && response.headers.has('x-vercel-mitigated'))) throw new Error('La protección del servidor rechazó la solicitud. Espera y vuelve a intentarlo.')
         if (response.status === 401) throw new Error('Inicia sesión para continuar')
         if (response.status === 403) throw new Error('No tienes permiso para esta operación')
         if (response.status === 409) throw new Error('Los datos cambiaron. Actualiza e inténtalo de nuevo')
@@ -79,9 +80,17 @@ export function createAdminApi(origin: string, getToken: () => Promise<string | 
 
   return {
     overview: () => request('/api/v1/admin/overview', overviewSchema),
+    audit: () => request('/api/v1/admin/audit', z.object({ events: z.array(z.object({ actor_id: z.string().min(1).max(128), action: z.enum(['invitation.requested', 'draft.save', 'image.upload.requested', 'publish', 'archive']), target_id: z.string().min(1).max(128), created_at: z.string().datetime() }).strict()).max(100) }).strict()),
     accounts: (cursor?: string) => request(`/api/v1/admin/accounts${cursor ? `?cursor=${encodeURIComponent(userId.parse(cursor))}` : ''}`, z.object({ accounts: z.array(accountSchema).max(50), nextCursor: userId.nullable() }).strict()),
     backups: async (owner: string) => request(`/api/v1/admin/accounts/${encodeURIComponent(userId.parse(owner))}/backups`, z.object({ backups: z.array(backupSchema).max(5) }).strict()),
-    drafts: (cursor?: string) => request(`/api/v1/admin/catalog/drafts${cursor ? `?cursor=${encodeURIComponent(id.parse(cursor))}` : ''}`, z.object({ items: z.array(draftSchema).max(100), nextCursor: id.nullable() }).strict()),
+    drafts: (cursor?: string, filters?: { q: string; status: 'all' | 'draft' | 'published' | 'archived'; muscle?: '' | 'Pecho' | 'Espalda' | 'Hombros' | 'Brazos' | 'Abdomen' | 'Piernas' }) => {
+      const params = new URLSearchParams()
+      if (cursor) params.set('cursor', id.parse(cursor))
+      if (filters) { params.set('q', z.string().max(200).parse(filters.q)); params.set('status', z.enum(['all', 'draft', 'published', 'archived']).parse(filters.status)) }
+      if (filters?.muscle) params.set('muscle', z.enum(['Pecho', 'Espalda', 'Hombros', 'Brazos', 'Abdomen', 'Piernas']).parse(filters.muscle))
+      const query = params.toString()
+      return request(`/api/v1/admin/catalog/drafts${query ? `?${query}` : ''}`, z.object({ items: z.array(draftSchema).max(100), nextCursor: id.nullable() }).strict())
+    },
     saveDraft: (draft: AdminDraft, expected: AdminDraft | null) => request('/api/v1/admin/catalog/drafts', z.object({}).strict(), { draft: draftInput.parse(draft), expected: expected === null ? null : draftInput.parse(expected) }),
     publish: (itemId: string) => request('/api/v1/admin/catalog/publish', z.object({ version: count.positive() }).strict(), { id: id.parse(itemId) }),
     archive: (itemId: string) => request('/api/v1/admin/catalog/archive', z.object({ version: count.positive() }).strict(), { id: id.parse(itemId) }),

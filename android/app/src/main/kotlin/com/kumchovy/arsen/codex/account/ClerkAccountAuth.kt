@@ -3,6 +3,7 @@ package com.kumchovy.arsen.codex.account
 import com.clerk.api.Clerk
 import com.clerk.api.network.serialization.ClerkResult
 import com.clerk.api.signin.SignIn
+import com.clerk.api.auth.HostedAuthMode
 import kotlinx.coroutines.withTimeout
 
 class ClerkAccountAuth : AccountAuth {
@@ -28,6 +29,14 @@ class ClerkAccountAuth : AccountAuth {
         return when (Clerk.auth.startHostedAuth()) {
             is ClerkResult.Success -> AuthenticationResult.COMPLETE
             is ClerkResult.Failure -> error("No se completó la verificación")
+        }
+    }
+
+    override suspend fun register(): AuthenticationResult {
+        ensureReady()
+        return when (Clerk.auth.startHostedAuth(mode = HostedAuthMode.SIGN_UP)) {
+            is ClerkResult.Success -> AuthenticationResult.COMPLETE
+            is ClerkResult.Failure -> error("No se completó el registro")
         }
     }
 

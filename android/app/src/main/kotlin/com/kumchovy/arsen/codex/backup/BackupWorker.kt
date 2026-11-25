@@ -8,6 +8,7 @@ import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.Operation
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
@@ -69,13 +70,13 @@ object BackupScheduler {
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS).build()
         WorkManager.getInstance(context).enqueueUniqueWork("arsen-backup-once", ExistingWorkPolicy.KEEP, request)
     }
-    fun schedulePeriodic(context: Context) {
+    fun schedulePeriodic(context: Context): Operation {
         val now = java.time.ZonedDateTime.now()
         val delay = java.time.Duration.between(now.toInstant(), nextBackupCheck(now).toInstant()).toMillis()
         val request = PeriodicWorkRequestBuilder<BackupWorker>(72, TimeUnit.HOURS).setConstraints(constraints)
             .setInputData(workDataOf("automatic" to true))
             .setInitialDelay(delay, TimeUnit.MILLISECONDS)
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS).build()
-        WorkManager.getInstance(context).enqueueUniquePeriodicWork("arsen-backup-periodic", ExistingPeriodicWorkPolicy.KEEP, request)
+        return WorkManager.getInstance(context).enqueueUniquePeriodicWork("arsen-backup-periodic", ExistingPeriodicWorkPolicy.KEEP, request)
     }
 }

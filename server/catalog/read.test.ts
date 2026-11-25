@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import { PGlite } from '@electric-sql/pglite'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { readCatalogVersion, readPublishedCatalog } from './read'
+import { readCatalogVersion, readPublishedCatalog, readHistoricalImage } from './read'
 
 const published = {
   id: 'sinful-shell-press', name: 'Press plano', canonicalName: 'press-plano', mainMuscle: 'Pecho',
@@ -59,5 +59,13 @@ describe('public catalog reading', () => {
     const response = await readPublishedCatalog(new Request('https://api.test/catalog'), query)
     expect(response.headers.get('etag')).toBe('"catalog-2"')
     expect(await response.json()).toEqual({ version: 2, exercises: [published] })
+  })
+  it('returns image metadata from an archived publication but never from a draft', async () => {
+    await db.query("INSERT INTO arsen_catalog_changes (version, item_id, action, actor_id, payload) VALUES (3, $1, 'publish', 'admin', $2::jsonb)", ['sinful-shell-archived', JSON.stringify({ ...published, id: 'sinful-shell-archived' })])
+    const query = (sql: string, params: string[]) => db.query<Record<string, unknown>>(sql, params)
+    const response = await readHistoricalImage(new Request('https://api.test'), published.image.sha256, query)
+    expect(await response.json()).toEqual({ image: published.image })
+    expect((await readHistoricalImage(new Request('https://api.test'), 'bad', query)).status).toBe(400)
+    expect((await readHistoricalImage(new Request('https://api.test'), 'b'.repeat(64), query)).status).toBe(404)
   })
 })

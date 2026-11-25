@@ -5,6 +5,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AdminApp } from './AdminApp'
 import type { AdminClerk } from './clerk'
 import type { createAdminApi } from './api'
+import { confirmAction } from '../shared/utils/alerts'
+
+vi.mock('../shared/utils/alerts', () => ({ confirmAction: vi.fn() }))
+Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: vi.fn(() => 'blob:preview') })
+Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() })
 
 const makeClerk = (signedIn: boolean) => ({
   session: signedIn ? { id: 'sess_admin', getToken: vi.fn(async () => 'token') } : null,
@@ -16,10 +21,26 @@ const makeApi = () => ({
   backups: vi.fn(async (): Promise<Awaited<ReturnType<ReturnType<typeof createAdminApi>['backups']>>> => ({ backups: [] })), drafts: vi.fn(async (): Promise<Awaited<ReturnType<ReturnType<typeof createAdminApi>['drafts']>>> => ({ items: [], nextCursor: null })),
   saveDraft: vi.fn(async () => ({})), publish: vi.fn(async () => ({ version: 1 })), archive: vi.fn(async () => ({ version: 2 })), invite: vi.fn(async (_id: string, _email: string) => ({ id: '8166d21c-bac3-497b-9d22-8492474c982b' })),
   uploadImage: vi.fn(async (_file: Blob, _signal?: AbortSignal) => ({ url: 'https://arsentest.public.blob.vercel-storage.com/catalog/images/8166d21c-bac3-497b-9d22-8492474c982b.png', sha256: 'a'.repeat(64), sizeBytes: 4, mimeType: 'image/png' as const })),
+  audit: vi.fn(async () => ({ events: [{ actor_id: 'user_admin', action: 'publish', target_id: 'sentadilla', created_at: '2026-11-24T12:00:00.000Z' }] })),
 })
 afterEach(cleanup)
 
 describe('ARSEN Admin', () => {
+  it('opens and closes the new exercise editor as a dialog', async () => {
+    const api = makeApi()
+    render(<AdminApp clerk={makeClerk(true)} api={api as unknown as ReturnType<typeof createAdminApi>} />)
+    await screen.findByText('4')
+    fireEvent.click(screen.getByRole('button', { name: 'Catálogo' }))
+    const open = screen.getByRole('button', { name: 'Agregar ejercicio' })
+    open.focus()
+    fireEvent.click(open)
+    const dialog = screen.getByRole('dialog', { name: 'Nuevo borrador' })
+    expect(dialog).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Cancelar edición' })).toBeEnabled())
+    fireEvent.keyDown(dialog, { key: 'Escape' })
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(open).toHaveFocus()
+  })
   it('does not request private data before signing in', () => {
     const clerk = makeClerk(false)
     const api = makeApi()
@@ -51,6 +72,7 @@ describe('ARSEN Admin', () => {
     render(<AdminApp clerk={makeClerk(true)} api={api as unknown as ReturnType<typeof createAdminApi>} />)
     await screen.findByText('4')
     fireEvent.click(screen.getByRole('button', { name: 'Catálogo' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Agregar ejercicio' }))
     fireEvent.change(await screen.findByLabelText('Identificador'), { target: { value: 'sentadilla' } })
     fireEvent.change(screen.getByLabelText('Nombre'), { target: { value: 'Sentadilla' } })
     fireEvent.change(screen.getByLabelText('Músculo principal'), { target: { value: 'Piernas' } })
@@ -59,15 +81,45 @@ describe('ARSEN Admin', () => {
     expect(api.saveDraft).toHaveBeenCalledWith({ id: 'sentadilla', name: 'Sentadilla', canonicalName: 'sentadilla', aliases: [], mainMuscle: 'Piernas' }, null)
     expect(api.publish).not.toHaveBeenCalled()
   })
+  it('searches the catalog with the selected publication filter', async () => {
+    const api = makeApi()
+    render(<AdminApp clerk={makeClerk(true)} api={api as unknown as ReturnType<typeof createAdminApi>} />)
+    await screen.findByText('4')
+    fireEvent.click(screen.getByRole('button', { name: 'Catálogo' }))
+    fireEvent.change(await screen.findByLabelText('Buscar ejercicios'), { target: { value: 'sentadilla' } })
+    fireEvent.change(screen.getByLabelText('Estado'), { target: { value: 'published' } })
+    await waitFor(() => expect(api.drafts).toHaveBeenLastCalledWith(undefined, { q: 'sentadilla', status: 'published' }))
+    fireEvent.change(screen.getByLabelText('Músculo'), { target: { value: 'Piernas' } })
+    await waitFor(() => expect(api.drafts).toHaveBeenLastCalledWith(undefined, { q: 'sentadilla', status: 'published', muscle: 'Piernas' }))
+  })
+  it('offers initial catalog loading only after selecting inventory and images', async () => {
+    const api = makeApi()
+    render(<AdminApp clerk={makeClerk(true)} api={api as unknown as ReturnType<typeof createAdminApi>} />)
+    await screen.findByText('4')
+    fireEvent.click(screen.getByRole('button', { name: 'Catálogo' }))
+    expect(await screen.findByLabelText('Inventario inicial')).toBeInTheDocument()
+    expect(screen.getByLabelText('Imágenes iniciales')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Cargar catálogo inicial' })).toBeDisabled()
+  })
+  it('shows actual administrative audit events', async () => {
+    const api = makeApi()
+    render(<AdminApp clerk={makeClerk(true)} api={api as unknown as ReturnType<typeof createAdminApi>} />)
+    await screen.findByText('4')
+    fireEvent.click(screen.getByRole('button', { name: 'Auditoría' }))
+    expect(await screen.findByText(/sentadilla/)).toBeInTheDocument()
+    expect(screen.getByText(/user_admin/)).toBeInTheDocument()
+  })
   it('attaches an explicitly uploaded image to the draft', async () => {
     const api = makeApi()
     render(<AdminApp clerk={makeClerk(true)} api={api as unknown as ReturnType<typeof createAdminApi>} />)
     await screen.findByText('4')
     fireEvent.click(screen.getByRole('button', { name: 'Catálogo' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Agregar ejercicio' }))
     fireEvent.change(await screen.findByLabelText('Identificador'), { target: { value: 'sentadilla' } })
     fireEvent.change(screen.getByLabelText('Nombre'), { target: { value: 'Sentadilla' } })
     const file = new File(['data'], 'ejercicio.png', { type: 'image/png' })
     fireEvent.change(screen.getByLabelText('Imagen del ejercicio'), { target: { files: [file] } })
+    expect(await screen.findByRole('img', { name: 'Vista previa del ejercicio' })).toHaveAttribute('src', 'blob:preview')
     expect(api.uploadImage).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: 'Subir imagen' }))
     expect(await screen.findByText(/imagen cargada/i)).toBeInTheDocument()
@@ -79,7 +131,7 @@ describe('ARSEN Admin', () => {
     const api = makeApi()
     const draft = { id: 'sentadilla', name: 'Sentadilla' }
     api.drafts.mockResolvedValue({ items: [{ id: draft.id, draft, published: null, archived: false, updated_at: '2026-01-01' }], nextCursor: null })
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true)
+    vi.mocked(confirmAction).mockResolvedValueOnce(false).mockResolvedValueOnce(true)
     render(<AdminApp clerk={makeClerk(true)} api={api as unknown as ReturnType<typeof createAdminApi>} />)
     await screen.findByText('4')
     fireEvent.click(screen.getByRole('button', { name: 'Catálogo' }))
@@ -88,7 +140,6 @@ describe('ARSEN Admin', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Publicar' }))
     expect(await screen.findByText(/versión 1 del catálogo/i)).toBeInTheDocument()
     expect(api.publish).toHaveBeenCalledWith('sentadilla')
-    confirm.mockRestore()
   })
   it('cancels an image upload when the admin session changes', async () => {
     const api = makeApi()
@@ -103,6 +154,7 @@ describe('ARSEN Admin', () => {
     render(<AdminApp clerk={clerk} api={api as unknown as ReturnType<typeof createAdminApi>} />)
     await screen.findByText('4')
     fireEvent.click(screen.getByRole('button', { name: 'Catálogo' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Agregar ejercicio' }))
     fireEvent.change(await screen.findByLabelText('Imagen del ejercicio'), { target: { files: [new File(['data'], 'img.png', { type: 'image/png' })] } })
     fireEvent.click(screen.getByRole('button', { name: 'Subir imagen' }))
     expect(signal?.aborted).toBe(false)
@@ -169,6 +221,7 @@ describe('ARSEN Admin', () => {
     render(<AdminApp clerk={clerk} api={api as unknown as ReturnType<typeof createAdminApi>} />)
     await screen.findByText('4')
     fireEvent.click(screen.getByRole('button', { name: 'Catálogo' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Agregar ejercicio' }))
     fireEvent.change(await screen.findByLabelText('Nombre'), { target: { value: 'Trabajo en curso' } })
     await act(async () => { clerk.session = { id: 'sess_admin', getToken: vi.fn(async () => 'refreshed') }; listener() })
     expect(screen.getByLabelText('Nombre')).toHaveValue('Trabajo en curso')

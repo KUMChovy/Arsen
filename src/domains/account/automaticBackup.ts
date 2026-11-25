@@ -26,8 +26,8 @@ export async function enableAutomaticBackup(context: z.infer<typeof configSchema
   const state = stateSchema.parse(await nativeBackup.getAutomaticState())
   if (state.owner !== config.owner) throw new Error('La cuenta vinculada cambió')
   const result = await queueManualBackup({ ...config, status: 'READY' })
-  await db.localMetadata.put({ id: 'automaticBackup', value: { ...config, baselineConfirmedId: state.confirmedBackupId, baselineEquivalentRevision: state.equivalentRevision } })
   if ((await nativeBackup.scheduleAutomatic({ owner: config.owner })).status !== 'SCHEDULED') throw new Error('No se pudo programar el respaldo')
+  await db.localMetadata.put({ id: 'automaticBackup', value: { ...config, baselineConfirmedId: state.confirmedBackupId, baselineEquivalentRevision: state.equivalentRevision } })
   return result
 }
 

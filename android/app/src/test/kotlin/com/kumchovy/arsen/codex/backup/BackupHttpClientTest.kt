@@ -18,7 +18,8 @@ class BackupHttpClientTest {
     }
     @Test fun `allows only the intended account and read endpoints`() {
         assertTrue(isBackupContextPostPath("/api/v1/account/devices"))
-        assertFalse(isBackupContextPostPath("/api/v1/account/activate"))
+        assertTrue(isBackupContextPostPath("/api/v1/account/activate"))
+        assertFalse(isBackupContextPostPath("/api/v1/account/activate?owner=other"))
         assertTrue(isBackupContextGetPath("/api/v1/backups/latest"))
         assertFalse(isBackupContextGetPath("/api/v1/backups/latest?owner=other"))
     }

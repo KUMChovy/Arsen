@@ -29,6 +29,13 @@ describe('administrative account summaries', () => {
     expect(result).toEqual({ status: 200, accounts: [{ userId: 'user_athlete', role: 'user', createdAt: expect.any(String), deviceCount: 1, backupCount: 1, lastBackupAt: '2026-01-01T00:00:00.000Z' }], nextCursor: null })
     expect(JSON.stringify(result)).not.toMatch(/manifest|sha256|email|health/i)
   })
+  it('includes verified email only for an authorized administrator', async () => {
+    const identity = async (id: string) => ({ userId: id, verifiedEmail: 'persona@example.test', invitationId: null })
+    const result = await listAdminAccounts(request(), 'user_admin', { ...deps('admin'), identity })
+    expect(result.status === 200 && result.accounts[0]).toMatchObject({ email: 'persona@example.test' })
+    const denied = await listAdminAccounts(request(), null, { ...deps('user'), identity: async () => { throw new Error('must not be called') } })
+    expect(denied.status).toBe(403)
+  })
   it('paginates without skipping the next account', async () => {
     await pg.exec("INSERT INTO arsen_profiles (user_id) SELECT 'user_x' || lpad(n::text, 3, '0') FROM generate_series(1, 55) n")
     const first = await listAdminAccounts(request(), 'user_admin', deps('admin'))

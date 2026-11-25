@@ -41,4 +41,26 @@ class BackupVersionListTest {
         assertFalse(result.contains("private"))
         assertTrue(result.contains("confirmedAt"))
     }
+
+    @Test fun `activates an invited account before retrying a forbidden version lookup`() = runBlocking {
+        var attempts = 0
+        var activations = 0
+        val list = BackupVersionList(NativeSessionProvider(Source()), activate = { activations++; BackupHttpResponse(200, "") }) {
+            attempts++
+            if (attempts == 1) BackupHttpResponse(403, "") else BackupHttpResponse(200, """{"backups":[]}""")
+        }
+        assertEquals("user_abc", list.load().owner)
+        assertEquals(1, activations)
+        assertEquals(2, attempts)
+    }
+    @Test fun `does not retry a version lookup after account changes during activation`() = runBlocking {
+        val source = Source()
+        var attempts = 0
+        val list = BackupVersionList(NativeSessionProvider(source), activate = {
+            source.identity = SessionIdentity("user_other", "sess_b")
+            BackupHttpResponse(200, "")
+        }) { attempts++; BackupHttpResponse(403, "") }
+        assertThrows(Exception::class.java) { runBlocking { list.load() } }
+        assertEquals(1, attempts)
+    }
 }

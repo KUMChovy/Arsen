@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ExerciseCatalogItem } from '../types'
 import { SinfulShellBrowserSheet } from './SinfulShellBrowserSheet'
 
-vi.mock('../../../shared/assets/catalogImages', () => ({ readCatalogImage: async () => new Blob(['image'], { type: 'image/png' }) }))
+vi.mock('../../../shared/assets/catalogImages', () => ({ recoverCatalogImage: async () => new Blob(['image'], { type: 'image/png' }) }))
 
 describe('SinfulShellBrowserSheet', () => {
   afterEach(() => { cleanup(); vi.unstubAllGlobals() })

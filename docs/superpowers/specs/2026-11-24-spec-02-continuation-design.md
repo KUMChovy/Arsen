@@ -1,0 +1,9 @@
+# SPEC 02: continuación de acceso, catálogo y administración
+
+La aplicación Android conserva IndexedDB como fuente de datos personales y ofrece una elección inicial entre acceso, registro por invitación y uso local como invitado. Una elección de invitado persiste sin red. Una sesión previamente vinculada no debe impedir entrenar si el proveedor no responde; el acceso y la restauración no modifican datos hasta una confirmación explícita. Tras iniciar sesión se consulta la existencia de una copia y se ofrece revisarla o continuar; la restauración reutiliza las comprobaciones de cuenta, integridad y revisión existentes.
+
+El catálogo público mantiene identificadores estables y se sincroniza independientemente de la cuenta. Una instantánea y sus imágenes se validan antes de reemplazar la copia local; las recetas y los snapshots personales no se alteran. Las imágenes de referencias históricas deben poder recuperarse por un identificador verificable incluso si el ejercicio fue archivado. El servidor conserva la autorización en todas las operaciones administrativas y la publicación sigue siendo transaccional.
+
+El panel de administración prioriza escritorio y sigue siendo responsive. Usa datos reales, paginación, búsqueda y filtros para el catálogo, un editor con borrador y publicación separados, invitaciones, metadatos de cuentas y respaldos y consulta de auditoría. Los errores y estados vacíos son visibles y no se presentan controles sin operación.
+
+La preparación del entorno de desarrollo verifica migraciones, catálogo inicial, imágenes, rutas y configuración sin exponer secretos. La activación o publicación externa requiere autorización aplicable. Las pruebas cubren invitados y sesiones sin red, restauración aceptada y rechazada, permisos, versiones, imágenes históricas y conservación de datos. Los cambios recientes de respaldo se conservan y reutilizan.

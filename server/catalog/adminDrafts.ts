@@ -23,8 +23,17 @@ export async function listCatalogDrafts(request: Request, cursor: string | null,
   const authorization = await authorize(request, dependencies.auth, 'admin')
   if (authorization.status !== 200) return authorization
   if (cursor !== null && !id.safeParse(cursor).success) return { status: 400 as const }
+  const params = new URL(request.url).searchParams
+  const search = z.string().max(200).safeParse(params.get('q') ?? '')
+  const status = z.enum(['all', 'draft', 'published', 'archived']).safeParse(params.get('status') ?? 'all')
+  const muscle = z.enum(['', 'Pecho', 'Espalda', 'Hombros', 'Brazos', 'Abdomen', 'Piernas']).safeParse(params.get('muscle') ?? '')
+  if (!search.success || !status.success || !muscle.success || params.getAll('q').length > 1 || params.getAll('status').length > 1 || params.getAll('muscle').length > 1) return { status: 400 as const }
   const result = await dependencies.query(`SELECT id, draft, published, archived, updated_at::text
-    FROM arsen_catalog_items WHERE id > $1 ORDER BY id LIMIT 101`, [cursor ?? ''])
+    FROM arsen_catalog_items WHERE id > $1
+      AND ($2 = '' OR strpos(lower(id || ' ' || COALESCE(draft->>'name', '') || ' ' || COALESCE(draft->>'canonicalName', '') || ' ' || COALESCE(draft->'aliases', '[]'::jsonb)::text), $2) > 0)
+      AND ($3 = 'all' OR ($3 = 'draft' AND published IS NULL AND NOT archived) OR ($3 = 'published' AND published IS NOT NULL AND NOT archived) OR ($3 = 'archived' AND archived))
+      AND ($4 = '' OR draft->>'mainMuscle' = $4)
+    ORDER BY id LIMIT 101`, [cursor ?? '', search.data.trim().toLowerCase(), status.data, muscle.data])
   const items = result.rows.slice(0, 100)
   const nextCursor = result.rows.length > 100 && typeof items[items.length - 1]?.id === 'string' ? items[items.length - 1]!.id : null
   return { status: 200 as const, items, nextCursor }

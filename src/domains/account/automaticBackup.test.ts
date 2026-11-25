@@ -57,6 +57,12 @@ describe('automatic preparation', () => {
     expect(db.localMetadata.put).toHaveBeenCalledWith({ id: 'automaticBackup', value: config })
     expect(nativeBackup.scheduleAutomatic).toHaveBeenCalledWith({ owner: config.owner })
   })
+  it('does not persist a new automatic-backup configuration when scheduling fails', async () => {
+    vi.mocked(nativeBackup.scheduleAutomatic).mockRejectedValueOnce(new Error('work manager unavailable'))
+    await expect(enableAutomaticBackup(config)).rejects.toThrow()
+    expect(db.localMetadata.put).not.toHaveBeenCalled()
+    expect(queueManualBackup).toHaveBeenCalledOnce()
+  })
   it('does not remove authorization when cancelling periodic work fails', async () => {
     vi.mocked(nativeBackup.cancelAutomatic).mockRejectedValueOnce(new Error('unavailable'))
     await expect(disableAutomaticBackup()).rejects.toThrow()

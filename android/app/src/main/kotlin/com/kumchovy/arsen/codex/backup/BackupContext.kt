@@ -9,6 +9,7 @@ import java.time.Instant
 interface BackupContextApi {
     suspend fun register(token: String, deviceId: String): BackupHttpResponse
     suspend fun latest(token: String): BackupHttpResponse
+    suspend fun activate(token: String): BackupHttpResponse = BackupHttpResponse(403, "")
 }
 enum class BackupContextStatus { READY, SIGN_IN_REQUIRED, ACCOUNT_CHANGED, INVALID, UNAVAILABLE }
 class BackupSummary(val id: String, val deviceId: String, val localRevision: Long, val contractVersion: Long, val sizeBytes: Long, val includesHealth: Boolean, val confirmedAt: String)
@@ -22,7 +23,14 @@ class BackupContext(private val sessions: NativeSessionProvider, private val api
             val session = sessions.get()
             if (session.result == SessionResult.SIGNED_OUT) return BackupContextResult(BackupContextStatus.SIGN_IN_REQUIRED)
             if (session.result != SessionResult.READY || session.owner == null || session.token == null) return BackupContextResult(BackupContextStatus.UNAVAILABLE)
-            val registration = api.register(session.token, deviceId)
+            var registration = api.register(session.token, deviceId)
+            if (registration.status == 403) {
+                if (api.activate(session.token).status != 200) return BackupContextResult(BackupContextStatus.UNAVAILABLE)
+                val current = sessions.get()
+                if (current.result != SessionResult.READY || current.token == null) return BackupContextResult(BackupContextStatus.UNAVAILABLE)
+                if (current.owner != session.owner) return BackupContextResult(BackupContextStatus.ACCOUNT_CHANGED)
+                registration = api.register(current.token, deviceId)
+            }
             if (registration.status != 200) return BackupContextResult(BackupContextStatus.UNAVAILABLE)
             if (Json.parseToJsonElement(registration.body).jsonObject["id"]?.jsonPrimitive?.content != deviceId) return BackupContextResult(BackupContextStatus.INVALID)
             val refreshed = sessions.get()

@@ -7,6 +7,7 @@ interface AccountAuth {
     suspend fun currentEmail(): String?
     suspend fun signIn(email: String, password: String): AuthenticationResult
     suspend fun verify(): AuthenticationResult
+    suspend fun register(): AuthenticationResult
     suspend fun signOut()
 }
 
@@ -21,6 +22,10 @@ class AccountController(private val auth: AccountAuth) {
     }
 
     suspend fun verify(): AccountStatus = finish(auth.verify())
+    suspend fun register(): AccountStatus {
+        check(auth.currentEmail() == null) { "Ya hay una sesión activa" }
+        return finish(auth.register())
+    }
 
     suspend fun signOut() = auth.signOut()
 

@@ -6,11 +6,17 @@ import kotlinx.serialization.json.*
 
 data class BackupVersionListResult(val owner: String, val backups: JsonArray)
 
-class BackupVersionList(private val sessions: NativeSessionProvider, private val fetch: suspend (String) -> BackupHttpResponse) {
+class BackupVersionList(private val sessions: NativeSessionProvider, private val activate: suspend (String) -> BackupHttpResponse = { BackupHttpResponse(403, "") }, private val fetch: suspend (String) -> BackupHttpResponse) {
     suspend fun load(): BackupVersionListResult {
         val session = sessions.get()
         check(session.result == SessionResult.READY && session.owner != null && session.token != null)
-        val response = fetch(session.token)
+        var response = fetch(session.token)
+        if (response.status == 403) {
+            check(activate(session.token).status == 200)
+            val current = sessions.get()
+            check(current.result == SessionResult.READY && current.owner == session.owner && current.token != null)
+            response = fetch(current.token)
+        }
         check(response.status == 200)
         val rows = Json.parseToJsonElement(response.body).jsonObject["backups"]!!.jsonArray
         check(rows.size <= 5)

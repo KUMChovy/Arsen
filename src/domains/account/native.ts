@@ -8,6 +8,7 @@ type AccountPlugin = {
   getState(): Promise<AccountState>
   signIn(input: { email: string; password: string }): Promise<AccountState>
   completeVerification(): Promise<AccountState>
+  register(): Promise<AccountState>
   signOut(): Promise<void>
 }
 

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { getBundledExerciseAsset, getMuscleAsset } from '../assets/exerciseImages'
-import { readCatalogImage } from '../assets/catalogImages'
+import { recoverCatalogImage } from '../assets/catalogImages'
 import { parseCatalogImageReference } from '../assets/catalogImageReference'
 
 type ExerciseArtProps = {
@@ -23,11 +23,28 @@ export function ExerciseArt({ alt, assetKind, bundledAssetId, className = 'size-
     setGlobalImage(null)
     const image = !customImageSrc ? parseCatalogImageReference(assetKind) : null
     if (image) {
-      void readCatalogImage(image).then((blob) => {
-        if (!active || !blob) return
-        objectUrl = URL.createObjectURL(blob)
-        setGlobalImage({ reference: assetKind!, src: objectUrl })
-      }).catch(() => undefined)
+      let running = false
+      let retry = false
+      const load = () => {
+        if (objectUrl) return
+        if (running) { retry = true; return }
+        running = true
+        void recoverCatalogImage(image, import.meta.env.VITE_CATALOG_API_ORIGIN ?? '').then((blob) => {
+          if (!active || !blob) return
+          objectUrl = URL.createObjectURL(blob)
+          setGlobalImage({ reference: assetKind!, src: objectUrl })
+        }).catch(() => undefined).finally(() => {
+          running = false
+          if (active && retry && !objectUrl) { retry = false; load() }
+        })
+      }
+      window.addEventListener('online', load)
+      load()
+      return () => {
+        active = false
+        window.removeEventListener('online', load)
+        if (objectUrl) URL.revokeObjectURL(objectUrl)
+      }
     }
     return () => {
       active = false

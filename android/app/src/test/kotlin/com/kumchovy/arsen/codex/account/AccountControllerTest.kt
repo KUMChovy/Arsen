@@ -16,6 +16,7 @@ class AccountControllerTest {
             return result
         }
         override suspend fun verify(): AuthenticationResult { email = "test@example.test"; return AuthenticationResult.COMPLETE }
+        override suspend fun register(): AuthenticationResult { email = "invited@example.test"; return AuthenticationResult.COMPLETE }
         override suspend fun signOut() { email = null }
     }
 
@@ -54,5 +55,14 @@ class AccountControllerTest {
         })
         assertThrows(IllegalStateException::class.java) { runBlocking { controller.signIn("test@example.test", "secret") } }
         Unit
+    }
+
+    @Test fun `registration cannot replace an active session`() = runBlocking {
+        val auth = FakeAuth().apply { email = "first@example.test" }
+        assertThrows(IllegalStateException::class.java) { runBlocking { AccountController(auth).register() } }
+        Unit
+    }
+    @Test fun `registration returns the activated account`() = runBlocking {
+        assertEquals("invited@example.test", AccountController(FakeAuth()).register().email)
     }
 }

@@ -57,4 +57,17 @@ describe('admin catalog drafts', () => {
     expect((await pg.query('SELECT draft, published FROM arsen_catalog_items WHERE id = $1', [draft.id])).rows).toEqual([{ draft: edited, published: draft }])
     expect((await pg.query('SELECT version FROM arsen_catalog_state')).rows).toEqual([{ version: 0 }])
   })
+
+  it('searches and filters the complete catalog only for administrators', async () => {
+    const query = (text: string) => new Request(`https://api.example.test/?${text}`, { headers: { authorization: 'Bearer test' } })
+    const found = await listCatalogDrafts(query('q=pausada&status=published'), null, deps('admin'))
+    expect(found).toMatchObject({ status: 200, items: [{ id: draft.id }] })
+    expect(await listCatalogDrafts(query('q=pausada&status=archived'), null, deps('admin'))).toMatchObject({ status: 200, items: [] })
+    expect((await listCatalogDrafts(query('q=pausada'), null, deps('user'))).status).toBe(403)
+    expect((await listCatalogDrafts(query('status=invalid'), null, deps('admin'))).status).toBe(400)
+    expect(await listCatalogDrafts(query('muscle=Piernas'), null, deps('admin'))).toMatchObject({ status: 200, items: [{ id: draft.id }] })
+    expect(await listCatalogDrafts(query('muscle=Pecho'), null, deps('admin'))).toMatchObject({ status: 200, items: [] })
+    expect((await listCatalogDrafts(query('muscle=invalid'), null, deps('admin'))).status).toBe(400)
+    expect((await listCatalogDrafts(query('muscle=Piernas&muscle=Pecho'), null, deps('admin'))).status).toBe(400)
+  })
 })

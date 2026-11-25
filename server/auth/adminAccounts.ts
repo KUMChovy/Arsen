@@ -6,6 +6,7 @@ const userId = z.string().regex(/^user_[A-Za-z0-9]{1,123}$/)
 export async function listAdminAccounts(request: Request, cursor: string | null, dependencies: {
   auth: { verify: (token: string) => Promise<string>; role: (userId: string) => Promise<'user' | 'admin' | null> }
   query: (sql: string, params: string[]) => Promise<{ rows: Array<Record<string, unknown>> }>
+  identity?: (userId: string) => Promise<{ userId: string; verifiedEmail: string | null }>
 }) {
   if (request.method !== 'GET') return { status: 405 as const }
   const authorization = await authorize(request, dependencies.auth, 'admin')
@@ -25,5 +26,18 @@ export async function listAdminAccounts(request: Request, cursor: string | null,
     if (![deviceCount, backupCount].every((n) => Number.isSafeInteger(n) && n >= 0)) throw new Error('Metadatos de cuenta inválidos')
     return { userId: row.user_id, role: row.role, createdAt: new Date(row.created_at).toISOString(), deviceCount, backupCount, lastBackupAt: row.last_backup_at === null ? null : new Date(row.last_backup_at as string).toISOString() }
   })
-  return { status: 200 as const, accounts, nextCursor: result.rows.length > 50 ? accounts[accounts.length - 1]!.userId : null }
+  const enriched: Array<(typeof accounts)[number] & { email?: string | null }> = []
+  const identityDeadline = Date.now() + 8_000
+  for (let i = 0; i < accounts.length; i += 10) {
+    const batch = await Promise.all(accounts.slice(i, i + 10).map(async (account) => {
+      if (!dependencies.identity) return account
+      if (Date.now() >= identityDeadline) return { ...account, email: null }
+      try {
+        const identity = await dependencies.identity(account.userId)
+        return { ...account, email: identity.userId === account.userId ? identity.verifiedEmail : null }
+      } catch { return { ...account, email: null } }
+    }))
+    enriched.push(...batch)
+  }
+  return { status: 200 as const, accounts: enriched, nextCursor: result.rows.length > 50 ? accounts[accounts.length - 1]!.userId : null }
 }

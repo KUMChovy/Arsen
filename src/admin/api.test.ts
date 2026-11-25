@@ -32,6 +32,10 @@ describe('admin API client', () => {
     await expect(failed.overview()).rejects.toThrow('No tienes permiso')
     try { await failed.overview() } catch (error) { expect(String(error)).not.toContain('sensitive internal data') }
   })
+  it('distinguishes a firewall rejection from missing administrator permission', async () => {
+    const api = createAdminApi(origin, async () => 'token', async () => new Response(null, { status: 403, headers: { 'x-vercel-mitigated': 'deny' } }))
+    await expect(api.overview()).rejects.toThrow('La protección del servidor rechazó la solicitud')
+  })
   it('explains how to recover when publishing an incomplete exercise', async () => {
     const api = createAdminApi(origin, async () => 'token', async () => new Response(null, { status: 422 }))
     await expect(api.publish('sentadilla')).rejects.toThrow('Completa el ejercicio y utiliza una imagen verificada')

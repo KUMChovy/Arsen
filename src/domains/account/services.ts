@@ -15,6 +15,11 @@ export async function completeVerification(): Promise<AccountState> {
   return isNativeAccount() ? nativeAccount.completeVerification() : { status: 'unavailable' }
 }
 
+export async function registerWithInvitation(): Promise<AccountState> {
+  if (!isNativeAccount()) return { status: 'unavailable' }
+  return nativeAccount.register()
+}
+
 export async function signOut(): Promise<void> {
   if (!isNativeAccount()) throw new Error('Cuenta no disponible')
   await nativeAccount.signOut()

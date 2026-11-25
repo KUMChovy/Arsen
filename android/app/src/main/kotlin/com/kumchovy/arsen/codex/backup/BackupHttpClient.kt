@@ -13,7 +13,7 @@ fun backupApiOrigin(value: String): String {
 }
 
 fun isBackupApiPath(path: String) = path in setOf("/api/v1/backups", "/api/v1/backups/manifest-upload", "/api/v1/backups/reserve", "/api/v1/backups/asset-upload", "/api/v1/backups/confirm", "/api/v1/backups/download", "/api/v1/backups/reconfirm")
-fun isBackupContextPostPath(path: String) = path == "/api/v1/account/devices"
+fun isBackupContextPostPath(path: String) = path in setOf("/api/v1/account/devices", "/api/v1/account/activate")
 fun isBackupContextGetPath(path: String) = path in setOf("/api/v1/backups/latest", "/api/v1/backups")
 
 class BackupHttpClient(origin: String, private val privateOrigin: String = "") : BackupHttp, BackupContextApi, BackupDownloadHttp {
@@ -26,6 +26,8 @@ class BackupHttpClient(origin: String, private val privateOrigin: String = "") :
 
     override suspend fun register(token: String, deviceId: String): BackupHttpResponse =
         post("/api/v1/account/devices", token, kotlinx.serialization.json.buildJsonObject { put("id", kotlinx.serialization.json.JsonPrimitive(deviceId)) }.toString())
+
+    override suspend fun activate(token: String): BackupHttpResponse = post("/api/v1/account/activate", token, "{}")
 
     override suspend fun latest(token: String): BackupHttpResponse = withContext(Dispatchers.IO) {
         val path = "/api/v1/backups/latest"

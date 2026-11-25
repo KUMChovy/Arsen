@@ -4,7 +4,7 @@
 
 ## Platform
 
-web
+android
 
 ## Users
 
@@ -12,7 +12,7 @@ Arsen is for a Spanish-speaking lifter training from their phone who wants fast 
 
 ## Product Purpose
 
-Arsen is a mobile-first workout tracker for strength training. It helps the user execute today's routine, register sets and drop sets, manage routines, review progress, and move data through backups and exports without depending on a backend.
+Arsen is an Android workout tracker for strength training. It helps the user execute today's routine, register sets and drop sets, manage routines, review progress, and move data through backups and exports while preserving offline training.
 
 Success means the user can train with minimal friction, keep historical logs readable even after routines change, and trust that their data remains available offline.
 
@@ -35,9 +35,9 @@ Routes in the current app:
 
 ## Capabilities and Constraints
 
-Arsen is a React 19, TypeScript, Vite, Tailwind v4, Dexie, IndexedDB app. It has no backend, authentication, or cloud sync. Production builds generate a hashed service worker after Vite build.
+Arsen uses React 19, TypeScript, Vite, Tailwind v4, Dexie, IndexedDB and Capacitor for Android. Its account, backup and global catalog features use server-side services; personal training remains available offline. Production web builds generate a hashed service worker after Vite build.
 
-All durable data is client-side. Storage weight is always kg; the UI converts to lb when the preferred unit is lb. UI strings and demo data are Spanish (`es-MX`).
+Personal training data is stored locally and can also be backed up to an account when configured. Storage weight is always kg; the UI converts to lb when the preferred unit is lb. UI strings and demo data are Spanish (`es-MX`).
 
 The routine, workout, progress, and settings domains are separated. Cross-domain access should go through each domain's services or hooks, and repositories own Dexie access.
 
@@ -60,13 +60,13 @@ Project evidence:
 - `src/db/data/demo-routine.json` contains the seed routine and weekly volume targets.
 - `public/manifest.webmanifest` identifies Arsen as a standalone Spanish fitness/productivity web app.
 
-There is no evidence of real customers, testimonials, pricing, backend infrastructure, cloud sync, or external exercise catalog integration in the current repo.
+The repository includes account, backup, global catalog and administration services. Their availability depends on environment configuration and deployment.
 
 ## Product Principles
 
 1. Keep training fast on a phone.
 2. Preserve user data and historical meaning before optimizing for convenience.
-3. Stay offline-first and backend-free unless the product direction explicitly changes.
+3. Keep training offline-first while making account and global catalog services optional for local use.
 4. Keep routine recipes editable without corrupting past workout logs.
 5. Prefer compact, scannable workflows over broad configuration surfaces.
 

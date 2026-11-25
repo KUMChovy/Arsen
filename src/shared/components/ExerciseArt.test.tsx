@@ -16,12 +16,23 @@ describe('ExerciseArt', () => {
     const revoke = vi.fn()
     const OriginalURL = URL
     vi.stubGlobal('URL', class extends OriginalURL { static createObjectURL = () => 'blob:global-image'; static revokeObjectURL = revoke })
-    vi.spyOn(catalogImages, 'readCatalogImage').mockResolvedValue(new Blob(['image'], { type: 'image/png' }))
+    vi.spyOn(catalogImages, 'recoverCatalogImage').mockResolvedValue(new Blob(['image'], { type: 'image/png' }))
     const reference = `global-image-v1:${'a'.repeat(64)}:100:png`
     const { unmount } = render(<ExerciseArt alt="Global" assetKind={reference} muscle="Pecho" />)
     await waitFor(() => expect(screen.getByRole('img', { name: 'Global' })).toHaveAttribute('data-image-source', 'custom'))
     unmount()
     expect(revoke).toHaveBeenCalledWith('blob:global-image')
+  })
+
+  it('retries a missing global image when connectivity returns', async () => {
+    const OriginalURL = URL
+    vi.stubGlobal('URL', class extends OriginalURL { static createObjectURL = () => 'blob:recovered'; static revokeObjectURL = vi.fn() })
+    const recovery = vi.spyOn(catalogImages, 'recoverCatalogImage').mockResolvedValueOnce(null).mockResolvedValue(new Blob(['image'], { type: 'image/png' }))
+    const reference = `global-image-v1:${'a'.repeat(64)}:100:png`
+    render(<ExerciseArt alt="Global" assetKind={reference} muscle="Pecho" />)
+    await waitFor(() => expect(recovery).toHaveBeenCalledTimes(1))
+    window.dispatchEvent(new Event('online'))
+    await waitFor(() => expect(screen.getByRole('img', { name: 'Global' })).toHaveAttribute('data-image-source', 'custom'))
   })
 
   it('uses a custom image before bundled and muscle fallback', () => {

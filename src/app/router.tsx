@@ -2,6 +2,7 @@ import { lazy, Suspense } from 'react'
 import type { ReactNode } from 'react'
 import { createBrowserRouter } from 'react-router-dom'
 import { AppShell } from './AppShell'
+import { AccessGate } from '../domains/account/AccessGate'
 
 const ProgressPage = lazy(() =>
   import('../domains/progress/pages/ProgressPage').then((module) => ({ default: module.ProgressPage })),
@@ -50,7 +51,7 @@ function lazyPage(page: ReactNode) {
 
 export const router = createBrowserRouter([
   {
-    element: <AppShell />,
+    element: <AccessGate><AppShell /></AccessGate>,
     children: [
       { path: '/', element: lazyPage(<WorkoutPage />) },
       { path: '/rutina', element: lazyPage(<RoutinePage />) },

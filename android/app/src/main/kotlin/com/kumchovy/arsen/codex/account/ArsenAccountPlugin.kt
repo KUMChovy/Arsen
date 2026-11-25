@@ -34,6 +34,7 @@ class ArsenAccountPlugin : Plugin() {
         controller.signIn(call.getString("email") ?: "", call.getString("password") ?: "")
     }
     @PluginMethod fun completeVerification(call: PluginCall) = run(call) { controller.verify() }
+    @PluginMethod fun register(call: PluginCall) = run(call) { controller.register() }
     @PluginMethod fun signOut(call: PluginCall) = run(call) { controller.signOut(); AccountStatus("signed-out") }
 
     override fun handleOnDestroy() { scope.cancel(); super.handleOnDestroy() }

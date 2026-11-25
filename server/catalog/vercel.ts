@@ -6,7 +6,7 @@ export async function serveCatalog(request: Request): Promise<Response> {
   if (process.env.CATALOG_PUBLIC_ENABLED !== 'true' || !databaseUrl) return new Response(null, { status: 503 })
   try {
     const sql = neon(databaseUrl)
-    const handler = createCatalogHandler(async (text) => ({ rows: await sql.query(text) }), true)
+    const handler = createCatalogHandler(async (text, params) => ({ rows: await sql.query(text, params) }), true)
     return await handler(request)
   } catch {
     return new Response(null, { status: 503 })

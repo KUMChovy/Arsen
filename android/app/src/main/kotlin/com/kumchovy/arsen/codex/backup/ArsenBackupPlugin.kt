@@ -86,7 +86,7 @@ class ArsenBackupPlugin : Plugin() {
                 if (result == BackupStageResult.STORED) {
                     when (backupScheduleForStage(periodic)) {
                         BackupSchedule.IMMEDIATE -> BackupScheduler.enqueue(context)
-                        BackupSchedule.PERIODIC -> BackupScheduler.schedulePeriodic(context)
+                        BackupSchedule.PERIODIC -> withContext(Dispatchers.IO) { BackupScheduler.schedulePeriodic(context).result.get() }
                     }
                 }
                 call.resolve(JSObject().put("status", result.name))
@@ -176,7 +176,7 @@ class ArsenBackupPlugin : Plugin() {
             try {
                 val session = withContext(Dispatchers.IO) { NativeSessionProvider(ClerkSessionSource()).getLocal() }
                 check(session.result == SessionResult.READY && session.owner == owner)
-                BackupScheduler.schedulePeriodic(context)
+                withContext(Dispatchers.IO) { BackupScheduler.schedulePeriodic(context).result.get() }
                 call.resolve(JSObject().put("status", "SCHEDULED"))
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (_: Exception) { call.reject("No se pudo programar el respaldo") }
@@ -221,7 +221,7 @@ class ArsenBackupPlugin : Plugin() {
             try {
                 val result = withContext(Dispatchers.IO) {
                     val client = BackupHttpClient(BuildConfig.ARSEN_BACKUP_API_ORIGIN)
-                    BackupVersionList(NativeSessionProvider(ClerkSessionSource())) { client.list(it) }.load()
+                    BackupVersionList(NativeSessionProvider(ClerkSessionSource()), activate = { client.activate(it) }) { client.list(it) }.load()
                 }
                 call.resolve(JSObject().put("owner", result.owner).put("backups", com.getcapacitor.JSArray(result.backups.toString())))
             } catch (cancelled: CancellationException) { throw cancelled }

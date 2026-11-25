@@ -43,6 +43,46 @@ describe('Cuenta y respaldo', () => {
     expect(screen.getByRole('link', { name: /volver al entrenamiento/i })).toBeInTheDocument()
   })
 
+  it('requests backup notifications after sign-in and keeps the account usable if denied', async () => {
+    vi.mocked(signIn).mockResolvedValue({ status: 'signed-in', email: 'atleta@example.test' })
+    vi.mocked(requestBackupNotifications).mockResolvedValue(false)
+    vi.mocked(listRestoreVersions).mockResolvedValue({ owner: 'user_abc', backups: [] })
+    show()
+    fireEvent.change(await screen.findByLabelText('Correo electrónico'), { target: { value: 'a@example.test' } })
+    fireEvent.change(screen.getByLabelText('Contraseña'), { target: { value: 'clave' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Iniciar sesión' }))
+    await waitFor(() => expect(requestBackupNotifications).toHaveBeenCalledOnce())
+    expect(await screen.findByText(/notificaciones.*desactivadas/i)).toBeInTheDocument()
+    expect(screen.getByText('atleta@example.test')).toBeInTheDocument()
+  })
+
+  it('offers the confirmed cloud copy after signing in without restoring it automatically', async () => {
+    const summary = { id: '8166d21c-bac3-497b-9d22-8492474c982b', deviceId: '67c5f68b-13e4-48e7-9a64-2dc6dc68d905', localRevision: 3, contractVersion: 1 as const, sizeBytes: 1024, includesHealth: false, confirmedAt: '2026-11-23T12:00:00.000Z' }
+    vi.mocked(signIn).mockResolvedValue({ status: 'signed-in', email: 'atleta@example.test' })
+    vi.mocked(listRestoreVersions).mockResolvedValue({ owner: 'user_abc', backups: [summary] })
+    show()
+    fireEvent.change(await screen.findByLabelText('Correo electrónico'), { target: { value: 'a@example.test' } })
+    fireEvent.change(screen.getByLabelText('Contraseña'), { target: { value: 'clave' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Iniciar sesión' }))
+    expect(await screen.findByText(/encontramos un respaldo/i)).toBeInTheDocument()
+    expect(screen.getByText(/1,024 bytes/i)).toBeInTheDocument()
+    expect(applyRestorePreview).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: /decidir después/i }))
+    expect(screen.queryByText(/encontramos un respaldo/i)).not.toBeInTheDocument()
+  })
+
+  it('keeps the signed-in account usable when the backup lookup fails', async () => {
+    vi.mocked(signIn).mockResolvedValue({ status: 'signed-in', email: 'atleta@example.test' })
+    vi.mocked(listRestoreVersions).mockRejectedValue(new Error('offline'))
+    show()
+    fireEvent.change(await screen.findByLabelText('Correo electrónico'), { target: { value: 'a@example.test' } })
+    fireEvent.change(screen.getByLabelText('Contraseña'), { target: { value: 'clave' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Iniciar sesión' }))
+    expect(await screen.findByText(/no se pudo consultar el respaldo/i)).toBeInTheDocument()
+    expect(screen.getByText('atleta@example.test')).toBeInTheDocument()
+    expect(applyRestorePreview).not.toHaveBeenCalled()
+  })
+
   it('offers additional verification only when Clerk requests it', async () => {
     vi.mocked(signIn).mockResolvedValue({ status: 'verification-required' })
     vi.mocked(completeVerification).mockResolvedValue({ status: 'signed-in', email: 'atleta@example.test' })
@@ -52,6 +92,20 @@ describe('Cuenta y respaldo', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Iniciar sesión' }))
     fireEvent.click(await screen.findByRole('button', { name: /completar verificación/i }))
     expect(await screen.findByText('atleta@example.test')).toBeInTheDocument()
+  })
+
+  it('also offers a cloud copy after additional verification', async () => {
+    const summary = { id: '8166d21c-bac3-497b-9d22-8492474c982b', deviceId: '67c5f68b-13e4-48e7-9a64-2dc6dc68d905', localRevision: 3, contractVersion: 1 as const, sizeBytes: 1024, includesHealth: false, confirmedAt: '2026-11-23T12:00:00.000Z' }
+    vi.mocked(signIn).mockResolvedValue({ status: 'verification-required' })
+    vi.mocked(completeVerification).mockResolvedValue({ status: 'signed-in', email: 'atleta@example.test' })
+    vi.mocked(listRestoreVersions).mockResolvedValue({ owner: 'user_abc', backups: [summary] })
+    show()
+    fireEvent.change(await screen.findByLabelText('Correo electrónico'), { target: { value: 'a@example.test' } })
+    fireEvent.change(screen.getByLabelText('Contraseña'), { target: { value: 'clave' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Iniciar sesión' }))
+    fireEvent.click(await screen.findByRole('button', { name: /completar verificación/i }))
+    expect(await screen.findByText(/encontramos un respaldo/i)).toBeInTheDocument()
+    expect(applyRestorePreview).not.toHaveBeenCalled()
   })
 
   it('shows unavailable and failed states without exposing errors', async () => {
@@ -85,6 +139,7 @@ describe('Cuenta y respaldo', () => {
     show()
     fireEvent.click(await screen.findByRole('button', { name: 'Preparar respaldo' }))
     expect(await screen.findByText(/ya existe un respaldo/i)).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Confirmar respaldo' })).toHaveFocus()
     expect(queueManualBackup).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: 'Continuar con este dispositivo' }))
     await waitFor(() => expect(queueManualBackup).toHaveBeenCalledWith(context))
@@ -99,6 +154,7 @@ describe('Cuenta y respaldo', () => {
     show()
     fireEvent.click(await screen.findByRole('button', { name: 'Ver respaldo para restaurar' }))
     expect(await screen.findByText(/reemplazará los datos locales/i)).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Confirmar restauración' })).toHaveFocus()
     expect(applyRestorePreview).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: 'Reemplazar datos locales' }))
     await waitFor(() => expect(applyRestorePreview).toHaveBeenCalledWith(preview))

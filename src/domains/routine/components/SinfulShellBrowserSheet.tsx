@@ -1,5 +1,6 @@
 import { ArrowLeft, Check, ListPlus, Search, X } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
+import { useDialogFocus } from '../../../shared/components/useDialogFocus'
 import { ExerciseArt } from '../../../shared/components/ExerciseArt'
 import {
   type SinfulShellExercise,
@@ -28,6 +29,7 @@ type SinfulShellBrowserSheetProps = {
 
 export function SinfulShellBrowserSheet(props: SinfulShellBrowserSheetProps) {
   const { catalog, remoteCatalog, disabled, mode, onAddCopy, onAddCopyToRoutine, onClose, onViewCatalogCopy } = props
+  const dialogRef = useDialogFocus(onClose)
   const [query, setQuery] = useState('')
   const [muscle, setMuscle] = useState<MuscleGroup | 'Todos'>('Todos')
   const [selectedExerciseId, setSelectedExerciseId] = useState<string | null>(null)
@@ -44,7 +46,7 @@ export function SinfulShellBrowserSheet(props: SinfulShellBrowserSheetProps) {
   return (
     <div className="fixed inset-0 z-50 mx-auto flex max-w-[430px] items-end bg-black/55">
       <button aria-label="Cerrar Sinful Shell" className="absolute inset-0 cursor-default" onClick={onClose} type="button" />
-      <section className="relative max-h-[88vh] w-full overflow-y-auto rounded-t-[22px] border-t border-white/10 bg-arsen-bg2 p-4 shadow-[0_-16px_40px_rgb(0_0_0_/_0.35)]">
+      <section aria-label="Sinful Shell" aria-modal="true" role="dialog" ref={dialogRef} tabIndex={-1} className="relative max-h-[88vh] w-full overflow-y-auto rounded-t-[22px] border-t border-white/10 bg-arsen-bg2 p-4 shadow-[0_-16px_40px_rgb(0_0_0_/_0.35)]">
         <div className="mx-auto mb-4 h-1.5 w-14 rounded-full bg-white/25" />
         {selectedExercise ? (
           <SinfulShellDetail

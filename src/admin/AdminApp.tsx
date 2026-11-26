@@ -36,6 +36,8 @@ export function AdminApp({ clerk, api }: { clerk: AdminClerk; api: Api }) {
   const catalogRequest = useRef(0)
   const uploadAbort = useRef<AbortController | null>(null)
   const invitationFlight = useRef<object | null>(null)
+  const maintenanceFlight = useRef(false)
+  const deletionFlight = useRef(false)
   const fileInput = useRef<HTMLInputElement>(null)
   const [sessionVersion, setSessionVersion] = useState(0)
   const [section, setSection] = useState<Section>('Resumen')
@@ -68,6 +70,8 @@ export function AdminApp({ clerk, api }: { clerk: AdminClerk; api: Api }) {
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [maintenanceBusy, setMaintenanceBusy] = useState(false)
+  const [maintenanceMessage, setMaintenanceMessage] = useState('')
 
   useEffect(() => clerk.addListener(() => {
     const nextSessionId = clerk.session?.id ?? null
@@ -77,6 +81,8 @@ export function AdminApp({ clerk, api }: { clerk: AdminClerk; api: Api }) {
     accountSelection.current += 1
     uploadAbort.current?.abort()
     invitationFlight.current = null
+    maintenanceFlight.current = false; setMaintenanceBusy(false); setMaintenanceMessage('')
+    deletionFlight.current = false
     setSessionVersion(epoch.current)
     const active = Boolean(clerk.session)
     setSignedIn(active)
@@ -121,11 +127,50 @@ export function AdminApp({ clerk, api }: { clerk: AdminClerk; api: Api }) {
     return () => URL.revokeObjectURL(url)
   }, [file])
 
+  async function runMaintenance() {
+    if (maintenanceFlight.current) return
+    maintenanceFlight.current = true
+    const version = epoch.current
+    setMaintenanceBusy(true); setMaintenanceMessage(''); setError('')
+    try {
+      const confirmed = await confirmAction('Ejecutar limpieza', 'Se procesará una parte de la limpieza pendiente de respaldos. Las copias válidas se conservan.', 'Ejecutar')
+      if (!confirmed || version !== epoch.current) return
+      const result = await api.maintenance()
+      if (version !== epoch.current) return
+      const messages = { idle: 'No hay trabajo de limpieza listo ahora.', blocked: 'Una entrada sigue protegida; se revisará después.', complete: 'Se completó una entrada de limpieza.', pending: `${result.deleted} archivos eliminados. Puede quedar trabajo pendiente; vuelve a ejecutar si lo deseas.`, expired: 'Se preparó una carga vencida para limpieza posterior.' }
+      setMaintenanceMessage(messages[result.result])
+    } catch (reason) { if (version === epoch.current) setError(errorText(reason)) }
+    finally { if (version === epoch.current) { maintenanceFlight.current = false; setMaintenanceBusy(false) } }
+  }
   async function selectAccount(userId: string) {
     const version = epoch.current
     const selection = ++accountSelection.current
     setOwner(userId); setBackups(null); setError(''); setBusy(true)
     try { const result = await api.backups(userId); if (version === epoch.current && selection === accountSelection.current) setBackups(result.backups) } catch (reason) { if (version === epoch.current && selection === accountSelection.current) setError(errorText(reason)) } finally { if (version === epoch.current && selection === accountSelection.current) setBusy(false) }
+  }
+  async function deleteSelectedAccount() {
+    if (!owner || deletionFlight.current) return
+    deletionFlight.current = true
+    const version = epoch.current
+    const target = owner
+    const selected = accounts.find((item) => item.userId === target)
+    try {
+      if (!selected?.deletionPending && !await confirmAction('Eliminar cuenta y respaldos', `Se eliminarán definitivamente la cuenta ${selected?.email ?? target} y sus respaldos de la nube. Los datos offline de sus teléfonos no se borran. El proceso requiere esperar al menos una hora y continuar desde este panel.`, 'Eliminar cuenta')) return
+      if (version !== epoch.current) return
+      setBusy(true); setError(''); setMessage('')
+      const result = await api.deleteAccount(target)
+      if (version !== epoch.current) return
+      if (result.result === 'complete') {
+        setAccounts((items) => items.filter((item) => item.userId !== target))
+        setOwner((current) => current === target ? '' : current)
+        setBackups(null)
+        setMessage('Cuenta y respaldos eliminados de la nube.')
+      } else {
+        setAccounts((items) => items.map((item) => item.userId === target ? { ...item, deletionPending: true } : item))
+        setMessage(result.result === 'waiting' ? 'Acceso bloqueado. Espera al menos una hora y continúa la eliminación desde esta cuenta.' : 'Se procesó un lote. Continúa la eliminación hasta completarla.')
+      }
+    } catch (reason) { if (version === epoch.current) setError(`${errorText(reason)} Vuelve a abrir Cuentas para revisar si quedó pendiente.`) }
+    finally { if (version === epoch.current) setBusy(false); deletionFlight.current = false }
   }
   async function moreAccounts() {
     if (!accountCursor) return
@@ -235,6 +280,8 @@ export function AdminApp({ clerk, api }: { clerk: AdminClerk; api: Api }) {
       {message && <p role="status" className="mb-5 rounded-lg border border-arsen-acid/40 p-3 text-sm text-arsen-ink">{message}</p>}
       {busy && <p role="status" className="mb-4 text-sm text-arsen-muted">Cargando…</p>}
       {section === 'Resumen' && overview && <dl className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{[['Cuentas', overview.accounts], ['Dispositivos', overview.devices], ['Respaldos confirmados', overview.confirmedBackups], ['Ejercicios publicados', overview.publishedExercises]].map(([label, value]) => <div key={label} className="rounded-2xl border border-arsen-purple/30 bg-gradient-to-br from-arsen-surface to-arsen-purple/20 p-6"><dt className="text-sm text-arsen-muted">{label}</dt><dd className="mt-3 text-3xl font-black tabular-nums">{value}</dd></div>)}</dl>}
+      {section === 'Resumen' && <section aria-labelledby="maintenance-title" className="mt-6 rounded-xl border border-white/10 p-5"><h2 id="maintenance-title" className="text-lg font-bold">Limpieza de respaldos</h2><p className="mt-2 text-sm leading-6 text-arsen-muted">Elimina archivos pendientes de limpieza en pequeños lotes. Solo se ejecuta cuando lo solicitas.</p><button className={`${secondary} mt-4`} disabled={maintenanceBusy} onClick={() => void runMaintenance()} type="button">{maintenanceBusy ? 'Procesando…' : 'Ejecutar limpieza'}</button>{maintenanceMessage && <p aria-live="polite" className="mt-3 text-sm text-arsen-ink">{maintenanceMessage}</p>}</section>}
+      {section === 'Cuentas' && owner && <section aria-label="Eliminar cuenta seleccionada" className="mt-6 rounded-xl border border-red-400/30 p-4"><h2 className="font-bold">Eliminar cuenta</h2><p className="mt-2 break-all text-sm text-arsen-muted">Cuenta seleccionada: {accounts.find((item) => item.userId === owner)?.email ?? owner}. Se eliminan la cuenta y sus respaldos de la nube; los datos guardados en teléfonos permanecen.</p>{accounts.find((item) => item.userId === owner)?.deletionPending && <p className="mt-2 text-sm text-arsen-muted">Eliminación pendiente. Continúa para avanzar; después de bloquear el acceso hay que esperar al menos una hora.</p>}<button className="mt-3 min-h-11 rounded-lg border border-red-400/50 px-3 text-sm font-bold text-red-200 disabled:opacity-50" disabled={busy} onClick={() => void deleteSelectedAccount()} type="button">{accounts.find((item) => item.userId === owner)?.deletionPending ? 'Continuar eliminación' : 'Eliminar cuenta y respaldos'}</button></section>}
       {section === 'Auditoría' && audit && <section aria-label="Eventos administrativos" className="divide-y divide-white/10 rounded-xl border border-white/10"><p className="p-4 text-sm text-arsen-muted">Últimos 100 eventos registrados.</p>{audit.length === 0 && <p className="p-4 text-sm text-arsen-muted">No hay eventos registrados.</p>}{audit.map((event, index) => <div key={`${event.created_at}-${event.action}-${event.target_id}-${index}`} className="space-y-1 p-4 text-sm"><p className="font-semibold">{event.action} · {event.target_id}</p><p className="break-all text-arsen-muted">{event.actor_id} · {new Intl.DateTimeFormat('es-MX', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(event.created_at))}</p></div>)}</section>}
       {section === 'Catálogo' && <SeedImport key={sessionVersion} api={api} onComplete={() => refreshCatalog()} />}
       {section === 'Catálogo' && <form onSubmit={searchCatalog} className="mb-5 flex flex-wrap items-end gap-3"><label className="min-w-48 flex-1 text-sm font-semibold">Buscar ejercicios<input className={field} value={catalogSearch} onChange={(event) => setCatalogSearch(event.target.value)} maxLength={200} /></label><label className="text-sm font-semibold">Estado<select className={field} value={catalogStatus} onChange={(event) => setCatalogStatus(event.target.value as typeof catalogStatus)}><option value="all">Todos</option><option value="draft">Borradores</option><option value="published">Publicados</option><option value="archived">Archivados</option></select></label><label className="text-sm font-semibold">Músculo<select className={field} value={catalogMuscle} onChange={(event) => setCatalogMuscle(event.target.value as typeof catalogMuscle)}><option value="">Todos</option>{muscles.map((value) => <option key={value}>{value}</option>)}</select></label><button className={action} disabled={busy}>Buscar</button><button type="button" className={secondary} onClick={() => { resetDraft(); setEditorOpen(true) }}>Agregar ejercicio</button></form>}

@@ -8,7 +8,10 @@ import com.getcapacitor.annotation.CapacitorPlugin
 import com.getcapacitor.annotation.Permission
 import com.getcapacitor.annotation.PermissionCallback
 import android.Manifest
+import android.content.Intent
+import android.net.Uri
 import android.os.Build
+import android.provider.Settings
 import androidx.core.app.NotificationManagerCompat
 import com.kumchovy.arsen.codex.BuildConfig
 import com.kumchovy.arsen.codex.account.ClerkSessionSource
@@ -39,6 +42,31 @@ class ArsenBackupPlugin : Plugin() {
 
     @PermissionCallback fun backupNotificationPermissionResult(call: PluginCall) {
         call.resolve(JSObject().put("enabled", NotificationManagerCompat.from(context).areNotificationsEnabled()))
+    }
+
+    @PluginMethod fun openNotificationSettings(call: PluginCall) {
+        try {
+            val intent = if (Build.VERSION.SDK_INT >= 26) Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                else Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}"))
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(intent)
+            call.resolve()
+        } catch (_: Exception) { call.reject("No se pudieron abrir los ajustes de notificaciones") }
+    }
+
+    @PluginMethod fun scheduleManualReminder(call: PluginCall) {
+        val date = call.getString("date") ?: run { call.reject("Fecha requerida"); return }
+        scope.launch {
+            try { withContext(Dispatchers.IO) { ManualBackupReminderScheduler.schedule(context, date) }; call.resolve() }
+            catch (_: Exception) { call.reject("No se pudo programar el recordatorio") }
+        }
+    }
+
+    @PluginMethod fun consumeManualReminder(call: PluginCall) {
+        val intent = activity.intent
+        val open = intent?.getBooleanExtra("arsen_open_backup_reminder", false) == true
+        if (open) intent?.removeExtra("arsen_open_backup_reminder")
+        call.resolve(JSObject().put("open", open))
     }
 
     @PluginMethod fun prepareContext(call: PluginCall) {

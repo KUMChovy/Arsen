@@ -17,6 +17,14 @@ describe('demo initialization', () => {
     await ensureDemoData()
     expect((await db.settings.get('app'))?.schemaVersion).toBe(CURRENT_SCHEMA_VERSION)
     expect(await db.routines.count()).toBe(1)
+    expect(await db.localMetadata.get('productTour')).toEqual({ id: 'productTour', value: 'pending' })
+  })
+
+  it('does not restart the tour when initialization runs again', async () => {
+    await ensureDemoData()
+    await db.localMetadata.put({ id: 'productTour', value: 'completed' })
+    await ensureDemoData()
+    expect(await db.localMetadata.get('productTour')).toEqual({ id: 'productTour', value: 'completed' })
   })
 
   it('preserves a partially populated database instead of adding demo data', async () => {

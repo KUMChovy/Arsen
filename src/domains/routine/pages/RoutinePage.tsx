@@ -49,6 +49,7 @@ import { kgToUnit, unitToKg } from '../../../shared/utils/weight'
 import { useWeightIncreaseRecommendations } from '../../workout/hooks'
 import type { WeightUnit } from '../../workout/types'
 import { WarmupProtocolInfoSheet } from '../components/WarmupProtocolInfoSheet'
+import { RoutineWizard } from '../components/RoutineWizard'
 import { ExerciseImageSelector, type ExerciseImageSelection } from '../components/ExerciseImageSelector'
 import { ExerciseActions } from '../components/ExerciseActions'
 import { CatalogExerciseArt, SinfulShellBrowserSheet } from '../components/SinfulShellBrowserSheet'
@@ -61,7 +62,7 @@ import {
   createCatalogExercise,
   createExerciseAsset,
   createDay,
-  createRoutine,
+  createGuidedRoutine,
   deleteCatalogExercise,
   deleteDay,
   deleteExercise,
@@ -130,6 +131,17 @@ export function RoutinePage() {
   const isPending = transitionPending || actionBusy
   const [actionMessage, setActionMessage] = useState<string | null>(null)
   const [sheetError, setSheetError] = useState<string | null>(null)
+  const [wizardOpen, setWizardOpen] = useState(false)
+  const [wizardError, setWizardError] = useState<string | null>(null)
+
+  useEffect(() => {
+    const select = (event: Event) => {
+      const mode = (event as CustomEvent<unknown>).detail
+      if (mode === 'view' || mode === 'edit' || mode === 'catalog') setMode(mode)
+    }
+    window.addEventListener('arsen:tour-routine-mode', select)
+    return () => window.removeEventListener('arsen:tour-routine-mode', select)
+  }, [])
 
   const selectedDay = days.find((day) => day.id === selectedDayId) ?? days[0] ?? null
   const selectedExercises = selectedDay ? bundle?.exercisesByDay.get(selectedDay.id) ?? [] : []
@@ -153,11 +165,8 @@ export function RoutinePage() {
   }
 
   function createAndActivateRoutine() {
-    runRoutineAction(async () => {
-      const routineId = await createRoutine('Nueva rutina')
-      await setActiveRoutine(routineId)
-      return routineId
-    }, 'Rutina creada y activada')
+    setWizardError(null)
+    setWizardOpen(true)
   }
 
   const hasNoRoutines = summaries?.length === 0
@@ -166,7 +175,8 @@ export function RoutinePage() {
 
   return (
     <div className="space-y-4">
-      <PageHeader eyebrow="Gestion de rutinas y catalogo" title="Rutina">
+      {wizardOpen ? <RoutineWizard catalog={catalog} busy={isPending} error={wizardError} suspended={Boolean(sinfulShellOpen || catalogSheet)} onOpenSinfulShell={() => setSinfulShellOpen({ mode: 'catalog' })} onClose={() => { setWizardOpen(false); setWizardError(null) }} onSave={(input) => { setWizardError(null); runRoutineAction(() => createGuidedRoutine(input), 'Rutina creada y activada', () => { setWizardOpen(false); setMode('edit') }, setWizardError) }} /> : null}
+      <PageHeader tourKey="routine-header" eyebrow="Gestion de rutinas y catalogo" title="Rutina">
         <RoutineActions
           createDisabled={isPending}
           exportDisabled={isPending || !bundle}
@@ -179,7 +189,7 @@ export function RoutinePage() {
         />
       </PageHeader>
 
-      {!hasNoRoutines ? <ModeTabs mode={mode} onModeChange={setMode} /> : null}
+      <ModeTabs mode={mode} onModeChange={setMode} />
 
       {actionMessage ? (
         <div className="rounded-[10px] border border-arsen-purple/40 bg-arsen-purple/15 px-3 py-2 text-xs text-arsen-purple2" role="status">
@@ -206,9 +216,9 @@ export function RoutinePage() {
         </ActionButton>
       ) : null}
 
-      {hasNoRoutines ? <EmptyRoutineState disabled={isPending} onCreate={createAndActivateRoutine} /> : null}
+      {hasNoRoutines && mode !== 'catalog' ? <EmptyRoutineState disabled={isPending} onCreate={createAndActivateRoutine} /> : null}
 
-      {mode === 'view' && !hasNoRoutines ? (
+      <div data-tour="routine-days">{mode === 'view' && !hasNoRoutines ? (
         <RoutineView
           bundle={bundle}
           days={days}
@@ -216,7 +226,7 @@ export function RoutinePage() {
           onViewHistory={() => { if (bundle) navigate(`/historial?modo=list&rutina=${encodeURIComponent(bundle.routine.id)}`) }}
           onOrganize={() => setMode('edit')}
         />
-      ) : null}
+      ) : null}</div>
 
       {mode === 'edit' && bundle ? (
         <RoutineEditor
@@ -420,9 +430,11 @@ function ModeTabs({ mode, onModeChange }: { mode: Mode; onModeChange: (mode: Mod
   const labels: Record<Mode, string> = { catalog: 'Catalogo', edit: 'Editar', view: 'Ver' }
 
   return (
-    <div className="grid grid-cols-3 overflow-hidden rounded-[10px] border border-white/10 bg-arsen-surface">
+    <div data-tour="routine-tabs" className="grid grid-cols-3 overflow-hidden rounded-[10px] border border-white/10 bg-arsen-surface">
       {tabs.map((tab) => (
         <button
+          aria-pressed={mode === tab}
+          data-tour={`routine-mode-${tab}`}
           className={['min-h-10 text-sm font-semibold', mode === tab ? 'bg-arsen-purple/55 text-white' : 'text-arsen-muted'].join(' ')}
           key={tab}
           onClick={() => onModeChange(tab)}

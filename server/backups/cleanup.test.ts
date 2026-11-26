@@ -40,4 +40,17 @@ describe('delayed backup cleanup', () => {
     await expect(cleanupOneBackup({ transaction, list: async () => [path], remove: async () => { throw new Error('storage offline') } })).rejects.toThrow()
     expect((await db.query('SELECT backup_id FROM arsen_backup_cleanup')).rows).toHaveLength(1)
   })
+  it('retains a referenced backup but lets the next queued backup progress', async () => {
+    const nextId = 'c535e624-6166-4cc2-8858-17991596a999'
+    const nextPath = backupObjectPath('a', nextId, 'manifest')
+    await db.query("INSERT INTO arsen_backups (id,user_id,device_id,contract_version,local_revision,manifest_sha256,size_bytes) VALUES ($1,'a',$2,1,1,$3,1)", [backupId, device, 'a'.repeat(64)])
+    await db.query("INSERT INTO arsen_backup_cleanup (backup_id,user_id,not_before) VALUES ($1,'a',now()-interval '30 seconds')", [nextId])
+    const remove = vi.fn(async () => {})
+    expect(await cleanupOneBackup({ transaction, list: async () => [nextPath], remove })).toEqual({ status: 'blocked', deleted: 0 })
+    expect(await cleanupOneBackup({ transaction, list: async () => [nextPath], remove })).toEqual({ status: 'pending', deleted: 1 })
+    expect(remove).toHaveBeenCalledOnce()
+    expect(remove).toHaveBeenCalledWith([nextPath])
+    expect((await db.query('SELECT backup_id FROM arsen_backup_cleanup WHERE backup_id = $1', [backupId])).rows).toHaveLength(1)
+    expect((await db.query('SELECT id FROM arsen_backups WHERE id = $1', [backupId])).rows).toHaveLength(1)
+  })
 })

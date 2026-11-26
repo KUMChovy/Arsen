@@ -1,0 +1,5 @@
+# Limpieza manual de respaldos desde administración
+
+El administrador podrá ejecutar bajo demanda el mantenimiento existente desde Resumen. No se programa ninguna ejecución ni consulta periódica. Un botón solicita confirmación y procesa como máximo una unidad del mantenimiento existente; informa si no había trabajo, se aplazó una entrada, se retiraron objetos, se completó una entrada o se venció una carga. Se puede repetir a voluntad.
+
+La ruta POST verifica sesión y rol admin en el servidor, conserva CORS y respuestas no cacheables, no expone secretos ni acepta rutas de objetos del cliente y reutiliza las comprobaciones de propiedad, bloqueo y retención existentes. La operación manual usa la puerta administrativa y requiere el token privado del almacén; no habilita la puerta del cron ni configura una programación. Si falta configuración o falla un servicio se muestra error recuperable. La interfaz se adapta al panel existente y evita envíos duplicados. Las pruebas cubren autorización, métodos, aislamiento, fallos, seguridad de limpieza e interacción. No se despliega ni ejecuta limpieza real durante el desarrollo.

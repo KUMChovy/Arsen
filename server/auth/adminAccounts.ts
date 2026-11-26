@@ -13,7 +13,7 @@ export async function listAdminAccounts(request: Request, cursor: string | null,
   if (authorization.status !== 200) return authorization
   if (cursor !== null && !userId.safeParse(cursor).success) return { status: 400 as const }
   const result = await dependencies.query(`
-    SELECT p.user_id, p.role, p.created_at::text,
+    SELECT p.user_id, p.role, p.created_at::text, EXISTS(SELECT 1 FROM arsen_account_deletions x WHERE x.user_id = p.user_id) AS deletion_pending,
       (SELECT COUNT(*)::text FROM arsen_devices d WHERE d.user_id = p.user_id) AS device_count,
       (SELECT COUNT(*)::text FROM arsen_backups b WHERE b.user_id = p.user_id AND b.status = 'confirmed') AS backup_count,
       (SELECT MAX(b.confirmed_at)::text FROM arsen_backups b WHERE b.user_id = p.user_id AND b.status = 'confirmed') AS last_backup_at
@@ -24,7 +24,8 @@ export async function listAdminAccounts(request: Request, cursor: string | null,
     const deviceCount = Number(row.device_count)
     const backupCount = Number(row.backup_count)
     if (![deviceCount, backupCount].every((n) => Number.isSafeInteger(n) && n >= 0)) throw new Error('Metadatos de cuenta inválidos')
-    return { userId: row.user_id, role: row.role, createdAt: new Date(row.created_at).toISOString(), deviceCount, backupCount, lastBackupAt: row.last_backup_at === null ? null : new Date(row.last_backup_at as string).toISOString() }
+    if (typeof row.deletion_pending !== 'boolean') throw new Error('Estado de cuenta inválido')
+    return { userId: row.user_id, role: row.role, createdAt: new Date(row.created_at).toISOString(), deviceCount, backupCount, lastBackupAt: row.last_backup_at === null ? null : new Date(row.last_backup_at as string).toISOString(), deletionPending: row.deletion_pending }
   })
   const enriched: Array<(typeof accounts)[number] & { email?: string | null }> = []
   const identityDeadline = Date.now() + 8_000

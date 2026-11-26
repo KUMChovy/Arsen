@@ -11,6 +11,7 @@ import type { AppSettings, DeloadCycle } from '../domains/settings/types'
 import type { DropSetLog, ExerciseLog, SetLog, SkipLog, WorkoutSession } from '../domains/workout/types'
 import { CONTRACT_TABLE_NAMES, installRevisionTracking } from './revisionTracking'
 import type { PublishedCatalog } from '../shared/validation/remoteCatalog'
+import type { AppNotice } from '../domains/settings/notificationCenter'
 
 import { CURRENT_SCHEMA_VERSION } from './schemaVersion'
 export { CURRENT_SCHEMA_VERSION } from './schemaVersion'
@@ -29,7 +30,7 @@ export class ArsenDatabase extends Dexie {
   setLogs!: Table<SetLog, string>
   dropSetLogs!: Table<DropSetLog, string>
   skipLogs!: Table<SkipLog, string>
-  localMetadata!: Table<{ id: 'revision'; value: number } | { id: 'globalCatalog'; value: PublishedCatalog } | { id: 'automaticBackup'; value: { owner: string; deviceId: string; baseBackupId: string | null; baselineConfirmedId: string | null; baselineEquivalentRevision?: number | null; equivalentRevision?: number; equivalentBackupId?: string } }, string>
+  localMetadata!: Table<{ id: 'revision'; value: number } | { id: 'emptyRoutineMigration'; value: boolean } | { id: 'productTour'; value: 'pending' | 'completed' } | { id: 'pageTours'; value: string[] } | { id: 'noticeCenterEnabled'; value: boolean } | { id: 'globalCatalog'; value: PublishedCatalog } | { id: 'notificationCenter'; value: AppNotice[] } | { id: 'automaticBackup'; value: { owner: string; deviceId: string; baseBackupId: string | null; baselineConfirmedId: string | null; baselineEquivalentRevision?: number | null; equivalentRevision?: number; equivalentBackupId?: string } }, string>
 
   constructor(name = 'arsen', options?: DexieOptions) {
     super(name, options)

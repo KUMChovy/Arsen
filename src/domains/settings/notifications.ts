@@ -16,6 +16,10 @@ export async function requestDeloadNotifications() {
   return permission
 }
 
+export async function disableDeloadNotifications() {
+  await db.settings.update('app', { deloadNotifications: false, updatedAt: new Date().toISOString() })
+}
+
 export async function notifyDeloadIfNeeded() {
   const settings = await db.settings.get('app')
   if (!settings?.deloadNotifications) return false

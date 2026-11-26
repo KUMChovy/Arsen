@@ -6,7 +6,7 @@ const count = z.number().int().nonnegative().safe()
 const id = z.string().regex(/^[a-z0-9][a-z0-9-]{0,127}$/)
 const userId = z.string().regex(/^user_[A-Za-z0-9]{1,123}$/)
 const overviewSchema = z.object({ accounts: count, devices: count, confirmedBackups: count, publishedExercises: count }).strict()
-const accountSchema = z.object({ userId, email: z.string().email().max(254).nullable().optional(), role: z.enum(['user', 'admin']), createdAt: z.string().datetime(), deviceCount: count, backupCount: count, lastBackupAt: z.string().datetime().nullable() }).strict()
+const accountSchema = z.object({ userId, email: z.string().email().max(254).nullable().optional(), role: z.enum(['user', 'admin']), createdAt: z.string().datetime(), deviceCount: count, backupCount: count, lastBackupAt: z.string().datetime().nullable(), deletionPending: z.boolean() }).strict()
 const backupSchema = z.object({ id: z.string().uuid(), deviceId: z.string().uuid(), localRevision: count, contractVersion: count.positive(), sizeBytes: count.positive(), includesHealth: z.boolean(), confirmedAt: z.string().datetime() }).strict()
 const draftSchema = z.object({ id, draft: z.record(z.unknown()), published: z.record(z.unknown()).nullable(), archived: z.boolean(), updated_at: z.string() }).strict()
 const draftInput = z.object({ id, name: z.string().trim().min(1).max(200), mainMuscle: z.enum(['Pecho', 'Espalda', 'Hombros', 'Brazos', 'Abdomen', 'Piernas']).optional(), canonicalName: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/).max(200).optional(), aliases: z.array(z.string().trim().min(1).max(200)).max(100).optional(), technicalNotes: z.string().max(10000).optional(), image: z.unknown().optional() }).strict()
@@ -49,14 +49,14 @@ export function createAdminApi(origin: string, getToken: () => Promise<string | 
   const base = new URL(origin)
   if (base.protocol !== 'https:' || base.origin !== origin || base.username || base.password) throw new Error('Origen de administración inválido')
 
-  async function request<T>(path: string, schema: z.ZodType<T>, body?: unknown, external?: AbortSignal): Promise<T> {
+  async function request<T>(path: string, schema: z.ZodType<T>, body?: unknown, external?: AbortSignal, timeoutMs = 15_000): Promise<T> {
     if (external?.aborted) throw new Error('Operación cancelada')
     const token = await getToken()
     if (external?.aborted) throw new Error('Operación cancelada')
     if (!token || token.length > 16384 || !/^[A-Za-z0-9._~-]+$/.test(token)) throw new Error('Inicia sesión para continuar')
     const headers = new Headers({ authorization: `Bearer ${token}` })
     if (body !== undefined) headers.set('content-type', 'application/json')
-    const timeout = requestSignal(15_000, external)
+    const timeout = requestSignal(timeoutMs, external)
     try {
       let response: Response
       try { response = await fetcher(`${base.origin}${path}`, { method: body === undefined ? 'GET' : 'POST', headers, ...(body === undefined ? {} : { body: JSON.stringify(body) }), redirect: 'error', credentials: 'omit', cache: 'no-store', signal: timeout.signal }) }
@@ -80,8 +80,10 @@ export function createAdminApi(origin: string, getToken: () => Promise<string | 
 
   return {
     overview: () => request('/api/v1/admin/overview', overviewSchema),
-    audit: () => request('/api/v1/admin/audit', z.object({ events: z.array(z.object({ actor_id: z.string().min(1).max(128), action: z.enum(['invitation.requested', 'draft.save', 'image.upload.requested', 'publish', 'archive']), target_id: z.string().min(1).max(128), created_at: z.string().datetime() }).strict()).max(100) }).strict()),
+    maintenance: () => request('/api/v1/admin/maintenance', z.object({ result: z.enum(['idle', 'blocked', 'complete', 'pending', 'expired']), deleted: count.max(100) }).strict(), {}, undefined, 45_000),
+    audit: () => request('/api/v1/admin/audit', z.object({ events: z.array(z.object({ actor_id: z.string().min(1).max(128), action: z.enum(['invitation.requested', 'draft.save', 'image.upload.requested', 'publish', 'archive', 'account.deletion.requested', 'account.deletion.completed']), target_id: z.string().min(1).max(128), created_at: z.string().datetime() }).strict()).max(100) }).strict()),
     accounts: (cursor?: string) => request(`/api/v1/admin/accounts${cursor ? `?cursor=${encodeURIComponent(userId.parse(cursor))}` : ''}`, z.object({ accounts: z.array(accountSchema).max(50), nextCursor: userId.nullable() }).strict()),
+    deleteAccount: (target: string) => request('/api/v1/admin/accounts/delete', z.object({ result: z.enum(['waiting', 'pending', 'complete']) }).strict(), { userId: userId.parse(target) }, undefined, 45_000),
     backups: async (owner: string) => request(`/api/v1/admin/accounts/${encodeURIComponent(userId.parse(owner))}/backups`, z.object({ backups: z.array(backupSchema).max(5) }).strict()),
     drafts: (cursor?: string, filters?: { q: string; status: 'all' | 'draft' | 'published' | 'archived'; muscle?: '' | 'Pecho' | 'Espalda' | 'Hombros' | 'Brazos' | 'Abdomen' | 'Piernas' }) => {
       const params = new URLSearchParams()

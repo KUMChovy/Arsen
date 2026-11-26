@@ -17,7 +17,10 @@ const makeClerk = (signedIn: boolean) => ({
 }) satisfies AdminClerk
 const makeApi = () => ({
   overview: vi.fn(async () => ({ accounts: 2, devices: 3, confirmedBackups: 1, publishedExercises: 4 })),
-  accounts: vi.fn(async (): Promise<Awaited<ReturnType<ReturnType<typeof createAdminApi>['accounts']>>> => ({ accounts: [{ userId: 'user_athlete', role: 'user' as const, createdAt: '2026-01-01T00:00:00.000Z', deviceCount: 1, backupCount: 1, lastBackupAt: '2026-01-02T00:00:00.000Z' }], nextCursor: null })),
+  maintenance: vi.fn(async () => ({ result: 'pending' as const, deleted: 2 })),
+  usage: vi.fn(async () => ({ databaseBytes: 1048576, clerkUsers: 9 as number | null, confirmedBytes: 524288, pendingBackups: 1, pendingBytes: 100, cleanupJobs: 0 })),
+  accounts: vi.fn(async (): Promise<Awaited<ReturnType<ReturnType<typeof createAdminApi>['accounts']>>> => ({ accounts: [{ userId: 'user_athlete', role: 'user' as const, createdAt: '2026-01-01T00:00:00.000Z', deviceCount: 1, backupCount: 1, lastBackupAt: '2026-01-02T00:00:00.000Z', deletionPending: false }], nextCursor: null })),
+  deleteAccount: vi.fn(async (_id: string) => ({ result: 'waiting' as const })),
   backups: vi.fn(async (): Promise<Awaited<ReturnType<ReturnType<typeof createAdminApi>['backups']>>> => ({ backups: [] })), drafts: vi.fn(async (): Promise<Awaited<ReturnType<ReturnType<typeof createAdminApi>['drafts']>>> => ({ items: [], nextCursor: null })),
   saveDraft: vi.fn(async () => ({})), publish: vi.fn(async () => ({ version: 1 })), archive: vi.fn(async () => ({ version: 2 })), invite: vi.fn(async (_id: string, _email: string) => ({ id: '8166d21c-bac3-497b-9d22-8492474c982b' })),
   uploadImage: vi.fn(async (_file: Blob, _signal?: AbortSignal) => ({ url: 'https://arsentest.public.blob.vercel-storage.com/catalog/images/8166d21c-bac3-497b-9d22-8492474c982b.png', sha256: 'a'.repeat(64), sizeBytes: 4, mimeType: 'image/png' as const })),
@@ -26,6 +29,24 @@ const makeApi = () => ({
 afterEach(cleanup)
 
 describe('ARSEN Admin', () => {
+  it('runs manual cleanup only after confirmation and reports progress', async () => {
+    vi.mocked(confirmAction).mockResolvedValueOnce(false).mockResolvedValueOnce(true)
+    const api = makeApi()
+    render(<AdminApp clerk={makeClerk(true)} api={api as unknown as ReturnType<typeof createAdminApi>} />)
+    await screen.findByText('4')
+    fireEvent.click(screen.getByRole('button', { name: 'Ejecutar limpieza' }))
+    await waitFor(() => expect(confirmAction).toHaveBeenCalledTimes(1))
+    expect(api.maintenance).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Ejecutar limpieza' }))
+    expect(await screen.findByText(/2 archivos eliminados/i)).toBeInTheDocument()
+    expect(api.maintenance).toHaveBeenCalledOnce()
+  })
+  it('does not request resource statistics when opening the summary', async () => {
+    const api = makeApi()
+    render(<AdminApp clerk={makeClerk(true)} api={api as unknown as ReturnType<typeof createAdminApi>} />)
+    expect(await screen.findByText('4')).toBeInTheDocument()
+    expect(api.usage).not.toHaveBeenCalled()
+  })
   it('opens and closes the new exercise editor as a dialog', async () => {
     const api = makeApi()
     render(<AdminApp clerk={makeClerk(true)} api={api as unknown as ReturnType<typeof createAdminApi>} />)
@@ -66,6 +87,21 @@ describe('ARSEN Admin', () => {
     fireEvent.click(await screen.findByRole('button', { name: /user_athlete/i }))
     expect(await screen.findByText(/no hay respaldos confirmados/i)).toBeInTheDocument()
     expect(api.backups).toHaveBeenCalledWith('user_athlete')
+  })
+  it('requires confirmation before starting permanent account deletion', async () => {
+    vi.mocked(confirmAction).mockResolvedValueOnce(false).mockResolvedValueOnce(true)
+    const api = makeApi()
+    render(<AdminApp clerk={makeClerk(true)} api={api as unknown as ReturnType<typeof createAdminApi>} />)
+    await screen.findByText('4')
+    fireEvent.click(screen.getByRole('button', { name: 'Cuentas' }))
+    fireEvent.click(await screen.findByRole('button', { name: /user_athlete/i }))
+    const button = await screen.findByRole('button', { name: 'Eliminar cuenta y respaldos' })
+    fireEvent.click(button)
+    await waitFor(() => expect(confirmAction).toHaveBeenCalled())
+    expect(api.deleteAccount).not.toHaveBeenCalled()
+    fireEvent.click(button)
+    expect(await screen.findByText(/espera al menos una hora/i)).toBeInTheDocument()
+    expect(api.deleteAccount).toHaveBeenCalledWith('user_athlete')
   })
   it('saves a new catalog draft without publishing it', async () => {
     const api = makeApi()
@@ -232,8 +268,8 @@ describe('ARSEN Admin', () => {
     api.backups.mockImplementationOnce(() => new Promise((resolve) => { resolveFirst = resolve }))
     api.backups.mockResolvedValueOnce({ backups: [] })
     api.accounts.mockResolvedValue({ accounts: [
-      { userId: 'user_first', role: 'user', createdAt: '2026-01-01T00:00:00.000Z', deviceCount: 1, backupCount: 1, lastBackupAt: null },
-      { userId: 'user_second', role: 'user', createdAt: '2026-01-01T00:00:00.000Z', deviceCount: 1, backupCount: 0, lastBackupAt: null },
+      { userId: 'user_first', role: 'user', createdAt: '2026-01-01T00:00:00.000Z', deviceCount: 1, backupCount: 1, lastBackupAt: null, deletionPending: false },
+      { userId: 'user_second', role: 'user', createdAt: '2026-01-01T00:00:00.000Z', deviceCount: 1, backupCount: 0, lastBackupAt: null, deletionPending: false },
     ], nextCursor: null })
     render(<AdminApp clerk={makeClerk(true)} api={api as unknown as ReturnType<typeof createAdminApi>} />)
     await screen.findByText('4')

@@ -27,6 +27,9 @@ type BackupPlugin = {
   retryPending(input: { owner: string }): Promise<{ status: string }>
   listVersions(): Promise<{ owner: string; backups: unknown[] }>
   requestBackupNotifications(): Promise<{ enabled: boolean }>
+  openNotificationSettings(): Promise<void>
+  scheduleManualReminder(input: { date: string }): Promise<void>
+  consumeManualReminder(): Promise<{ open: boolean }>
   download(input: { owner: string; backupId: string }): Promise<{ manifest: string; manifestSha256: string; binaries: Array<{ id: string; base64: string }> }>
 }
 export const nativeBackup = registerPlugin<BackupPlugin>('ArsenBackup')

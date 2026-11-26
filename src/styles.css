@@ -69,6 +69,37 @@ select:focus-visible {
   contain-intrinsic-size: 0 84px;
 }
 
+.access-atmosphere {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  background: linear-gradient(155deg, transparent 12%, color-mix(in oklch, var(--color-arsen-purple) 12%, transparent) 44%, transparent 76%);
+}
+
+.access-atmosphere::before,
+.access-atmosphere::after {
+  position: absolute;
+  inset: -25% -70%;
+  content: '';
+  background: linear-gradient(145deg, transparent 36%, color-mix(in oklch, var(--color-arsen-purple2) 18%, transparent) 42%, transparent 48%, color-mix(in oklch, var(--color-arsen-purple) 12%, transparent) 53%, transparent 61%);
+}
+
+.access-atmosphere::after {
+  opacity: 0.55;
+  transform: translate3d(12%, -8%, 0);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .access-atmosphere::before { animation: access-atmosphere-drift 22s ease-in-out infinite alternate; }
+  .access-atmosphere::after { animation: access-atmosphere-drift 28s ease-in-out infinite alternate-reverse; }
+}
+
+@keyframes access-atmosphere-drift {
+  from { transform: translate3d(-5%, 3%, 0); }
+  to { transform: translate3d(9%, -5%, 0); }
+}
+
 @media (prefers-reduced-motion: no-preference) {
   .pending-session {
     animation: pending-session-arrival 450ms cubic-bezier(0.16, 1, 0.3, 1);

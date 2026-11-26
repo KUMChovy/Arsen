@@ -33,6 +33,11 @@ export async function requestBackupNotifications(): Promise<boolean> {
   return (await nativeBackup.requestBackupNotifications()).enabled === true
 }
 
+export async function openBackupNotificationSettings(): Promise<void> {
+  if (!isNativeAccount()) throw new Error('Disponible en Android')
+  await nativeBackup.openNotificationSettings()
+}
+
 export async function prepareManualBackup(): Promise<BackupContext> {
   if (!isNativeAccount()) throw new Error('El respaldo está disponible en Android')
   const result = contextSchema.safeParse(await nativeBackup.prepareContext())

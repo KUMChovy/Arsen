@@ -1,6 +1,6 @@
 import type { PropsWithChildren } from 'react'
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
-import { ensureDemoData } from '../db/seedDemoRoutine'
+import { initializeApp } from '../db/initializeApp'
 import { notifyDeloadIfNeeded } from '../domains/settings/notifications'
 import { watchAutomaticBackup } from '../domains/account/automaticBackup'
 
@@ -20,7 +20,7 @@ export function AppProviders({ children }: PropsWithChildren) {
   useEffect(() => {
     let cancelled = false
 
-    ensureDemoData()
+    initializeApp()
       .then(() => {
         if (cancelled) return
         setDatabaseStatus('ready')

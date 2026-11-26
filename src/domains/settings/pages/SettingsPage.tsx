@@ -4,13 +4,13 @@ import { useDeloadOverview } from '../hooks'
 import { useNavigate } from 'react-router-dom'
 import {
   ChartNoAxesCombined,
+  ChevronDown,
   ChevronRight,
   CloudDownload,
   CloudUpload,
   Database,
   Disc3,
   FileUp,
-  Flame,
   Folder,
   Moon,
   Scale,
@@ -44,7 +44,7 @@ import {
   updatePreferredUnit,
   type BackupImportMode,
 } from '../services'
-import { requestDeloadNotifications } from '../notifications'
+import { disableDeloadNotifications, requestDeloadNotifications } from '../notifications'
 import { localDateKey } from '../../../shared/utils/date'
 import { kgToUnit, unitToKg } from '../../../shared/utils/weight'
 import type { DeloadPhase } from '../types'
@@ -57,6 +57,7 @@ import {
   openHealthConnectAccess,
 } from '../../health/services'
 import { HealthSetupWizard } from '../../health/components/HealthSetupWizard'
+import { NotificationPreferences } from '../NotificationPreferences'
 
 const routineActions = [
   { icon: Folder, label: 'Rutinas guardadas', meta: 'Cambiar, duplicar o eliminar' },
@@ -521,23 +522,18 @@ export function SettingsPage() {
             </button>
           </div>
         </Card>
-        <ActionRow
-          busy={busyAction === 'notify'}
-          icon={Flame}
-          label="Notificacion deload"
-          meta={`${deload?.weeksSinceAnchor ?? 0} semanas - ${appSettings?.notificationPermission ?? 'sin permiso'}`}
-          onClick={() =>
-            runAction(
-              'notify',
-              async () => {
-                const permission = await requestDeloadNotifications()
-                if (permission !== 'granted') throw new Error(`Permiso de notificacion: ${permission}`)
-              },
-              deload?.shouldNotify ? 'Aviso de deload activado' : 'Notificaciones activadas',
-            )
-          }
-        />
       </SettingsSection>
+
+      <div data-tour="settings-notifications"><SettingsSection title="Notificaciones">
+        <NotificationPreferences />
+        <div className="flex min-h-16 items-center justify-between gap-3 rounded-xl border border-white/10 bg-arsen-surface p-3">
+          <div><strong>Notificaciones de descarga</strong><p className="text-xs text-arsen-muted">Permiso: {appSettings?.notificationPermission ?? 'sin permiso'}</p></div>
+          <button aria-checked={appSettings?.deloadNotifications === true} aria-label="Notificaciones de descarga" className={`relative h-8 w-14 shrink-0 rounded-full ${appSettings?.deloadNotifications ? 'bg-arsen-purple' : 'bg-white/20'} disabled:opacity-50`} disabled={busyAction === 'notify'} onClick={() => void runAction('notify', async () => {
+            if (appSettings?.deloadNotifications) await disableDeloadNotifications()
+            else { const permission = await requestDeloadNotifications(); if (permission !== 'granted') throw new Error(`Permiso de notificación: ${permission}`) }
+          }, appSettings?.deloadNotifications ? 'Notificaciones desactivadas' : 'Notificaciones activadas')} role="switch" type="button"><span className={`absolute top-1 size-6 rounded-full bg-white transition-transform ${appSettings?.deloadNotifications ? 'left-1 translate-x-6' : 'left-1'}`} /></button>
+        </div>
+      </SettingsSection></div>
 
       <SettingsSection title="Almacenamiento">
         <Card className="p-4">
@@ -648,13 +644,14 @@ type SettingsSectionProps = PropsWithChildren<{
 }>
 
 function SettingsSection({ children, danger = false, title }: SettingsSectionProps) {
+  const tourKeys: Record<string, string> = { Datos: 'settings-datos', 'Salud opcional': 'settings-salud', Rutinas: 'settings-rutinas', Deload: 'settings-deload', Notificaciones: 'settings-notifications', Almacenamiento: 'settings-storage', 'Zona de limpieza': 'settings-cleanup' }
   return (
-    <section>
-      <div className={['mb-2 text-xs font-extrabold', danger ? 'text-red-300' : 'text-arsen-purple2'].join(' ')}>
-        {title}
-      </div>
-      <div className="space-y-2">{children}</div>
-    </section>
+    <details className="group rounded-xl border border-white/10 bg-arsen-surface" data-settings-category data-tour={tourKeys[title]}>
+      <summary className={['flex min-h-12 cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 font-bold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-arsen-purple2', danger ? 'text-red-300' : 'text-arsen-ink'].join(' ')}>
+        {title}<ChevronDown aria-hidden="true" className="size-5 text-arsen-muted transition-transform group-open:rotate-180" />
+      </summary>
+      <div className="space-y-2 px-3 pb-3">{children}</div>
+    </details>
   )
 }
 

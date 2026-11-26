@@ -141,6 +141,7 @@ export async function ensureDemoData() {
         })),
       )
       await db.settings.add(appSettings)
+      await db.localMetadata.put({ id: 'productTour', value: 'pending' })
     },
   )
 }

@@ -7,7 +7,7 @@ import { getLastSessionReferencesForDay, getPendingWorkoutSessions, getSessionsW
 export { useDeloadOverview } from '../settings/hooks'
 
 export function usePendingWorkoutSessions() {
-  return useLiveQuery(() => getPendingWorkoutSessions(), [], []) ?? []
+  return useLiveQuery(() => getPendingWorkoutSessions(), [], undefined)
 }
 export function useWorkoutProgress(date: string, dayId: string | undefined, exercises: RoutineExercise[]) {
   const progress = useLiveQuery(() => getWorkoutProgressForDay(date, dayId), [date, dayId], undefined)

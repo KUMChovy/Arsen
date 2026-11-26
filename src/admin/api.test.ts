@@ -4,6 +4,28 @@ import { createAdminApi } from './api'
 
 describe('admin API client', () => {
   const origin = 'https://api.example.test'
+  it('sends account deletion only to the authenticated admin route', async () => {
+    const fetcher = vi.fn(async () => Response.json({ result: 'waiting' }))
+    const api = createAdminApi(origin, async () => 'session.token', fetcher)
+    expect(await api.deleteAccount('user_a')).toEqual({ result: 'waiting' })
+    const [url, init] = fetcher.mock.calls[0] as unknown as [string, RequestInit]
+    expect(url).toBe(`${origin}/api/v1/admin/accounts/delete`)
+    expect(init.method).toBe('POST')
+    expect(JSON.parse(String(init.body))).toEqual({ userId: 'user_a' })
+    expect(new Headers(init.headers).get('authorization')).toBe('Bearer session.token')
+    expect(() => api.deleteAccount('../wrong')).toThrow()
+  })
+  it('submits manual maintenance with a session and validates the bounded result', async () => {
+    const fetcher = vi.fn(async () => Response.json({ result: 'pending', deleted: 2 }))
+    const api = createAdminApi(origin, async () => 'token', fetcher)
+    expect(await api.maintenance()).toEqual({ result: 'pending', deleted: 2 })
+    const [url, init] = fetcher.mock.calls[0] as unknown as [string, RequestInit]
+    expect(url).toBe(`${origin}/api/v1/admin/maintenance`)
+    expect(init.method).toBe('POST')
+    expect(new Headers(init.headers).get('authorization')).toBe('Bearer token')
+    const invalid = createAdminApi(origin, async () => 'token', async () => Response.json({ result: 'pending', deleted: 101 }))
+    await expect(invalid.maintenance()).rejects.toThrow('Respuesta administrativa inválida')
+  })
   it('obtains a token for each request and sends it only in an authorization header', async () => {
     const token = vi.fn(async () => 'header.payload.signature')
     const fetcher = vi.fn(async () => Response.json({ accounts: 2, devices: 1, confirmedBackups: 1, publishedExercises: 3 }))

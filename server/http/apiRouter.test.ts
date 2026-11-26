@@ -6,10 +6,11 @@ describe('Vercel API router', () => {
     const operation = (name: string) => vi.fn(async () => new Response(name))
     const handlers = { account: operation('account'), backups: operation('backups'), admin: operation('admin'), adminCatalog: operation('adminCatalog'), catalog: operation('catalog'), cleanup: operation('cleanup') }
     const route = createApiRouter(handlers)
-    for (const [path, name] of [['/api/v1/account/devices', 'account'], ['/api/v1/backups/latest', 'backups'], ['/api/v1/admin/accounts/user_a/backups', 'admin'], ['/api/v1/admin/catalog/publish', 'adminCatalog'], ['/api/v1/catalog/version', 'catalog'], ['/api/cron/cleanup', 'cleanup']] as const) {
+    for (const [path, name] of [['/api/v1/account/devices', 'account'], ['/api/v1/backups/latest', 'backups'], ['/api/v1/admin/accounts/user_a/backups', 'admin'], ['/api/v1/admin/accounts/delete', 'admin'], ['/api/v1/admin/maintenance', 'admin'], ['/api/v1/admin/catalog/publish', 'adminCatalog'], ['/api/v1/catalog/version', 'catalog'], ['/api/cron/cleanup', 'cleanup']] as const) {
       expect(await (await route(new Request(`https://example.test${path}`))).text()).toBe(name)
     }
     const unknown = await route(new Request('https://example.test/api/v1/admin/catalogue'))
+    expect((await route(new Request('https://example.test/api/v1/admin/usage'))).status).toBe(404)
     expect(unknown.status).toBe(404)
     expect(unknown.headers.get('cache-control')).toBe('no-store')
   })

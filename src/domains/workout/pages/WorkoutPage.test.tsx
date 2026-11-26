@@ -2,6 +2,7 @@
 import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { MemoryRouter } from 'react-router-dom'
 import type { WeightIncreaseRecommendation } from '../../../shared/calculations/progression'
 import { WorkoutPage } from './WorkoutPage'
 import type { RoutineDay, RoutineExercise } from '../../routine/types'
@@ -17,11 +18,13 @@ vi.mock('dexie-react-hooks', () => ({
 
 const workoutMocks = vi.hoisted(() => ({
   completeActiveDeload: vi.fn(() => Promise.resolve()),
+  noRoutine: false,
   healthEnabled: false,
   setLogs: [] as SetLog[],
   dropSets: [] as DropSetLog[],
   sessionStatus: 'draft' as WorkoutSession['status'],
   exerciseSkipped: false,
+  allDone: false,
   sessionExercises: null as RoutineExercise[] | null,
   pendingSessions: [] as WorkoutSession[],
   rotationStatus: {
@@ -49,7 +52,7 @@ const workoutMocks = vi.hoisted(() => ({
 }))
 
 vi.mock('../../routine/hooks', () => ({
-  useActiveRoutineBundle: () => ({
+  useActiveRoutineBundle: () => workoutMocks.noRoutine ? null : ({
     days: [day, day2],
     exercisesByDay: new Map([
       [day.id, [exercise, otherExercise]],
@@ -65,6 +68,7 @@ vi.mock('../../routine/hooks', () => ({
   useExerciseCatalog: () => [{ ...exercise, id: 'catalog-extra', name: 'Remo adicional', defaultTargetSets: 3, defaultRepsMin: 8, defaultRepsMax: 10, defaultRecommendedRir: 2, defaultRestSeconds: 90 }],
   useRoutines: () => [routine, routine2],
   useWorkoutDayById: (dayId: string | null) => {
+    if (workoutMocks.noRoutine) return null
     const selectedDay = dayId === day2.id ? day2 : day
     return {
       day: selectedDay,
@@ -88,7 +92,7 @@ vi.mock('../hooks', () => ({
   useWorkoutRotationStatus: () => workoutMocks.rotationStatus,
   useLastSessionReferencesForDay: () => workoutMocks.lastSessionReferences,
   useWorkoutProgress: () => ({
-    completedCount: 0,
+    completedCount: workoutMocks.allDone ? 2 : 0,
     dropSets: workoutMocks.dropSets,
     exerciseLogByExerciseId: new Map([
       [exercise.id, exerciseLog],
@@ -142,6 +146,7 @@ vi.mock('../../settings/services', () => ({
   completeActiveDeload: vi.fn(() => Promise.resolve()),
   getAppSettings: vi.fn(() => ({ healthIntegrationEnabled: workoutMocks.healthEnabled })),
 }))
+vi.mock('../../settings/notificationCenter', () => ({ getNotices: vi.fn(async () => []), dismissNotice: vi.fn(async () => {}), syncNotices: vi.fn(async () => {}) }))
 
 vi.mock('../../health/services', () => ({
   syncAllWorkoutHealth: vi.fn(() => Promise.resolve({ syncedSessions: 0 })),
@@ -152,6 +157,12 @@ vi.mock('../../../shared/utils/alerts', () => ({
 }))
 
 describe('WorkoutPage', () => {
+  it('guides a new user to create a routine instead of showing a perpetual loading state', () => {
+    workoutMocks.noRoutine = true
+    render(<MemoryRouter><WorkoutPage /></MemoryRouter>)
+    expect(screen.getByRole('link', { name: 'Crear mi rutina' })).toHaveAttribute('href', '/rutina')
+    expect(screen.queryByText('Cargando rutina')).not.toBeInTheDocument()
+  })
   afterEach(() => {
     cleanup()
     vi.useRealTimers()
@@ -162,11 +173,13 @@ describe('WorkoutPage', () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     vi.setSystemTime(new Date('2026-07-20T12:00:00'))
     vi.clearAllMocks()
+    workoutMocks.noRoutine = false
     workoutMocks.setLogs = [setLog, otherSetLog]
     workoutMocks.dropSets = []
     workoutMocks.healthEnabled = false
     workoutMocks.sessionStatus = 'draft'
     workoutMocks.exerciseSkipped = false
+    workoutMocks.allDone = false
     workoutMocks.sessionExercises = null
     workoutMocks.pendingSessions = []
     workoutMocks.rotationStatus = {
@@ -617,8 +630,23 @@ describe('WorkoutPage', () => {
     render(<WorkoutPage />)
     const current = screen.getByRole('heading', { level: 2, name: 'Press inclinado' }).closest('section')
     expect(current).toHaveTextContent('Serie 1 - 60 kg')
-    expect(current).toHaveTextContent('Registrar')
+    expect(current).not.toHaveTextContent('Registrar')
     expect(current).toHaveTextContent('1 / 4')
+  })
+
+  it('offers session completion on each transition to all exercises done', () => {
+    const view = render(<WorkoutPage />)
+    expect(screen.queryByRole('dialog', { name: /Revisar entrenamiento/i })).not.toBeInTheDocument()
+    workoutMocks.allDone = true
+    view.rerender(<WorkoutPage />)
+    expect(screen.getByRole('dialog', { name: /Revisar entrenamiento/i })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Volver a editar' }))
+    expect(completeSessionForDay).not.toHaveBeenCalled()
+    workoutMocks.allDone = false
+    view.rerender(<WorkoutPage />)
+    workoutMocks.allDone = true
+    view.rerender(<WorkoutPage />)
+    expect(screen.getByRole('dialog', { name: /Revisar entrenamiento/i })).toBeInTheDocument()
   })
 
   it('opens a prefilled copy of the last set without saving it automatically', () => {

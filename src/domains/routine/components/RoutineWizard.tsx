@@ -1,0 +1,32 @@
+import { useState } from 'react'
+import { useDialogFocus } from '../../../shared/components/useDialogFocus'
+import type { ExerciseCatalogItem } from '../types'
+
+type Day = { name: string; exerciseIds: string[] }
+export type GuidedRoutineInput = { name: string; days: Day[] }
+
+export function RoutineWizard({ catalog, busy, error, onClose, onSave, onOpenSinfulShell, suspended = false }: { catalog: ExerciseCatalogItem[]; busy: boolean; error?: string | null; onClose: () => void; onSave: (value: GuidedRoutineInput) => void; onOpenSinfulShell?: () => void; suspended?: boolean }) {
+  const [step, setStep] = useState(0)
+  const [name, setName] = useState('')
+  const [days, setDays] = useState<Day[]>([{ name: 'Día 1', exerciseIds: [] }])
+  const [dayIndex, setDayIndex] = useState(0)
+  const [search, setSearch] = useState('')
+  const dialogRef = useDialogFocus(() => { if (!busy) onClose() }, !suspended)
+  const labels = ['Nombre', 'Días', 'Ejercicios', 'Revisión']
+  const current = days[dayIndex]!
+  const canContinue = step === 0 ? name.trim().length > 0 : step === 1 ? days.every((day) => day.name.trim().length > 0) : true
+  function updateDay(index: number, update: Partial<Day>) { setDays((old) => old.map((day, i) => i === index ? { ...day, ...update } : day)) }
+  return <div className="fixed inset-0 z-50 mx-auto flex max-w-[430px] items-end bg-black/65">
+    <section aria-hidden={suspended || undefined} aria-labelledby="routine-wizard-title" aria-modal="true" className="max-h-[92dvh] w-full overflow-y-auto rounded-t-[22px] bg-arsen-bg2 p-4 pb-[max(1rem,env(safe-area-inset-bottom))]" ref={dialogRef} role="dialog" tabIndex={-1}>
+      <p className="text-xs font-bold text-arsen-purple2">Paso {step + 1} de {labels.length} · {labels[step]}</p>
+      <h2 className="mt-2 text-xl font-black" id="routine-wizard-title">Crear rutina</h2>
+      {step === 0 ? <label className="mt-4 block text-sm font-bold">Nombre de la rutina<input autoComplete="off" className="mt-2 min-h-12 w-full rounded-lg border border-white/15 bg-arsen-surface px-3 text-base" maxLength={100} onChange={(event) => setName(event.target.value)} value={name} /></label> : null}
+      {step === 1 ? <div className="mt-4 space-y-3"><p className="text-sm text-arsen-muted">Agrega los días que quieras organizar. Podrás editarlos después.</p>{days.map((day, index) => <div className="flex items-end gap-2" key={index}><label className="min-w-0 flex-1 text-sm font-bold">Nombre del día {index + 1}<input className="mt-2 min-h-12 w-full rounded-lg border border-white/15 bg-arsen-surface px-3 text-base" maxLength={100} onChange={(event) => updateDay(index, { name: event.target.value })} value={day.name} /></label>{days.length > 1 ? <button aria-label={`Quitar día ${index + 1}`} className="min-h-12 px-3 text-sm text-arsen-muted" onClick={() => { setDays(days.filter((_, i) => i !== index)); setDayIndex(0) }} type="button">Quitar</button> : null}</div>)}<button className="min-h-12 font-bold text-arsen-purple2 disabled:opacity-50" disabled={days.length >= 14} onClick={() => setDays([...days, { name: `Día ${days.length + 1}`, exerciseIds: [] }])} type="button">Agregar día</button></div> : null}
+      {step === 2 ? <div className="mt-4 space-y-3"><p className="text-sm text-arsen-muted">Elige ejercicios de tu catálogo para cada día, o agrégalos después.</p><label className="block text-sm font-bold">Día<select className="mt-2 min-h-12 w-full rounded-lg border border-white/15 bg-arsen-surface px-3" onChange={(event) => setDayIndex(Number(event.target.value))} value={dayIndex}>{days.map((day, index) => <option key={index} value={index}>{day.name}</option>)}</select></label><label className="block text-sm font-bold">Buscar ejercicio<input className="mt-2 min-h-12 w-full rounded-lg border border-white/15 bg-arsen-surface px-3" onChange={(event) => setSearch(event.target.value)} value={search} /></label><div className="max-h-48 space-y-1 overflow-y-auto">{catalog.filter((item) => item.name.toLocaleLowerCase('es-MX').includes(search.toLocaleLowerCase('es-MX'))).map((item) => <label className="flex min-h-12 items-center gap-3 rounded-lg border border-white/10 px-3" key={item.id}><input checked={current.exerciseIds.includes(item.id)} onChange={(event) => updateDay(dayIndex, { exerciseIds: event.target.checked ? [...current.exerciseIds, item.id] : current.exerciseIds.filter((id) => id !== item.id) })} type="checkbox" />{item.name}</label>)}</div>{catalog.length === 0 ? <p className="text-sm text-arsen-muted">Tu catálogo está vacío. Puedes agregar ejercicios más tarde.</p> : null}</div> : null}
+      {step === 2 && onOpenSinfulShell ? <div className="mt-3"><p className="text-sm text-arsen-muted">En Sinful Shell puedes buscar ejercicios, consultar sus fichas y añadirlos a tu catálogo personal. Al volver, selecciónalos para este día.</p><button className="mt-2 min-h-12 rounded-lg border border-arsen-purple2 px-3 font-bold text-arsen-purple2" onClick={onOpenSinfulShell} type="button">Explorar Sinful Shell</button></div> : null}
+      {step === 3 ? <div className="mt-4 space-y-3"><h3 className="font-bold">{name.trim()}</h3><ul className="space-y-2">{days.map((day, index) => <li className="rounded-lg border border-white/10 p-3" key={index}><strong>{day.name}</strong><p className="text-sm text-arsen-muted">{day.exerciseIds.length} {day.exerciseIds.length === 1 ? 'ejercicio' : 'ejercicios'}</p></li>)}</ul><p className="text-sm text-arsen-muted">Podrás cambiar días y recetas después de crearla.</p></div> : null}
+      {error ? <p className="mt-3 text-sm text-red-300" role="alert">{error}</p> : null}
+      <div className="mt-5 flex flex-wrap justify-between gap-2"><button className="min-h-12 px-2 text-sm font-bold text-arsen-muted" disabled={busy} onClick={onClose} type="button">Cancelar</button><div className="flex gap-2">{step > 0 ? <button className="min-h-12 rounded-lg border border-white/20 px-3 font-bold" disabled={busy} onClick={() => setStep(step - 1)} type="button">Anterior</button> : null}{step < 3 ? <button className="min-h-12 rounded-lg bg-arsen-purple2 px-4 font-bold text-arsen-bg disabled:opacity-50" disabled={!canContinue || busy} onClick={() => setStep(step + 1)} type="button">Siguiente</button> : <button className="min-h-12 rounded-lg bg-arsen-acid px-4 font-bold text-arsen-bg disabled:opacity-50" disabled={busy} onClick={() => onSave({ name: name.trim(), days })} type="button">{busy ? 'Guardando…' : 'Crear rutina'}</button>}</div></div>
+    </section>
+  </div>
+}

@@ -17,7 +17,10 @@ export async function cleanupOneBackup(dependencies: {
     await query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [userId])
     const entry = (await query('SELECT backup_id FROM arsen_backup_cleanup WHERE backup_id = $1 AND user_id = $2 AND not_before <= clock_timestamp() FOR UPDATE SKIP LOCKED', [backupId, userId])).rows[0]
     if (!entry) return { status: 'idle', deleted: 0 }
-    if ((await query('SELECT id FROM arsen_backups WHERE id = $1 AND user_id = $2', [backupId, userId])).rows.length) return { status: 'blocked', deleted: 0 }
+    if ((await query('SELECT id FROM arsen_backups WHERE id = $1 AND user_id = $2', [backupId, userId])).rows.length) {
+      await query("UPDATE arsen_backup_cleanup SET not_before = clock_timestamp() + interval '1 hour' WHERE backup_id = $1 AND user_id = $2", [backupId, userId])
+      return { status: 'blocked', deleted: 0 }
+    }
     const prefix = backupObjectPath(userId, backupId, 'manifest').slice(0, -'manifest'.length)
     const paths = await dependencies.list(prefix, 100)
     if (!Array.isArray(paths) || paths.length > 100 || new Set(paths).size !== paths.length || paths.some((path) => typeof path !== 'string' || !path.startsWith(prefix) || path.length <= prefix.length)) throw new Error('Listado de objetos inválido')

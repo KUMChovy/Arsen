@@ -49,4 +49,21 @@ describe('administrative invitation transport', () => {
     expect(await (await subject(new Request(url))).json()).toEqual({ accounts: 2 })
     expect(overview).toHaveBeenCalledTimes(1)
   })
+  it('routes manual maintenance only via POST', async () => {
+    const maintenance = vi.fn(async () => ({ status: 200, result: 'idle', deleted: 0 }))
+    const subject = createAdminHandler(issue, [], { listAccounts: async () => ({ status: 200 }), maintenance })
+    const url = 'https://api.test/api/v1/admin/maintenance'
+    expect((await subject(new Request(url))).status).toBe(405)
+    expect(await (await subject(new Request(url, { method: 'POST' }))).json()).toEqual({ result: 'idle', deleted: 0 })
+    expect(maintenance).toHaveBeenCalledOnce()
+  })
+  it('routes account deletion only through POST with bounded JSON', async () => {
+    const deleteAccount = vi.fn(async () => ({ status: 200, result: 'waiting' }))
+    const subject = createAdminHandler(issue, [], { listAccounts: async () => ({ status: 200 }), deleteAccount })
+    const url = 'https://api.test/api/v1/admin/accounts/delete'
+    expect((await subject(new Request(url))).status).toBe(405)
+    expect(await (await subject(new Request(url, { method: 'POST', body: JSON.stringify({ userId: 'user_a' }) }))).json()).toEqual({ result: 'waiting' })
+    expect(deleteAccount).toHaveBeenCalledWith(expect.any(Request), { userId: 'user_a' })
+    expect((await subject(new Request(url, { method: 'POST', body: 'x'.repeat(4097) }))).status).toBe(400)
+  })
 })

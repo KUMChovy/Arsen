@@ -90,6 +90,19 @@ export async function createRoutine(name: string) {
   return routine.id
 }
 
+export async function createGuidedRoutine(input: { name: string; days: Array<{ name: string; exerciseIds: string[] }> }) {
+  if (!input.name.trim() || input.name.length > 100 || input.days.length < 1 || input.days.length > 14 || input.days.some((day) => !day.name.trim() || day.name.length > 100 || day.exerciseIds.length > 100 || new Set(day.exerciseIds).size !== day.exerciseIds.length)) throw new Error('Revisa el nombre, los días y los ejercicios')
+  return db.transaction('rw', [db.routines, db.routineDays, db.routineExercises, db.exerciseCatalog, db.exerciseAssets, db.settings], async () => {
+    const routineId = await createRoutine(input.name.trim())
+    for (const day of input.days) {
+      const dayId = await createDay(routineId, day.name.trim())
+      for (const id of day.exerciseIds) await addCatalogExerciseToDay(routineId, dayId, id)
+    }
+    await setActiveRoutine(routineId)
+    return routineId
+  })
+}
+
 export async function setActiveRoutine(routineId: string) {
   const now = new Date().toISOString()
 

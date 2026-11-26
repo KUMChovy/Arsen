@@ -225,7 +225,11 @@ Borders are thin and mostly translucent white. Active purple states can strength
 
 ### Navigation
 
-Bottom navigation is fixed, five-column, and icon-first. Entreno is the centered primary tab, with a 44px violet framed icon that fills violet when active. The other tabs use 24px Lucide icons and 11px labels; active tabs use purple and inactive tabs are muted. The nav background is Deep Phone Shell at 95% opacity with backdrop blur and a top border.
+Bottom navigation is fixed, five-column, and icon-first. Entreno is centered in a raised 56px circular violet control with a shell-colored border. From another route it opens Entreno; on Entreno it becomes the action for registering the current exercise and is disabled when no exercise is available. The other tabs use 24px Lucide icons and 11px labels; active tabs use purple and inactive tabs are muted. The nav background is Deep Phone Shell at 95% opacity with backdrop blur and a top border.
+
+### Settings and notifications
+
+Settings use expandable categories with full-width, keyboard-operable summaries. Binary choices use a labeled switch; destructive operations keep their explicit confirmations. Account backup and recovery actions are grouped in expandable sections. The in-app notification center uses a bottom sheet, active notices and a separate history. Notices support horizontal dismissal as well as a labeled button for people who cannot use gestures.
 
 ### Sheets
 

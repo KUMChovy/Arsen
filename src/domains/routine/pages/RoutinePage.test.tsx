@@ -14,6 +14,7 @@ const routinePageMocks = vi.hoisted(() => ({
   createCatalogExercise: vi.fn(() => Promise.resolve('catalog-1')),
   createExerciseAsset: vi.fn(() => Promise.resolve('asset-uploaded')),
   createRoutine: vi.fn(() => Promise.resolve('routine-created')),
+  createGuidedRoutine: vi.fn(() => Promise.resolve('routine-created')),
   setActiveRoutine: vi.fn(() => Promise.resolve()),
   bundle: null as RoutinePageBundle | null,
   routines: [] as RoutinePageRoutine[],
@@ -40,6 +41,7 @@ vi.mock('../services', () => ({
   createDay: vi.fn(),
   createExerciseAsset: routinePageMocks.createExerciseAsset,
   createRoutine: routinePageMocks.createRoutine,
+  createGuidedRoutine: routinePageMocks.createGuidedRoutine,
   deleteCatalogExercise: vi.fn(),
   deleteDay: vi.fn(),
   deleteExercise: vi.fn(),
@@ -67,6 +69,7 @@ describe('RoutinePage catalog image upload', () => {
     routinePageMocks.createCatalogExercise.mockResolvedValue('catalog-1')
     routinePageMocks.createExerciseAsset.mockResolvedValue('asset-uploaded')
     routinePageMocks.createRoutine.mockResolvedValue('routine-created')
+    routinePageMocks.createGuidedRoutine.mockResolvedValue('routine-created')
     routinePageMocks.setActiveRoutine.mockResolvedValue(undefined)
     routinePageMocks.bundle = defaultBundle()
     routinePageMocks.catalog = []
@@ -74,7 +77,7 @@ describe('RoutinePage catalog image upload', () => {
     routinePageMocks.routines = [routine]
   })
 
-  it('creates and activates a routine from the visible action', async () => {
+  it('opens the wizard and creates a routine only after review', async () => {
     render(
       <MemoryRouter>
         <RoutinePage />
@@ -82,23 +85,76 @@ describe('RoutinePage catalog image upload', () => {
     )
 
     fireEvent.click(screen.getAllByRole('button', { name: 'Crear rutina' })[1]!)
-
+    expect(screen.getByRole('dialog', { name: 'Crear rutina' })).toBeInTheDocument()
+    expect(routinePageMocks.createGuidedRoutine).not.toHaveBeenCalled()
+    fireEvent.change(screen.getByLabelText('Nombre de la rutina'), { target: { value: 'Fuerza' } })
+    for (let i = 0; i < 3; i++) fireEvent.click(screen.getByRole('button', { name: 'Siguiente' }))
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Crear rutina' }))
     await waitFor(() => {
-      expect(routinePageMocks.createRoutine).toHaveBeenCalledWith('Nueva rutina')
-      expect(routinePageMocks.setActiveRoutine).toHaveBeenCalledWith('routine-created')
+      expect(routinePageMocks.createGuidedRoutine).toHaveBeenCalledWith({ name: 'Fuerza', days: [{ name: 'Día 1', exerciseIds: [] }] })
     })
+  })
+
+  it('lets a new user explore Sinful Shell without losing the unfinished wizard', () => {
+    routinePageMocks.routines = []
+    routinePageMocks.bundle = null
+    render(<MemoryRouter><RoutinePage /></MemoryRouter>)
+    fireEvent.click(screen.getAllByRole('button', { name: 'Crear rutina' }).at(-1)!)
+    fireEvent.change(screen.getByLabelText('Nombre de la rutina'), { target: { value: 'Mi primera rutina' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Siguiente' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Siguiente' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Explorar Sinful Shell' }))
+    expect(screen.getByRole('dialog', { name: 'Sinful Shell' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Cerrar Sinful Shell' }))
+    expect(screen.getByRole('dialog', { name: 'Crear rutina' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Anterior' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Anterior' }))
+    expect(screen.getByLabelText('Nombre de la rutina')).toHaveValue('Mi primera rutina')
+  })
+  it('keeps the catalog accessible when there is no routine', () => {
+    routinePageMocks.routines = []
+    routinePageMocks.bundle = null
+    render(<MemoryRouter><RoutinePage /></MemoryRouter>)
+    fireEvent.click(screen.getByRole('button', { name: 'Catalogo' }))
+    expect(screen.getByRole('button', { name: /Explorar Sinful Shell/i })).toBeInTheDocument()
+  })
+  it('switches the visible routine view when the tour highlights it', () => {
+    render(<MemoryRouter><RoutinePage /></MemoryRouter>)
+    fireEvent(window, new CustomEvent('arsen:tour-routine-mode', { detail: 'catalog' }))
+    expect(screen.getByRole('button', { name: 'Catalogo' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: /Explorar Sinful Shell/i })).toBeInTheDocument()
+  })
+  it('adds a Sinful Shell exercise to the catalog while creating the first routine', async () => {
+    routinePageMocks.routines = []
+    routinePageMocks.bundle = null
+    render(<MemoryRouter><RoutinePage /></MemoryRouter>)
+    fireEvent.click(screen.getAllByRole('button', { name: 'Crear rutina' }).at(-1)!)
+    fireEvent.change(screen.getByLabelText('Nombre de la rutina'), { target: { value: 'Mi rutina' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Siguiente' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Siguiente' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Explorar Sinful Shell' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Press inclinado Disponible' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Agregar a mi catalogo' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar' }))
+    await waitFor(() => expect(routinePageMocks.createCatalogExercise).toHaveBeenCalledWith(expect.objectContaining({ mode: 'create-from-sinful-shell', sinfulShellId: 'sinful-shell-press-inclinado' })))
+    expect(routinePageMocks.createGuidedRoutine).not.toHaveBeenCalled()
+    expect(await screen.findByRole('dialog', { name: 'Crear rutina' })).toBeInTheDocument()
   })
 
   it('prevents repeated routine creation while the first operation is pending', async () => {
     const pending = deferred<string>()
-    routinePageMocks.createRoutine.mockImplementationOnce(() => pending.promise)
+    routinePageMocks.createGuidedRoutine.mockImplementationOnce(() => pending.promise)
     render(<MemoryRouter><RoutinePage /></MemoryRouter>)
     const create = screen.getAllByRole('button', { name: 'Crear rutina' })[1]!
     fireEvent.click(create)
-    fireEvent.click(create)
-    expect(routinePageMocks.createRoutine).toHaveBeenCalledTimes(1)
+    fireEvent.change(screen.getByLabelText('Nombre de la rutina'), { target: { value: 'Fuerza' } })
+    for (let i = 0; i < 3; i++) fireEvent.click(screen.getByRole('button', { name: 'Siguiente' }))
+    const submit = within(screen.getByRole('dialog')).getByRole('button', { name: 'Crear rutina' })
+    fireEvent.click(submit)
+    fireEvent.click(submit)
+    expect(routinePageMocks.createGuidedRoutine).toHaveBeenCalledTimes(1)
     pending.resolve('routine-created')
-    await waitFor(() => expect(routinePageMocks.setActiveRoutine).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
   })
 
   it('provides a separate keyboard-accessible drag handle for a day', () => {

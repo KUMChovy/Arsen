@@ -8,7 +8,7 @@ describe('administrative account summaries', () => {
   const device = '67c5f68b-13e4-48e7-9a64-2dc6dc68d905'
   beforeAll(async () => {
     pg = new PGlite()
-    for (const name of ['001_accounts.sql', '003_backups.sql']) await pg.exec(await readFile(`server/migrations/${name}`, 'utf8'))
+    for (const name of ['001_accounts.sql', '003_backups.sql', '008_account_deletions.sql']) await pg.exec(await readFile(`server/migrations/${name}`, 'utf8'))
     await pg.exec("INSERT INTO arsen_profiles (user_id, role) VALUES ('user_admin', 'admin'), ('user_athlete', 'user')")
     await pg.query("INSERT INTO arsen_devices (id, user_id) VALUES ($1, 'user_athlete')", [device])
     await pg.query("INSERT INTO arsen_backups (id,user_id,device_id,contract_version,local_revision,manifest_sha256,size_bytes,status,confirmed_at) VALUES ($1,'user_athlete',$2,1,1,$3,100,'confirmed','2026-01-01')", ['8166d21c-bac3-497b-9d22-8492474c982b', device, 'a'.repeat(64)])
@@ -26,7 +26,7 @@ describe('administrative account summaries', () => {
   })
   it('returns only bounded metadata and excludes unconfirmed backups', async () => {
     const result = await listAdminAccounts(request(), 'user_admin', deps('admin'))
-    expect(result).toEqual({ status: 200, accounts: [{ userId: 'user_athlete', role: 'user', createdAt: expect.any(String), deviceCount: 1, backupCount: 1, lastBackupAt: '2026-01-01T00:00:00.000Z' }], nextCursor: null })
+    expect(result).toEqual({ status: 200, accounts: [{ userId: 'user_athlete', role: 'user', createdAt: expect.any(String), deviceCount: 1, backupCount: 1, lastBackupAt: '2026-01-01T00:00:00.000Z', deletionPending: false }], nextCursor: null })
     expect(JSON.stringify(result)).not.toMatch(/manifest|sha256|email|health/i)
   })
   it('includes verified email only for an authorized administrator', async () => {
@@ -35,6 +35,13 @@ describe('administrative account summaries', () => {
     expect(result.status === 200 && result.accounts[0]).toMatchObject({ email: 'persona@example.test' })
     const denied = await listAdminAccounts(request(), null, { ...deps('user'), identity: async () => { throw new Error('must not be called') } })
     expect(denied.status).toBe(403)
+  })
+  it('shows pending deletion after a process is interrupted', async () => {
+    await pg.query("INSERT INTO arsen_account_deletions (user_id, requested_by, issuer, store_fingerprint) VALUES ($1, $2, $3, $4)", ['user_athlete', 'user_admin', 'https://clerk.example', 'a'.repeat(64)])
+    try {
+      const result = await listAdminAccounts(request(), 'user_admin', deps('admin'))
+      expect(result.status === 200 && result.accounts[0]).toMatchObject({ userId: 'user_athlete', deletionPending: true })
+    } finally { await pg.query('DELETE FROM arsen_account_deletions WHERE user_id = $1', ['user_athlete']) }
   })
   it('paginates without skipping the next account', async () => {
     await pg.exec("INSERT INTO arsen_profiles (user_id) SELECT 'user_x' || lpad(n::text, 3, '0') FROM generate_series(1, 55) n")

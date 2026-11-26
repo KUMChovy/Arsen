@@ -1,11 +1,14 @@
 import { ArrowDownUp, ArrowRight, Check, ChevronDown, ChevronLeft, ChevronRight, Clock3, Copy, Dumbbell, Flame, Info, Layers3, Moon, MoreVertical, Pencil, Repeat2, RotateCcw, SkipForward, Trash2, TrendingUp, X } from 'lucide-react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useEffect, useMemo, useRef, useState, useTransition } from 'react'
+import { Link, useOutletContext } from 'react-router-dom'
+import type { WorkoutActionContext } from '../../../app/workoutAction'
 import { ActionButton } from '../../../shared/components/ActionButton'
 import { Card } from '../../../shared/components/Card'
 import { ExerciseArt } from '../../../shared/components/ExerciseArt'
 import { PageHeader } from '../../../shared/components/PageHeader'
 import { useDialogFocus } from '../../../shared/components/useDialogFocus'
+import { SwipeNotice } from '../../../shared/components/SwipeNotice'
 import type { WeightIncreaseRecommendation } from '../../../shared/calculations/progression'
 import { buildEquipmentLoadNote } from '../../../shared/calculations/equipmentLoad'
 import { totalVolume } from '../../../shared/calculations/workout'
@@ -29,10 +32,13 @@ import { applySessionTargetsToRoutine, applySessionWeightsToRoutine, completeSes
 import { setActiveRoutine } from '../../routine/services'
 import { completeActiveDeload } from '../../settings/services'
 import { getAppSettings } from '../../settings/services'
+import { dismissNotice, getNotices, syncNotices } from '../../settings/notificationCenter'
 import type { DeloadOverview } from '../../settings/types'
 import { HealthSummaryCard } from '../../health/components/HealthSummaryCard'
 import { syncAllWorkoutHealth } from '../../health/services'
 import type { ExerciseState, LastSessionReference, SetLog, WeightUnit } from '../types'
+import { shouldRemindBackup, scheduleBackupReminder } from '../../account/backupReminder'
+import { BackupReminderNotice } from '../../account/BackupReminderNotice'
 
 type ExerciseFilter = 'all' | 'pending' | 'in_progress' | 'skipped' | 'done'
 type SelectionSnapshot = {
@@ -43,7 +49,8 @@ type SelectionSnapshot = {
 }
 
 export function WorkoutPage() {
-  const today = useMemo(() => new Date(), [])
+  const outlet = useOutletContext<WorkoutActionContext | undefined>()
+  const [today, setToday] = useState(() => new Date())
   const todayKey = useMemo(() => localDateKey(today), [today])
   const [dateKey, setDateKey] = useState(todayKey)
   const selectedDate = useMemo(() => new Date(`${dateKey}T12:00:00`), [dateKey])
@@ -92,6 +99,12 @@ export function WorkoutPage() {
   const [catalogExerciseId, setCatalogExerciseId] = useState('')
   const [lastSelectionChange, setLastSelectionChange] = useState<SelectionSnapshot | null>(null)
   const [missedNoticeDismissed, setMissedNoticeDismissed] = useState(() => isMissedNoticeDismissed(dateKey))
+  const [dismissedPending, setDismissedPending] = useState<Set<string>>(() => new Set())
+  const [dismissedBackupReminders, setDismissedBackupReminders] = useState<Set<string>>(() => new Set())
+  const notices = useLiveQuery(() => getNotices().catch(() => []), [], [])
+  const dismissedNoticeIds = new Set((Array.isArray(notices) ? notices : []).filter((item) => item.dismissed).map((item) => item.id))
+  const backupReminderId = `manual-backup:${activeRoutineId ?? ''}:${todayKey}`
+  const backupReminderEligible = !!activeRoutineId && shouldRemindBackup(days, selectedDayId, dateKey, todayKey)
   const [isPending, startTransition] = useTransition()
   const [actionBusy, setActionBusy] = useState(false)
   const actionPending = useRef(false)
@@ -100,6 +113,13 @@ export function WorkoutPage() {
   const healthEnabled = appSettings?.healthIntegrationEnabled === true
   const navigableExercises = dayExercises
   const currentExercise = navigableExercises.find((exercise) => exercise.id === currentExerciseId) ?? navigableExercises[0] ?? null
+  const currentExerciseActionId = currentExercise?.id
+  const setWorkoutAction = outlet?.setWorkoutAction
+  useEffect(() => {
+    if (!setWorkoutAction) return
+    setWorkoutAction(currentExerciseActionId ? () => () => setSelectedExerciseId(currentExerciseActionId) : null)
+    return () => setWorkoutAction(null)
+  }, [currentExerciseActionId, setWorkoutAction])
   const currentExerciseIndex = currentExercise ? navigableExercises.findIndex((exercise) => exercise.id === currentExercise.id) : -1
   const selectedExercise = selectedExerciseId ? dayExercises.find((exercise) => exercise.id === selectedExerciseId) : null
   const currentExerciseRecommendations = currentExercise
@@ -107,6 +127,14 @@ export function WorkoutPage() {
     : []
   const completedCount = dailyProgress.completedCount
   const totalCount = dayExercises.length
+  const completionKey = `${dateKey}:${workoutDay?.day.id ?? ''}`
+  const allExercisesDone = totalCount > 0 && completedCount === totalCount && dailyProgress.progress?.session?.status !== 'completed'
+  const previousCompletion = useRef({ key: completionKey, done: allExercisesDone })
+  useEffect(() => {
+    const previous = previousCompletion.current
+    if (previous.key === completionKey && !previous.done && allExercisesDone) setReviewOpen(true)
+    previousCompletion.current = { key: completionKey, done: allExercisesDone }
+  }, [allExercisesDone, completionKey])
   const preferredUnit = workoutDay?.settings.preferredUnit ?? 'kg'
   const deloadActive = deload?.phase === 'active'
   const currentDeloadWeightKg = currentExercise
@@ -150,6 +178,35 @@ export function WorkoutPage() {
     { label: 'Hechos', value: dailyProgress.completedCount, tone: 'text-arsen-acid' },
     { label: 'Saltados', value: dailyProgress.skippedCount, tone: 'text-arsen-dim' },
   ]
+
+  useEffect(() => {
+    const refresh = () => {
+      if (document.visibilityState === 'hidden') return
+      const now = new Date()
+      const current = localDateKey(now)
+      if (current === todayKey) return
+      setToday(now)
+      if (dateKey === todayKey) setDateKey(current)
+    }
+    document.addEventListener('visibilitychange', refresh)
+    window.addEventListener('focus', refresh)
+    return () => { document.removeEventListener('visibilitychange', refresh); window.removeEventListener('focus', refresh) }
+  }, [dateKey, todayKey])
+  useEffect(() => {
+    if (!activeRoutineId || !selectedDayId) return
+    const current = backupReminderEligible ? [{ id: backupReminderId, title: 'Recordatorio de respaldo', body: 'Hoy puedes preparar un respaldo manual desde Cuenta y respaldo.' }] : []
+    void syncNotices('manual-backup:', current).catch(() => undefined)
+    if (backupReminderEligible) void scheduleBackupReminder(todayKey).catch(() => undefined)
+  }, [activeRoutineId, selectedDayId, backupReminderEligible, backupReminderId, todayKey])
+  useEffect(() => {
+    if (!pendingSessions) return
+    const notices = pendingSessions.map((session) => ({ id: `pending:${session.id}`, title: 'Sesión pendiente', body: `Tienes una sesión pendiente del ${session.date}.` }))
+    void syncNotices('pending:', notices).catch(() => undefined)
+  }, [pendingSessions])
+  useEffect(() => {
+    const notices = rotationStatus.shouldShow ? [{ id: `resume:${dateKey}`, title: 'Retomar entrenamiento', body: 'Revisa tu próximo día de entrenamiento.' }] : []
+    void syncNotices('resume:', notices).catch(() => undefined)
+  }, [dateKey, rotationStatus.shouldShow])
 
   useEffect(() => {
     if (resumeTarget) return
@@ -308,6 +365,7 @@ export function WorkoutPage() {
   function dismissMissedTrainingNotice() {
     dismissMissedNotice(dateKey)
     setMissedNoticeDismissed(true)
+    void dismissNotice(`resume:${dateKey}`).catch(() => undefined)
   }
 
   function goToPreviousExercise() {
@@ -400,7 +458,8 @@ export function WorkoutPage() {
 
   return (
     <div className="space-y-4">
-      <PageHeader eyebrow={`${weekdayLabel(selectedDate)} - ${workoutDay?.day.name ?? 'Cargando'} - ${dailyProgress.progress?.session ? dailyProgress.progress.session.status === 'completed' ? 'sesión finalizada' : 'sesión en curso' : 'preparación'}`} title="Entreno de hoy">
+      {bundle === undefined ? <span data-tour-workout-loading hidden /> : null}
+      <PageHeader tourKey="workout-header" eyebrow={`${weekdayLabel(selectedDate)} - ${workoutDay?.day.name ?? (bundle === null ? 'Sin rutina' : 'Cargando')} - ${dailyProgress.progress?.session ? dailyProgress.progress.session.status === 'completed' ? 'sesión finalizada' : 'sesión en curso' : 'preparación'}`} title="Entreno de hoy">
         <button
           aria-label="Cambiar rutina y dia"
           className="relative grid size-11 shrink-0 place-items-center rounded-[12px] border border-arsen-purple/45 bg-arsen-surface text-arsen-purple2 shadow-[0_10px_28px_rgb(0_0_0_/_0.22)] focus:outline-none focus:ring-2 focus:ring-arsen-purple2"
@@ -413,13 +472,17 @@ export function WorkoutPage() {
         </button>
       </PageHeader>
 
+      {backupReminderEligible && !dismissedNoticeIds.has(backupReminderId) && !dismissedBackupReminders.has(backupReminderId) ? <BackupReminderNotice onOpen={() => outlet?.openAccount?.()} onDismiss={() => { setDismissedBackupReminders((current) => new Set(current).add(backupReminderId)); void dismissNotice(backupReminderId).catch(() => undefined) }} /> : null}
+
       {dateKey !== todayKey ? <div className="rounded-[10px] border border-arsen-purple/40 p-3 text-sm">Sesión del {dateKey}<button className="ml-3 min-h-12 font-bold text-arsen-purple2 disabled:opacity-40" disabled={hasOpenRegisteredSetsToday || isPending} onClick={() => setDateKey(todayKey)} type="button">Volver a hoy</button></div> : null}
-      {pendingSessions.filter((session) => session.date !== dateKey).map((session) => (
+      {(pendingSessions ?? []).filter((session) => session.date !== dateKey && !dismissedPending.has(`pending:${session.id}`) && !dismissedNoticeIds.has(`pending:${session.id}`)).map((session) => (
+        <SwipeNotice key={session.id} onDismiss={() => { const id = `pending:${session.id}`; setDismissedPending((current) => new Set(current).add(id)); void dismissNotice(id).catch(() => undefined) }}>
         <button aria-label={`Continuar sesión del ${session.date}`} className="pending-session group flex min-h-16 w-full items-center gap-3 overflow-hidden rounded-[12px] border border-arsen-purple/45 bg-arsen-purple/10 p-3 text-left disabled:cursor-not-allowed disabled:opacity-60" disabled={hasOpenRegisteredSetsToday || isPending} key={session.id} onClick={() => continueSession(session)} type="button">
           <span aria-hidden="true" className="pending-session-indicator relative grid size-11 shrink-0 place-items-center rounded-[10px] bg-arsen-purple/25 text-arsen-purple2"><Clock3 className="size-5" /><span className="absolute right-1 top-1 size-2 rounded-full bg-arsen-acid" /></span>
           <span className="min-w-0 flex-1"><span className="block text-xs font-black uppercase tracking-wide text-arsen-purple2">Sesión pendiente</span><span className="mt-1 block text-sm font-bold text-arsen-ink">Continuar sesión del {session.date}</span>{hasOpenRegisteredSetsToday ? <span className="mt-1 block text-xs text-arsen-muted">Finaliza la sesión actual para continuar.</span> : null}</span>
           <ArrowRight aria-hidden="true" className="size-5 shrink-0 text-arsen-purple2 transition-transform group-enabled:group-hover:translate-x-1 motion-reduce:transition-none" />
         </button>
+        </SwipeNotice>
       ))}
 
       {isOffCalendar ? (
@@ -453,7 +516,8 @@ export function WorkoutPage() {
         <DeloadStatusCard deload={deload} disabled={isPending} onComplete={finishDeload} />
       ) : null}
 
-      {rotationStatus.shouldShow && !missedNoticeDismissed ? (
+      {rotationStatus.shouldShow && !missedNoticeDismissed && !dismissedNoticeIds.has(`resume:${dateKey}`) ? (
+        <SwipeNotice onDismiss={dismissMissedTrainingNotice}>
         <MissedTrainingNotice
           daysWithoutTraining={rotationStatus.daysWithoutTraining}
           nextDay={rotationStatus.nextDay}
@@ -465,9 +529,11 @@ export function WorkoutPage() {
             }
           }}
         />
+        </SwipeNotice>
       ) : null}
 
-      <div>
+      {bundle === null ? <div data-tour="workout-empty"><Card className="space-y-3 p-4"><h2 className="font-bold">Tu primer entrenamiento comienza con una rutina</h2><p className="text-sm text-arsen-muted">Crea tus días y elige ejercicios con el asistente de Rutina.</p><Link className="inline-flex min-h-12 items-center rounded-lg bg-arsen-purple2 px-4 font-bold text-arsen-bg" to="/rutina">Crear mi rutina</Link></Card></div> : null}
+      <div data-tour="workout-exercise">
         <div className="mb-2 text-xs font-extrabold text-arsen-purple2">Ejercicio actual</div>
         <Card className="min-w-0 p-3">
           <div className="grid grid-cols-[48px_minmax(0,1fr)_48px] items-center gap-2 border-b border-white/10 pb-4">
@@ -575,10 +641,6 @@ export function WorkoutPage() {
             </form>
           </details> : null}
 
-          <ActionButton className="w-full" disabled={!currentExercise} onClick={() => setSelectedExerciseId(currentExercise?.id ?? null)}>
-            Registrar
-            <ChevronRight aria-hidden="true" className="size-5" />
-          </ActionButton>
           {currentExercise && loggedRowsForExercise(currentExercise).length > 0 ? <button className="mt-2 min-h-12 w-full rounded-[10px] border border-white/10 text-sm font-bold text-arsen-purple2" onClick={() => setSelectedExerciseId(currentExercise.id)} type="button">Repetir última serie</button> : null}
         </Card>
       </div>
@@ -681,7 +743,7 @@ export function WorkoutPage() {
 
       <Card className="p-4">
         <div className="flex items-center justify-between gap-3">
-          <strong>{workoutDay ? `${workoutDay.routine.name} - ${workoutDay.day.name}` : 'Cargando rutina'}</strong>
+          <strong>{workoutDay ? `${workoutDay.routine.name} - ${workoutDay.day.name}` : bundle === null ? 'Sin rutina activa' : 'Cargando rutina'}</strong>
           <span className="text-sm text-arsen-ink">{totalCount ? Math.round((completedCount / totalCount) * 100) : 0}%</span>
         </div>
         <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/15">

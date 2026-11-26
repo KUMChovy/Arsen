@@ -1,5 +1,3 @@
-import { activateClerkInvitation } from './activateInvitation'
-
 export async function activateAccount(request: Request, dependencies: {
   verify: (token: string) => Promise<string>
   getUser: (userId: string) => Promise<{ userId: string; verifiedEmail: string | null; invitationId: string | null }>
@@ -9,6 +7,8 @@ export async function activateAccount(request: Request, dependencies: {
   if (!match?.[1]) return { status: 401 }
   let userId: string
   try { userId = await dependencies.verify(match[1]) } catch { return { status: 401 } }
-  const activated = await activateClerkInvitation(match[1], { ...dependencies, verify: async () => userId })
-  return { status: activated ? 200 : 403 }
+  const identity = await dependencies.getUser(userId)
+  if (!userId.trim() || identity.userId !== userId || !identity.verifiedEmail) return { status: 403 }
+  await dependencies.query('INSERT INTO arsen_profiles (user_id) VALUES ($1) ON CONFLICT (user_id) DO NOTHING', [userId])
+  return { status: 200 }
 }

@@ -3,7 +3,7 @@ import 'fake-indexeddb/auto'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { db } from '../../db/schema'
 import type { AppSettings } from './types'
-import { notifyDeloadIfNeeded } from './notifications'
+import { disableDeloadNotifications, notifyDeloadIfNeeded } from './notifications'
 
 const now = '2026-08-14T12:00:00.000Z'
 const notifications: Array<{ body?: string; title: string }> = []
@@ -70,6 +70,10 @@ describe('deload notifications', () => {
         title: 'Arsen: semana de deload',
       },
     ])
+  })
+  it('disables reminders without changing other settings', async () => {
+    await disableDeloadNotifications()
+    expect(await db.settings.get('app')).toMatchObject({ deloadNotifications: false, preferredUnit: 'kg' })
   })
 })
 

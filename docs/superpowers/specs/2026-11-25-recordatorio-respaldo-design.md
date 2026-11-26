@@ -1,0 +1,7 @@
+# Recordatorio de respaldo al terminar la rutina
+
+Suposición provisional comunicada al propietario: el día relevante es el último según el orden de la rutina activa, cuando está seleccionado para la fecha local actual. No presupone un día fijo de la semana. Al detectarlo, mostrar un aviso descartable que abre Cuenta y respaldo para que la persona decida si desea preparar una copia; nunca iniciar una copia automáticamente. Guardar el aviso en el centro existente, una vez por fecha y rutina.
+
+En Android, si la persona abre la app antes de las 20:00 de ese día, programar una notificación local para esa noche. No solicitar permiso silenciosamente; respetar los ajustes del sistema y los controles de notificaciones. WorkManager puede retrasar la entrega y no funciona tras detención forzada hasta reabrir; si se retrasa fuera de la fecha, no enviar un aviso obsoleto. No se puede predecir la fecha de un último día sin calendario fijo si la app nunca se abre ese día. Pulsar la notificación debe abrir la app y ofrecer el acceso a Cuenta y respaldo sin preparar ni enviar datos.
+
+Conservar las copias y permisos existentes, la opción de descartar y las preferencias de notificaciones. Evitar duplicados por reaperturas, guardar solo identificadores locales mínimos y actualizar el comportamiento al cambiar de rutina o día. Probar fecha local, orden, rutinas vacías, cambio de día, duplicados, límites de hora, permisos denegados, retraso de Android y navegación; documentar las pruebas reales pendientes.

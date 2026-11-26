@@ -3,12 +3,15 @@ import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { ReactElement } from 'react'
 import { SettingsPage } from './SettingsPage'
 import { updateAvailablePlateWeights, updateDeloadReductionSettings } from '../services'
+vi.mock('../NotificationPreferences', () => ({ NotificationPreferences: () => null }))
 
 const settingsPageMocks = vi.hoisted(() => ({
   completeActiveDeload: vi.fn(() => Promise.resolve()),
   requestDeloadNotifications: vi.fn(() => Promise.resolve('granted')),
+  disableDeloadNotifications: vi.fn(() => Promise.resolve()),
   scheduleDeload: vi.fn(() => Promise.resolve()),
   skipDeloadSuggestion: vi.fn(() => Promise.resolve()),
   startDeloadNow: vi.fn(() => Promise.resolve()),
@@ -87,6 +90,7 @@ vi.mock('../services', async (importOriginal) => {
 
 vi.mock('../notifications', () => ({
   requestDeloadNotifications: settingsPageMocks.requestDeloadNotifications,
+  disableDeloadNotifications: settingsPageMocks.disableDeloadNotifications,
 }))
 
 vi.mock('../../routine/importExport', () => ({
@@ -95,9 +99,30 @@ vi.mock('../../routine/importExport', () => ({
 
 vi.mock('../../health/services', () => healthPageMocks)
 
+const renderExpanded = (ui: ReactElement) => {
+  const result = render(ui)
+  result.container.querySelectorAll<HTMLDetailsElement>('details[data-settings-category]').forEach((element) => { element.open = true })
+  return result
+}
+
 describe('SettingsPage', () => {
+  it('groups settings into expandable categories', () => {
+    render(<MemoryRouter><SettingsPage /></MemoryRouter>)
+    const category = screen.getByText('Datos').closest('details')
+    expect(category).not.toHaveAttribute('open')
+    fireEvent.click(screen.getByText('Datos'))
+    expect(category).toHaveAttribute('open')
+    expect(screen.getByRole('button', { name: /Exportar respaldo/i })).toBeInTheDocument()
+  })
+  it('offers a switch to turn off deload notifications', async () => {
+    renderExpanded(<MemoryRouter><SettingsPage /></MemoryRouter>)
+    const toggle = screen.getByRole('switch', { name: 'Notificaciones de descarga' })
+    expect(toggle).toHaveAttribute('aria-checked', 'true')
+    fireEvent.click(toggle)
+    await waitFor(() => expect(settingsPageMocks.disableDeloadNotifications).toHaveBeenCalledOnce())
+  })
   it('opens account settings without activating a backup', () => {
-    render(<MemoryRouter initialEntries={['/settings']}><Routes><Route path="/settings" element={<SettingsPage />} /><Route path="/cuenta" element={<p>Página de cuenta</p>} /></Routes></MemoryRouter>)
+    renderExpanded(<MemoryRouter initialEntries={['/settings']}><Routes><Route path="/settings" element={<SettingsPage />} /><Route path="/cuenta" element={<p>Página de cuenta</p>} /></Routes></MemoryRouter>)
     fireEvent.click(screen.getByRole('button', { name: /cuenta y respaldo/i }))
     expect(screen.getByText('Página de cuenta')).toBeInTheDocument()
   })
@@ -120,7 +145,7 @@ describe('SettingsPage', () => {
   })
 
   it('shows safe backup import modes and cleanup controls', () => {
-    render(
+    renderExpanded(
       <MemoryRouter>
         <SettingsPage />
       </MemoryRouter>,
@@ -137,7 +162,7 @@ describe('SettingsPage', () => {
   })
 
   it('saves configurable available plates from the preferred unit', async () => {
-    render(
+    renderExpanded(
       <MemoryRouter>
         <SettingsPage />
       </MemoryRouter>,
@@ -154,7 +179,7 @@ describe('SettingsPage', () => {
   })
 
   it('shows actionable deload settings', () => {
-    render(
+    renderExpanded(
       <MemoryRouter>
         <SettingsPage />
       </MemoryRouter>,
@@ -171,7 +196,7 @@ describe('SettingsPage', () => {
   })
 
   it('defers Health Connect detection until activation', async () => {
-    render(
+    renderExpanded(
       <MemoryRouter>
         <SettingsPage />
       </MemoryRouter>,
@@ -194,7 +219,7 @@ describe('SettingsPage', () => {
       requested: [],
     })
 
-    render(
+    renderExpanded(
       <MemoryRouter>
         <SettingsPage />
       </MemoryRouter>,
@@ -212,7 +237,7 @@ describe('SettingsPage', () => {
     healthPageMocks.enableHealthIntegration.mockRejectedValueOnce(availabilityError)
     healthPageMocks.isHealthConnectAvailabilityError.mockReturnValue(true)
 
-    render(
+    renderExpanded(
       <MemoryRouter>
         <SettingsPage />
       </MemoryRouter>,
@@ -230,7 +255,7 @@ describe('SettingsPage', () => {
     healthPageMocks.enableHealthIntegration.mockRejectedValueOnce(new Error('Health Connect no está disponible'))
     healthPageMocks.isHealthConnectAvailabilityError.mockReturnValue(true)
 
-    render(
+    renderExpanded(
       <MemoryRouter>
         <SettingsPage />
       </MemoryRouter>,
@@ -244,7 +269,7 @@ describe('SettingsPage', () => {
   })
 
   it('saves configurable deload reductions', async () => {
-    render(
+    renderExpanded(
       <MemoryRouter>
         <SettingsPage />
       </MemoryRouter>,

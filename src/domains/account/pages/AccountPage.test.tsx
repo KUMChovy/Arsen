@@ -17,9 +17,24 @@ vi.mock('../restoreService', () => ({ prepareRestorePreview: vi.fn(), applyResto
 vi.mock('../automaticBackup', () => ({ enableAutomaticBackup: vi.fn(), disableAutomaticBackup: vi.fn(), isAutomaticBackupEnabled: vi.fn(), getAutomaticBackupSchedule: vi.fn(), observeAutomaticPreparation: vi.fn(() => () => undefined) }))
 
 describe('Cuenta y respaldo', () => {
+  it('offers a return to the access choices when opened from the initial gate', async () => {
+    const back = vi.fn()
+    render(<MemoryRouter><AccountPage onContinue={vi.fn()} onBack={back} /></MemoryRouter>)
+    fireEvent.click(await screen.findByRole('button', { name: 'Volver a opciones de acceso' }))
+    expect(back).toHaveBeenCalledOnce()
+  })
   beforeEach(() => { vi.resetAllMocks(); vi.mocked(getAccountState).mockResolvedValue({ status: 'signed-out' }); vi.mocked(getBackupStatus).mockResolvedValue({ owner: 'user_abc', localRevision: 8, pending: false, confirmed: null, unpreparedChanges: null }); vi.mocked(isAutomaticBackupEnabled).mockResolvedValue(false); vi.mocked(getAutomaticBackupSchedule).mockResolvedValue(null) })
   afterEach(cleanup)
   const show = () => render(<MemoryRouter><AccountPage /></MemoryRouter>)
+
+  it('groups account backup and recovery actions in expandable sections', async () => {
+    vi.mocked(getAccountState).mockResolvedValue({ status: 'signed-in', email: 'atleta@example.test' })
+    show()
+    const recovery = (await screen.findByText('Recuperar datos')).closest('details')
+    expect(recovery).toHaveAttribute('open')
+    fireEvent.click(screen.getByText('Recuperar datos'))
+    expect(recovery).not.toHaveAttribute('open')
+  })
 
   it('allows a guest to enter credentials without promising automatic backups', async () => {
     show()
@@ -154,7 +169,7 @@ describe('Cuenta y respaldo', () => {
     show()
     fireEvent.click(await screen.findByRole('button', { name: 'Ver respaldo para restaurar' }))
     expect(await screen.findByText(/reemplazará los datos locales/i)).toBeInTheDocument()
-    expect(screen.getByRole('region', { name: 'Confirmar restauración' })).toHaveFocus()
+    await waitFor(() => expect(screen.getByRole('region', { name: 'Confirmar restauración' })).toHaveFocus())
     expect(applyRestorePreview).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: 'Reemplazar datos locales' }))
     await waitFor(() => expect(applyRestorePreview).toHaveBeenCalledWith(preview))

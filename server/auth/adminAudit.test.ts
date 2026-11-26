@@ -24,12 +24,13 @@ describe('administrative audit', () => {
   it('reads all three audit sources from PostgreSQL', async () => {
     const pg = new PGlite()
     try {
-      for (const name of ['002_catalog.sql', '005_admin_audit.sql', '007_catalog_draft_audit.sql']) await pg.exec(await readFile(`server/migrations/${name}`, 'utf8'))
+      for (const name of ['002_catalog.sql', '005_admin_audit.sql', '007_catalog_draft_audit.sql', '008_account_deletions.sql']) await pg.exec(await readFile(`server/migrations/${name}`, 'utf8'))
       await pg.exec("INSERT INTO arsen_admin_audit (actor_id, action, target_id) VALUES ('admin', 'invitation.requested', '8166d21c-bac3-497b-9d22-8492474c982b'); INSERT INTO arsen_catalog_items (id, draft) VALUES ('squat', '{}'); INSERT INTO arsen_catalog_draft_audit (actor_id, action, target_id) VALUES ('admin', 'draft.save', 'squat'); INSERT INTO arsen_catalog_changes (version, item_id, action, actor_id, payload) VALUES (1, 'squat', 'publish', 'admin', '{}')")
+      await pg.exec("INSERT INTO arsen_account_deletion_audit (actor_id, target_id, action) VALUES ('admin', 'user_a', 'requested')")
       const auth = { verify: async () => 'admin', role: async () => 'admin' as const }
       const result = await getAdminAudit(new Request('https://api.example.test', { headers: { authorization: 'Bearer test' } }), { auth, query: (sql, params) => pg.query(sql, params) })
       expect(result.status).toBe(200)
-      if (result.status === 200) expect(result.events.map((event) => event.action).sort()).toEqual(['draft.save', 'invitation.requested', 'publish'])
+      if (result.status === 200) expect(result.events.map((event) => event.action).sort()).toEqual(['account.deletion.requested', 'draft.save', 'invitation.requested', 'publish'])
     } finally { await pg.close() }
   }, 30_000)
 })
